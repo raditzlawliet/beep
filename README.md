@@ -24,13 +24,13 @@ Compose and send HTTP requests.
 - **Request History** - [GUI] Automatically temporary history request
 - **Response Viewer** - View response headers and body
 
-### TODO
+### Coming soon
 
 ## Binary Releases
 
 - **Desktop GUI** - Desktop app interface
 - **TUI** - (TODO) Terminal interface
-  **CLI** - Pipe-friendly, scriptable & direct
+- **CLI** - Pipe-friendly, scriptable & direct
 - **Cross-Platform** - Windows, (TODO) Linux, (TODO) macOS
 
 ## Usage
