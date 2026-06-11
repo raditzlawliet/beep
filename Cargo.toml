@@ -1,0 +1,23 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/beep",
+    "crates/beep-core",
+    "crates/beep-tui",
+    "crates/beep-gui/src-tauri",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+authors = ["raditzlawliet"]
+license = "AGPL-3.0"
+
+[workspace.dependencies]
+
+[profile.release]
+strip = true
+opt-level = "z"
+lto = true
+codegen-units = 1
+# panic = "abort"

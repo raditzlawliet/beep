@@ -1,0 +1,15 @@
+[package]
+name = "beep"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Beep CLI"
+
+[[bin]]
+name = "beep"
+path = "src/main.rs"
+
+[dependencies]
+beep-core = { path = "../beep-core" }
+clap = { version = "4.6", features = ["derive"] }

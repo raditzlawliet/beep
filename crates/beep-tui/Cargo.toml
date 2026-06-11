@@ -1,0 +1,17 @@
+[package]
+name = "beep-tui"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Beep TUI"
+
+[[bin]]
+name = "beep-tui"
+path = "src/main.rs"
+
+[dependencies]
+beep-core = { path = "../beep-core" }
+ratatui = "0.30.1"
+crossterm = "0.29"
+color-eyre = "0.6.5"
