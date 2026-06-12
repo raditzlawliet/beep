@@ -1,6 +1,7 @@
 <script lang="ts">
     import type { HttpResponse } from "$lib/types";
     import CodeEditor from "$lib/components/CodeEditor.svelte";
+    import XmlTreeView from "$lib/components/XmlTreeView.svelte";
     import { ChevronDownIcon, CopyIcon, TextWrapIcon } from "@lucide/svelte";
 
     interface Props {
@@ -9,8 +10,8 @@
 
     let { response }: Props = $props();
 
-    type BodyDisplay = "html" | "json" | "raw";
-    type CodeLanguage = "html" | "json" | "text";
+    type BodyDisplay = "html" | "json" | "xml" | "raw";
+    type CodeLanguage = "html" | "json" | "xml" | "text";
     type ActiveTab = "body" | "preview";
 
     let bodyDisplay = $state<BodyDisplay>("raw");
@@ -23,6 +24,12 @@
         if (t.includes("text/html")) return "html";
         if (t.includes("application/json") || t.includes("+json"))
             return "json";
+        if (
+            t.includes("application/xml") ||
+            t.includes("text/xml") ||
+            t.includes("+xml")
+        )
+            return "xml";
         return "raw";
     }
 
@@ -49,7 +56,9 @@
             ? "HTML"
             : bodyDisplay === "json"
               ? "JSON"
-              : "Raw",
+              : bodyDisplay === "xml"
+                ? "XML"
+                : "Raw",
     );
 
     let codeLanguage = $derived<CodeLanguage>(
@@ -57,7 +66,9 @@
             ? "html"
             : bodyDisplay === "json"
               ? "json"
-              : "text",
+              : bodyDisplay === "xml"
+                ? "xml"
+                : "text",
     );
 
     function selectBodyDisplay(mode: BodyDisplay) {
@@ -119,6 +130,11 @@
                                 >JSON</button
                             >
                         </li>
+                        <li>
+                            <button onclick={() => selectBodyDisplay("xml")}
+                                >XML</button
+                            >
+                        </li>
                         <li class="m-0 p-0 my-1"></li>
                         <li>
                             <button onclick={() => selectBodyDisplay("raw")}
@@ -174,12 +190,17 @@
                 class="border-0 rounded-none h-full"
             />
         {:else}
+            <!-- viewer -->
+            {#if bodyDisplay === "xml"}
+                <XmlTreeView xml={response.body} />
+            {:else}
             <iframe
                 class="w-full h-full border-0"
                 srcdoc={displayBody}
                 sandbox="allow-scripts"
                 title="Response preview"
             ></iframe>
+            {/if}
         {/if}
     </div>
 </div>
