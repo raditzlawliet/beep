@@ -13,16 +13,15 @@
         if (t === "None") onUpdate({ type: "None" });
         else if (t === "Basic")
             onUpdate({ type: "Basic", username: "", password: "" });
-        else onUpdate({ type: "Bearer", token: "" });
+        else if (t === "Bearer") onUpdate({ type: "Bearer", token: "" });
+        else onUpdate({ type: "ApiKey", key: "", value: "", add_to: "header" });
     }
 </script>
 
 <div class="flex gap-6 flex-1 min-h-0 px-2">
     <!-- Left panel: Auth Type selector -->
     <div class="w-[30%] min-w-44 flex flex-col gap-2">
-        <div
-            class="text-xs font-semibold opacity-70 uppercase tracking-wide"
-        >
+        <div class="text-xs font-semibold opacity-70 uppercase tracking-wide">
             Auth Type
         </div>
         <select
@@ -33,15 +32,18 @@
             <option value="None">No Auth</option>
             <option value="Basic">Basic Auth</option>
             <option value="Bearer">Bearer Token</option>
+            <option value="ApiKey">API Key</option>
         </select>
         <p class="text-xs opacity-50 mt-1 leading-relaxed">
             {#if auth.type === "None"}
                 No authentication will be sent with this request.
             {:else if auth.type === "Basic"}
-                Sends a username and password encoded in Base64
-                via the Authorization header.
-            {:else}
+                Sends a username and password encoded in Base64 via the
+                Authorization header.
+            {:else if auth.type === "Bearer"}
                 Sends a Bearer token in the Authorization header.
+            {:else if auth.type === "ApiKey"}
+                Sends an API key as a header or query parameter.
             {/if}
         </p>
     </div>
@@ -52,9 +54,7 @@
             <div
                 class="flex flex-col items-center justify-center h-full text-sm gap-1"
             >
-                <div class="text-base font-semibold opacity-70">
-                    No Auth
-                </div>
+                <div class="text-base font-semibold opacity-70">No Auth</div>
                 <div class="opacity-50">
                     This request does not use any authorization.
                 </div>
@@ -62,9 +62,7 @@
         {:else if auth.type === "Basic"}
             <label class="form-control w-full">
                 <div class="label py-1">
-                    <span class="label-text text-xs opacity-70"
-                        >Username</span
-                    >
+                    <span class="label-text text-xs opacity-70">Username</span>
                 </div>
                 <input
                     class="input input-bordered input-sm w-full"
@@ -79,9 +77,7 @@
             </label>
             <label class="form-control w-full">
                 <div class="label py-1">
-                    <span class="label-text text-xs opacity-70"
-                        >Password</span
-                    >
+                    <span class="label-text text-xs opacity-70">Password</span>
                 </div>
                 <input
                     class="input input-bordered input-sm w-full"
@@ -110,6 +106,54 @@
                             token: (e.target as HTMLInputElement).value,
                         })}
                 />
+            </label>
+        {:else if auth.type === "ApiKey"}
+            <label class="form-control w-full">
+                <div class="label py-1">
+                    <span class="label-text text-xs opacity-70">Key</span>
+                </div>
+                <input
+                    class="input input-bordered input-sm w-full"
+                    placeholder="X-API-Key"
+                    value={auth.key}
+                    oninput={(e) =>
+                        onUpdate({
+                            ...auth,
+                            key: (e.target as HTMLInputElement).value,
+                        } as Auth)}
+                />
+            </label>
+            <label class="form-control w-full">
+                <div class="label py-1">
+                    <span class="label-text text-xs opacity-70">Value</span>
+                </div>
+                <input
+                    class="input input-bordered input-sm w-full"
+                    placeholder="API key value"
+                    value={auth.value}
+                    oninput={(e) =>
+                        onUpdate({
+                            ...auth,
+                            value: (e.target as HTMLInputElement).value,
+                        } as Auth)}
+                />
+            </label>
+            <label class="form-control w-full">
+                <div class="label py-1">
+                    <span class="label-text text-xs opacity-70">Add to</span>
+                </div>
+                <select
+                    class="select select-bordered select-sm w-full"
+                    value={auth.add_to}
+                    onchange={(e) =>
+                        onUpdate({
+                            ...auth,
+                            add_to: (e.target as HTMLSelectElement).value,
+                        } as Auth)}
+                >
+                    <option value="header">Header</option>
+                    <option value="query">Query Params</option>
+                </select>
             </label>
         {/if}
     </div>

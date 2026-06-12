@@ -83,6 +83,13 @@ impl HttpClient {
                     HeaderValue::from_str(&format!("Bearer {}", token)).unwrap(),
                 );
             }
+            Auth::ApiKey { key, value, add_to } if add_to == "header" => {
+                let name = HeaderName::from_bytes(key.as_bytes())
+                    .unwrap_or(HeaderName::from_static("x-api-key"));
+                let val = HeaderValue::from_str(value).unwrap_or(HeaderValue::from_static(""));
+                req_builder = req_builder.header(name, val);
+            }
+            Auth::ApiKey { .. } => {} // query param handled in build_url
             Auth::None => {}
         }
 
@@ -148,14 +155,22 @@ impl HttpClient {
     }
 
     fn build_url(&self, request: &HttpRequest) -> String {
-        if request.query_params.is_empty() {
+        let mut params: Vec<String> = request
+            .query_params
+            .iter()
+            .map(|(k, v)| format!("{}={}", urlencode(k), urlencode(v)))
+            .collect();
+
+        // Append API key as query param if add_to is "query"
+        if let Auth::ApiKey { key, value, add_to } = &request.auth {
+            if add_to == "query" {
+                params.push(format!("{}={}", urlencode(key), urlencode(value)));
+            }
+        }
+
+        if params.is_empty() {
             request.url.clone()
         } else {
-            let params: Vec<String> = request
-                .query_params
-                .iter()
-                .map(|(k, v)| format!("{}={}", urlencode(k), urlencode(v)))
-                .collect();
             format!("{}?{}", request.url, params.join("&"))
         }
     }

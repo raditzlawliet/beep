@@ -59,8 +59,18 @@ impl std::fmt::Display for HttpMethod {
 #[serde(tag = "type")]
 pub enum Auth {
     None,
-    Basic { username: String, password: String },
-    Bearer { token: String },
+    Basic {
+        username: String,
+        password: String,
+    },
+    Bearer {
+        token: String,
+    },
+    ApiKey {
+        key: String,
+        value: String,
+        add_to: String,
+    },
 }
 
 impl Default for Auth {

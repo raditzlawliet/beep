@@ -10,7 +10,8 @@ export type HttpMethod =
 export type Auth =
   | { type: "None" }
   | { type: "Basic"; username: string; password: string }
-  | { type: "Bearer"; token: string };
+  | { type: "Bearer"; token: string }
+  | { type: "ApiKey"; key: string; value: string; add_to: string };
 
 export interface HttpRequest {
   url: string;
