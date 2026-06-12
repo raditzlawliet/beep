@@ -26,6 +26,11 @@ crates/beep-gui/.svelte-kit/
 *.swo
 *~
 .DS_Store
+.zed/
+
+# chunkhound
+.chunkhound/
+.chunkhound.json
 
 # OS
 Thumbs.db
