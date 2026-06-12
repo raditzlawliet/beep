@@ -3,10 +3,13 @@
     import type { HttpRequest, HttpMethod, Auth } from "$lib/types";
     import { methodTextColor } from "$lib/types";
     import { jsonrepair } from "jsonrepair";
+    import { format } from "prettier/standalone";
+    import * as htmlParser from "prettier/plugins/html";
     import RequestParamsTab from "$lib/components/tabs/RequestParamsTab.svelte";
     import RequestHeadersTab from "$lib/components/tabs/RequestHeadersTab.svelte";
     import RequestAuthTab from "$lib/components/tabs/RequestAuthTab.svelte";
     import RequestBodyTab from "$lib/components/tabs/RequestBodyTab.svelte";
+    import { showToast } from "$lib/toast.svelte";
 
     interface Props {
         request: HttpRequest;
@@ -21,7 +24,7 @@
     let activeTab = $state<Tab>("params");
 
     export type BodyMode = "none" | "raw";
-    export type BodyType = "text" | "json";
+    export type BodyType = "text" | "json" | "html";
     let bodyMode = $state<BodyMode>("none");
     let bodyType = $state<BodyType>("text");
 
@@ -42,16 +45,37 @@
         }
         bodyMode = mode;
         bodyType = type;
-    });
+	    }
+    );
 
     function beautifyJson(): string {
         try {
             const repaired = jsonrepair(rawBodyContent);
             const parsed = JSON.parse(repaired);
             return JSON.stringify(parsed, null, 2);
-        } catch {
+        } catch (e) {
+            showToast("Beautify failed", String(e));
             return rawBodyContent;
         }
+    }
+
+    async function beautifyHtml(): Promise<string> {
+        try {
+            return await format(rawBodyContent, {
+                parser: "html",
+                plugins: [htmlParser],
+                tabWidth: 2,
+            });
+        } catch (e) {
+            showToast("Beautify failed", String(e));
+            return rawBodyContent;
+        }
+    }
+
+	async function beautify(): Promise<string> {
+        if (bodyType === "json") return beautifyJson();
+        if (bodyType === "html") return await beautifyHtml();
+        return rawBodyContent;
     }
 
     const METHODS: HttpMethod[] = [
@@ -590,9 +614,10 @@
                             emitUpdate({ body: v });
                         }
                     }}
-                    onBeautify={beautifyJson}
+                    onBeautify={beautify}
                 />
             {/if}
         </div>
     </div>
 </div>
+

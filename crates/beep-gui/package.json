@@ -25,7 +25,8 @@
     "@tauri-apps/plugin-opener": "^2",
     "codemirror": "^6.0.2",
     "daisyui": "^5.5.23",
-    "jsonrepair": "^3.14.0"
+    "jsonrepair": "^3.14.0",
+    "prettier": "^3.8.4"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3.0.6",

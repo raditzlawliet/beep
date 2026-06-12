@@ -13,7 +13,7 @@
         onBodyModeChange: (mode: BodyMode) => void;
         onBodyTypeChange: (type: BodyType) => void;
         onRawBodyChange: (value: string) => void;
-        onBeautify: () => string;
+        onBeautify: () => Promise<string>;
     }
 
     let {
@@ -25,6 +25,10 @@
         onRawBodyChange,
         onBeautify,
     }: Props = $props();
+
+    const bodyTypeLabel = $derived(
+        bodyType === "json" ? "JSON" : bodyType === "html" ? "HTML" : "Text"
+    );
 </script>
 
 <div class="flex flex-col flex-1">
@@ -60,7 +64,7 @@
                     role="menu"
                     tabindex="0"
                 >
-                    {bodyType}
+                    {bodyTypeLabel}
                     <ChevronDownIcon class="w-3 h-3" />
                 </button>
                 <ul
@@ -83,17 +87,27 @@
                             }}>JSON</button
                         >
                     </li>
+                    <li>
+                        <button
+                            onclick={() => {
+                                onBodyTypeChange("html");
+                                (document.activeElement as HTMLElement)?.blur();
+                            }}>HTML</button
+                        >
+                    </li>
                 </ul>
             </div>
             <div class="flex-1"></div>
-            {#if bodyType === "json"}
+            {#if bodyType === "json" || bodyType === "html"}
                 <button
                     class="btn btn-xs btn-ghost text-accent"
-                    onclick={() => {
-                        const beautified = onBeautify();
+                    onclick={async () => {
+                        const beautified = await onBeautify();
                         onRawBodyChange(beautified);
                     }}
-                    title="Beautify JSON"
+                    title={bodyType === "json"
+                        ? "Beautify JSON"
+                        : "Beautify HTML"}
                 >
                     <BracesIcon class="h-3.5 w-3.5" />Beautify
                 </button>
@@ -105,7 +119,11 @@
     {#if bodyMode === "raw"}
         <CodeEditor
             value={rawBodyContent}
-            language={bodyType === "json" ? "json" : "text"}
+            language={bodyType === "json"
+                ? "json"
+                : bodyType === "html"
+                  ? "html"
+                  : "text"}
             onchange={(v: string) => onRawBodyChange(v)}
             class="border border-base-300 rounded-md overflow-hidden flex-1 min-h-0"
         />

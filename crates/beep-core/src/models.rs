@@ -97,7 +97,7 @@ pub struct HttpRequest {
     #[serde(default)]
     pub body_mode: Option<String>, // raw, form, json, none
     #[serde(default)]
-    pub body_type: Option<String>, // text, json
+    pub body_type: Option<String>, // text, json, html
 }
 
 impl HttpRequest {
