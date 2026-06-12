@@ -5,6 +5,7 @@
     import { jsonrepair } from "jsonrepair";
     import { format } from "prettier/standalone";
     import * as htmlParser from "prettier/plugins/html";
+    import xmlPlugin from "@prettier/plugin-xml";
     import RequestParamsTab from "$lib/components/tabs/RequestParamsTab.svelte";
     import RequestHeadersTab from "$lib/components/tabs/RequestHeadersTab.svelte";
     import RequestAuthTab from "$lib/components/tabs/RequestAuthTab.svelte";
@@ -24,7 +25,7 @@
     let activeTab = $state<Tab>("params");
 
     export type BodyMode = "none" | "raw";
-    export type BodyType = "text" | "json" | "html";
+    export type BodyType = "text" | "json" | "html" | "xml";
     let bodyMode = $state<BodyMode>("none");
     let bodyType = $state<BodyType>("text");
 
@@ -72,9 +73,23 @@
         }
     }
 
+    async function beautifyXml(): Promise<string> {
+        try {
+            return await format(rawBodyContent, {
+                parser: "xml",
+                plugins: [xmlPlugin],
+                tabWidth: 2,
+            });
+        } catch (e) {
+            showToast("Beautify failed", String(e));
+            return rawBodyContent;
+        }
+    }
+
 	async function beautify(): Promise<string> {
         if (bodyType === "json") return beautifyJson();
         if (bodyType === "html") return await beautifyHtml();
+        if (bodyType === "xml") return await beautifyXml();
         return rawBodyContent;
     }
 
@@ -620,4 +635,3 @@
         </div>
     </div>
 </div>
-
