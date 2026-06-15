@@ -14,12 +14,13 @@
     } from "@codemirror/commands";
     import { json } from "@codemirror/lang-json";
     import { html } from "@codemirror/lang-html";
+    import { xml } from "@codemirror/lang-xml";
     import { syntaxHighlighting, bracketMatching } from "@codemirror/language";
     import { monokaiHighlight, monokaiTheme } from "./styles/monokai";
 
     interface Props {
         value: string;
-        language?: "text" | "json" | "html";
+        language?: "text" | "json" | "html" | "xml";
         onchange?: (value: string) => void;
         class?: string;
         readonly?: boolean;
@@ -40,7 +41,7 @@
 
     function createEditor(
         initialValue: string,
-        lang: "text" | "json" | "html",
+        lang: "text" | "json" | "html" | "xml",
         wrap: boolean,
     ) {
         const extensions = [
@@ -67,6 +68,8 @@
             extensions.push(json());
         } else if (lang === "html") {
             extensions.push(html());
+        } else if (lang === "xml") {
+            extensions.push(xml());
         }
 
         const state = EditorState.create({

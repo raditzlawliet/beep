@@ -54,7 +54,6 @@
             </li>
         {:else}
             {#each entries.toReversed() as entry (entry.id)}
-                {console.log(entry.request)}
                 <li class="group relative flex items-center">
                     <button
                         class="text-xs py-2 w-full"

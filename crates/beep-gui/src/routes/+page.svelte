@@ -1,24 +1,29 @@
 <script lang="ts">
-    import { invoke } from "@tauri-apps/api/core";
-    import type { HttpRequest, HttpResponse, HistoryEntry } from "$lib/types";
-    import { defaultRequest } from "$lib/types";
+    import type { HttpRequest } from "$lib/types";
+    import { request, history, app } from "$lib/app-state.svelte";
     import TitleBar from "$lib/components/TitleBar.svelte";
     import StatusBar from "$lib/components/StatusBar.svelte";
     import RequestForm from "$lib/components/RequestForm.svelte";
     import ResponseView from "$lib/components/ResponseView.svelte";
     import HistorySidebar from "$lib/components/HistorySidebar.svelte";
 
-    let request = $state<HttpRequest>(defaultRequest());
-    let response = $state<HttpResponse | null>(null);
-    let history = $state<HistoryEntry[]>([]);
-    let loading = $state(false);
-    let sidebarOpen = $state(false);
-    let error = $state<string | null>(null);
+    // local UI state (belongs to this page, not shared)
 
-    // --- resizable splitter ---
+    let sidebarOpen = $state(false);
+
+    // request lifecycle
+    let sending = $state(false);
+    let reqError = $state<string | null>(null);
+
+    // history lifecycle
+    let histLoading = $state(false);
+    let histError = $state<string | null>(null);
+
+    // resizable splitter
     let mainPanelEl = $state<HTMLDivElement | null>(null);
     let requestHeight = $state(300);
     let isDragging = $state(false);
+
     const MIN_REQUEST = 250;
     const MIN_RESPONSE = 200;
 
@@ -40,57 +45,66 @@
         isDragging = false;
     }
 
-    async function handleSend(req: HttpRequest) {
-        loading = true;
-        error = null;
-        try {
-            const res = await invoke<HttpResponse>("execute_request", {
-                payload: req,
-            });
-            response = res;
-            const h = await invoke<HistoryEntry[]>("get_history");
-            history = h;
-        } catch (e) {
-            error = String(e);
-            response = null;
-        } finally {
-            loading = false;
-        }
-    }
-
-    function handleUpdate(req: HttpRequest) {
-        request = req;
-    }
-
-    function handleNewRequest() {
-        request = defaultRequest();
-        response = null;
-        error = null;
-    }
-
-    function handleHistorySelect(entry: HistoryEntry) {
-        request = { ...entry.request };
-        response = entry.response ? { ...entry.response } : null;
-        error = null;
-    }
-
     function toggleSidebar() {
         sidebarOpen = !sidebarOpen;
     }
 
-    $effect(() => {
-        invoke<HistoryEntry[]>("get_history").then((h) => (history = h));
-    });
+    // function wrapper
+    async function handleSend(req: HttpRequest) {
+        sending = true;
+        reqError = null;
+        try {
+            await request.send(req);
+        } catch (e) {
+            reqError = String(e);
+        } finally {
+            sending = false;
+        }
+    }
 
     async function handleClearHistory() {
-        await invoke("clear_history");
-        history = await invoke<HistoryEntry[]>("get_history");
+        histLoading = true;
+        histError = null;
+        try {
+            await history.clear();
+        } catch (e) {
+            histError = String(e);
+        } finally {
+            histLoading = false;
+        }
     }
 
     async function handleDeleteHistory(id: number) {
-        await invoke("delete_history_entry", { id });
-        history = await invoke<HistoryEntry[]>("get_history");
+        histLoading = true;
+        histError = null;
+        try {
+            await history.delete(id);
+        } catch (e) {
+            histError = String(e);
+        } finally {
+            histLoading = false;
+        }
     }
+
+    function handleNewRequest() {
+        request.reset();
+        reqError = null;
+    }
+
+    function handleHistorySelect(entry: import("$lib/types").HistoryEntry) {
+        request.loadFromHistory(entry);
+        reqError = null;
+    }
+
+    // initialise
+    $effect(() => {
+        histLoading = true;
+        histError = null;
+        history.refresh()
+            .catch((e) => (histError = String(e)))
+            .finally(() => (histLoading = false));
+    });
+
 </script>
 
 <div class="flex flex-col h-screen">
@@ -100,7 +114,7 @@
         {#if sidebarOpen}
             <div class="w-60 shrink-0">
                 <HistorySidebar
-                    entries={history}
+                    entries={history.entries}
                     onSelect={handleHistorySelect}
                     onClearAll={handleClearHistory}
                     onDelete={handleDeleteHistory}
@@ -118,10 +132,11 @@
                 style="height: {requestHeight}px"
             >
                 <RequestForm
-                    {request}
-                    {loading}
+                    request={request.current}
+                    loading={sending}
                     onSend={handleSend}
-                    onUpdate={handleUpdate}
+                    onUpdate={request.update}
+                    defaultHeaders={app.defaultHeaders}
                 />
             </div>
             <div
@@ -131,12 +146,12 @@
                 onmousedown={splitterStart}
             ></div>
             <div class="flex-1 overflow-hidden">
-                <ResponseView {response} {loading} />
+                <ResponseView response={request.response} loading={sending} />
             </div>
         </div>
     </div>
 
-    <StatusBar onToggleSidebar={toggleSidebar} {response} {loading} {error} />
+    <StatusBar onToggleSidebar={toggleSidebar} response={request.response} loading={sending} error={reqError} />
 </div>
 
 <svelte:window onmousemove={splitterMove} onmouseup={splitterEnd} />

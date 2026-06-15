@@ -27,7 +27,13 @@
     }: Props = $props();
 
     const bodyTypeLabel = $derived(
-        bodyType === "json" ? "JSON" : bodyType === "html" ? "HTML" : "Text"
+        bodyType === "json"
+            ? "JSON"
+            : bodyType === "html"
+              ? "HTML"
+              : bodyType === "xml"
+                ? "XML"
+                : "Text"
     );
 </script>
 
@@ -95,10 +101,18 @@
                             }}>HTML</button
                         >
                     </li>
+                    <li>
+                        <button
+                            onclick={() => {
+                                onBodyTypeChange("xml");
+                                (document.activeElement as HTMLElement)?.blur();
+                            }}>XML</button
+                        >
+                    </li>
                 </ul>
             </div>
             <div class="flex-1"></div>
-            {#if bodyType === "json" || bodyType === "html"}
+            {#if bodyType === "json" || bodyType === "html" || bodyType === "xml"}
                 <button
                     class="btn btn-xs btn-ghost text-accent"
                     onclick={async () => {
@@ -107,7 +121,9 @@
                     }}
                     title={bodyType === "json"
                         ? "Beautify JSON"
-                        : "Beautify HTML"}
+                        : bodyType === "html"
+                          ? "Beautify HTML"
+                          : "Beautify XML"}
                 >
                     <BracesIcon class="h-3.5 w-3.5" />Beautify
                 </button>
@@ -123,7 +139,9 @@
                 ? "json"
                 : bodyType === "html"
                   ? "html"
-                  : "text"}
+                  : bodyType === "xml"
+                    ? "xml"
+                    : "text"}
             onchange={(v: string) => onRawBodyChange(v)}
             class="border border-base-300 rounded-md overflow-hidden flex-1 min-h-0"
         />
