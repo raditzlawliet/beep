@@ -1,7 +1,11 @@
+mod models;
+
 use std::sync::Mutex;
 
 use beep_core::client::default_headers;
 use beep_core::{HttpClient, HttpRequest, HttpResponse, RequestHistory};
+
+use models::AppConstants;
 
 pub struct AppState {
     pub client: HttpClient,
@@ -38,9 +42,9 @@ fn delete_history_entry(state: tauri::State<'_, AppState>, id: u64) -> bool {
     state.history.lock().unwrap().remove_by_id(id)
 }
 
-/// Return core default headers so the GUI can display them as auto-generated headers.
 #[tauri::command]
-fn get_default_headers() -> Vec<(String, String)> {
+fn get_app_constants() -> AppConstants {
+    let version = env!("CARGO_PKG_VERSION").to_string();
     let mut headers: Vec<(String, String)> = default_headers()
         .into_iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))
@@ -54,7 +58,6 @@ fn get_default_headers() -> Vec<(String, String)> {
         ),
         ("Connection".to_string(), "keep-alive".to_string()),
     ];
-
     for (key, value) in additional {
         if let Some(existing) = headers.iter_mut().find(|(k, _)| *k == key) {
             existing.1 = value;
@@ -63,7 +66,11 @@ fn get_default_headers() -> Vec<(String, String)> {
         }
     }
 
-    headers
+    AppConstants {
+        platform: std::env::consts::OS.to_string(),
+        default_headers: headers,
+        version,
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -75,11 +82,14 @@ pub fn run() {
             history: Mutex::new(RequestHistory::new()),
         })
         .invoke_handler(tauri::generate_handler![
+            get_app_constants,
+            //
             execute_request,
+            //
             get_history,
             clear_history,
             delete_history_entry,
-            get_default_headers,
+
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

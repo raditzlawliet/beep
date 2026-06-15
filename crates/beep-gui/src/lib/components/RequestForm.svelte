@@ -1,5 +1,4 @@
 <script lang="ts">
-    import { invoke } from "@tauri-apps/api/core";
     import type { HttpRequest, HttpMethod, Auth } from "$lib/types";
     import { methodTextColor } from "$lib/types";
     import { jsonrepair } from "jsonrepair";
@@ -17,9 +16,10 @@
         loading: boolean;
         onSend: (req: HttpRequest) => void;
         onUpdate: (req: HttpRequest) => void;
+        defaultHeaders: [string, string][];
     }
 
-    let { request, loading, onSend, onUpdate }: Props = $props();
+    let { request, loading, onSend, onUpdate, defaultHeaders }: Props = $props();
 
     type Tab = "params" | "headers" | "auth" | "body";
     let activeTab = $state<Tab>("params");
@@ -31,6 +31,8 @@
 
     // Preserved raw content - survives switching between none/raw
     let rawBodyContent = $state("");
+    // Tracks whether comes from a mode switch (keep content) or new request (clear content)
+    let _keepBodyOnNull = false;
 
     // Sync rawBodyContent when request.body is loaded externally (e.g. history)
     $effect(() => {
@@ -39,15 +41,15 @@
             (request.body_mode as BodyMode) || (body !== null ? "raw" : "none");
         const type = (request.body_type as BodyType) || "text";
 
-        if (body !== null && body !== rawBodyContent) {
+        if (body !== null) {
             rawBodyContent = body;
-        } else if (body === null) {
+        } else if (!_keepBodyOnNull) {
             rawBodyContent = "";
         }
+        _keepBodyOnNull = false;
         bodyMode = mode;
         bodyType = type;
-	    }
-    );
+    });
 
     function beautifyJson(): string {
         try {
@@ -104,14 +106,9 @@
     ];
 
     // Core defaults loaded from backend (Accept, User-Agent, etc.)
-    let defaultHeaders = $state<[string, string][]>([]);
     let showAutoHeaders = $state(false);
 
-    invoke<[string, string][]>("get_default_headers").then((headers) => {
-        defaultHeaders = headers;
-    });
-
-    // --- row types ---
+    // row types
     export type ParamRow = { key: string; value: string; enabled: boolean };
     export type HeaderRow = {
         key: string;
@@ -135,11 +132,11 @@
         return obj;
     }
 
-    // --- editable lists (mutated in-place, never replaced) ---
+    // editable lists (mutated in-place, never replaced)
     let headerRows = $state<HeaderRow[]>([]);
     let paramRows = $state<ParamRow[]>([]);
 
-    // --- reinit from request prop (history load / new request) ---
+    // reinit from request prop (history load / new request)
     let _prevQp: Record<string, string> = {};
     let _prevDefaultHeaders: [string, string][] = [];
     let _prevRequestHeaders: Record<string, string> = {};
@@ -227,7 +224,7 @@
         ensureTempRow();
     });
 
-    // --- build query string from URL ---
+    // build query string from URL
     function buildUrlWithParams(baseUrl: string, rows: ParamRow[]): string {
         try {
             const u = new URL(baseUrl);
@@ -251,7 +248,7 @@
         }
     }
 
-    // --- ensure a temp row exists at the end (mutates in-place) ---
+    // ensure a temp row exists at the end (mutates in-place)
     function ensureTempRow() {
         const last = paramRows[paramRows.length - 1];
         if (
@@ -315,7 +312,7 @@
         }
     }
 
-    // --- ordered URL param helpers ---
+    // ordered URL param helpers
     function parseUrlParamsOrdered(url: string): UrlParam[] {
         try {
             return [...new URL(url).searchParams].map(([k, v]) => ({
@@ -376,7 +373,7 @@
         return out;
     }
 
-    // --- surgical table -> URL sync ---
+    // surgical table -> URL sync
     function syncUrlFromParams(oldRows: ParamRow[]) {
         const newRows = paramRows;
         const oldEP = enabledFromRows(oldRows);
@@ -467,7 +464,7 @@
         onSend(req);
     }
 
-    // --- auto-sync: URL -> params table (called from URL input oninput) ---
+    // auto-sync: URL -> params table (called from URL input oninput)
     function syncTableFromUrl(url: string) {
         const urlP = parseUrlParamsOrdered(url);
 
@@ -618,6 +615,7 @@
                     {rawBodyContent}
                     onBodyModeChange={(mode) => {
                         bodyMode = mode;
+                        if (mode === "none") _keepBodyOnNull = true;
                         emitUpdate({
                             body: mode === "none" ? null : rawBodyContent,
                         });

@@ -29,6 +29,12 @@ export interface ResponseSize {
   response_headers: number;
 }
 
+export interface AppConstants {
+  version: string;
+  platform: string;
+  default_headers: [string, string][];
+}
+
 export interface HttpResponse {
   status: number;
   headers: Record<string, string>;
