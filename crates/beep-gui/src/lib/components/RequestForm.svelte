@@ -24,31 +24,24 @@
     type Tab = "params" | "headers" | "auth" | "body";
     let activeTab = $state<Tab>("params");
 
-    export type BodyMode = "none" | "raw";
+    export type BodyMode = "none" | "raw" | "form-urlencoded" | "form-multipart";
     export type BodyType = "text" | "json" | "html" | "xml";
     let bodyMode = $state<BodyMode>("none");
     let bodyType = $state<BodyType>("text");
 
-    // Preserved raw content - survives switching between none/raw
+    // Raw body editing state (CodeEditor needs local $state for reactivity).
     let rawBodyContent = $state("");
-    // Tracks whether comes from a mode switch (keep content) or new request (clear content)
-    let _keepBodyOnNull = false;
 
-    // Sync rawBodyContent when request.body is loaded externally (e.g. history)
+    // Sync rawBodyContent from request on mount / history load.
+    let _rawSnap: string | null | undefined = $state(undefined);
     $effect(() => {
-        const body = request.body;
-        const mode =
-            (request.body_mode as BodyMode) || (body !== null ? "raw" : "none");
-        const type = (request.body_type as BodyType) || "text";
-
-        if (body !== null) {
-            rawBodyContent = body;
-        } else if (!_keepBodyOnNull) {
-            rawBodyContent = "";
-        }
-        _keepBodyOnNull = false;
-        bodyMode = mode;
-        bodyType = type;
+        const rb = request.raw_body;
+        if (rb === _rawSnap) return;
+        _rawSnap = rb;
+        rawBodyContent = rb ?? "";
+        bodyMode = (request.body_mode as BodyMode) ||
+            (request.raw_body ? "raw" : "none");
+        bodyType = (request.body_type as BodyType) || "text";
     });
 
     function beautifyJson(): string {
@@ -443,6 +436,7 @@
             headers: rowsToObj(headerRows.filter((r) => !r.auto)),
             body_mode: bodyMode,
             body_type: bodyType,
+            raw_body: bodyMode === "raw" ? rawBodyContent : request.raw_body,
             ...overrides,
         };
         // Only include query_params when NOT a URL-only change
@@ -460,6 +454,7 @@
             query_params: rowsToObj(paramRows),
             body_mode: bodyMode,
             body_type: bodyType,
+            raw_body: bodyMode === "raw" ? rawBodyContent : request.raw_body,
         };
         onSend(req);
     }
@@ -613,19 +608,25 @@
                     {bodyMode}
                     {bodyType}
                     {rawBodyContent}
+                    formUrlEncoded={request.form_urlencoded ?? []}
+                    formMultipart={request.form_multipart ?? []}
                     onBodyModeChange={(mode) => {
                         bodyMode = mode;
-                        if (mode === "none") _keepBodyOnNull = true;
-                        emitUpdate({
-                            body: mode === "none" ? null : rawBodyContent,
-                        });
+                        emitUpdate({ body_mode: mode });
                     }}
-                    onBodyTypeChange={(type) => (bodyType = type)}
+                    onBodyTypeChange={(type) => {
+                        bodyType = type;
+                        emitUpdate({ body_type: type });
+                    }}
                     onRawBodyChange={(v) => {
                         rawBodyContent = v;
-                        if (bodyMode === "raw") {
-                            emitUpdate({ body: v });
-                        }
+                        emitUpdate({ raw_body: v });
+                    }}
+                    onFormUrlEncodedChange={(fields) => {
+                        emitUpdate({ form_urlencoded: fields });
+                    }}
+                    onFormMultipartChange={(fields) => {
+                        emitUpdate({ form_multipart: fields });
                     }}
                     onBeautify={beautify}
                 />

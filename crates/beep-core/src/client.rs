@@ -53,7 +53,6 @@ impl HttpClient {
         let method = request.method;
         let headers = request.headers.clone();
         let auth = request.auth.clone();
-        let body = request.body.clone();
 
         let start = Instant::now();
 
@@ -93,24 +92,79 @@ impl HttpClient {
             Auth::None => {}
         }
 
-        let mut resp = if let Some(ref b) = body {
-            // with body request
-            req_builder = req_builder.header(
-                HeaderName::from_static("content-type"),
-                HeaderValue::from_static("application/json"),
-            );
-            let request = req_builder
-                .body(b.as_bytes())
-                .map_err(|e| format!("Build request failed: {}", e))?;
+        // Infer body_mode if not explicitly set (CLI may not set it).
+        // Priority: explicit > multipart > urlencoded > raw > none.
+        let body_mode = request.body_mode.as_deref().unwrap_or_else(|| {
+            if !request.form_multipart.is_empty() {
+                "form-multipart"
+            } else if !request.form_urlencoded.is_empty() {
+                "form-urlencoded"
+            } else if request.raw_body.is_some() || request.body.is_some() {
+                "raw"
+            } else {
+                "none"
+            }
+        });
 
-            self.agent.run(request)
-        } else {
-            // no body request
-            let request = req_builder
-                .body(())
-                .map_err(|e| format!("Build request failed: {}", e))?;
-
-            self.agent.run(request)
+        let mut resp = match body_mode {
+            "form-urlencoded" => {
+                let encoded = build_url_encoded_body(&request.form_urlencoded);
+                req_builder = req_builder.header(
+                    HeaderName::from_static("content-type"),
+                    HeaderValue::from_static(
+                        "application/x-www-form-urlencoded",
+                    ),
+                );
+                let req = req_builder
+                    .body(encoded.as_bytes())
+                    .map_err(|e| format!("Build request failed: {}", e))?;
+                self.agent.run(req)
+            }
+            "form-multipart" => {
+                let (mp_req, mp_body) = build_multipart_body(&request.form_multipart)
+                    .map_err(|e| format!("Multipart build failed: {}", e))?;
+                // Copy Content-Type from multipart request
+                if let Some(ct) = mp_req.headers().get("content-type") {
+                    if let Ok(v) = ct.to_str() {
+                        req_builder = req_builder.header(
+                            HeaderName::from_static("content-type"),
+                            HeaderValue::from_str(v).unwrap(),
+                        );
+                    }
+                }
+                let req = req_builder
+                    .body(mp_body.as_slice())
+                    .map_err(|e| format!("Build request failed: {}", e))?;
+                self.agent.run(req)
+            }
+            _ => {
+                let raw = request.raw_body.as_ref().or(request.body.as_ref());
+                if let Some(ref b) = raw {
+                    // with raw body
+                    let body_type =
+                        request.body_type.as_deref().unwrap_or("text");
+                    let content_type = match body_type {
+                        "json" => "application/json",
+                        "html" => "text/html",
+                        "xml" => "application/xml",
+                        _ => "text/plain",
+                    };
+                    req_builder = req_builder.header(
+                        HeaderName::from_static("content-type"),
+                        HeaderValue::from_str(content_type).unwrap(),
+                    );
+                    let req = req_builder
+                        .body(b.as_bytes())
+                        .map_err(|e| format!("Build request failed: {}", e))?;
+                    self.agent.run(req)
+                } else {
+                    // no body request
+                    let req = req_builder
+                        .body(())
+                        .map_err(|e| format!("Build request failed: {}", e))?;
+                    self.agent.run(req)
+                }
+            }
         }
         .map_err(|e| format!("Request failed: {}", e))?;
 
@@ -181,10 +235,6 @@ impl Default for HttpClient {
         Self::new()
     }
 }
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 /// Decompress response body based on Content-Encoding header value.
 /// Supports gzip, deflate, brotli, and identity (no compression).
@@ -260,6 +310,53 @@ fn urlencode(s: &str) -> String {
         }
     }
     result
+}
+
+/// Build application/x-www-form-urlencoded body from form fields.
+fn build_url_encoded_body(form_data: &[crate::models::FormField]) -> String {
+    form_data
+        .iter()
+        .filter(|f| f.enabled && !f.key.is_empty())
+        .map(|f| format!("{}={}", urlencode(&f.key), urlencode(&f.value)))
+        .collect::<Vec<_>>()
+        .join("&")
+}
+
+/// Build multipart/form-data body from form fields.
+/// Returns (request_with_headers, body_bytes).
+fn build_multipart_body(
+    form_data: &[crate::models::FormField],
+) -> Result<(http::Request<()>, Vec<u8>), String> {
+    let boundary = format!("----BeepFormBoundary{:x}", std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos());
+
+    let mut body = Vec::new();
+
+    for field in form_data.iter().filter(|f| f.enabled && !f.key.is_empty()) {
+        body.extend_from_slice(b"--");
+        body.extend_from_slice(boundary.as_bytes());
+        body.extend_from_slice(b"\r\n");
+        body.extend_from_slice(b"Content-Disposition: form-data; name=\"");
+        body.extend_from_slice(field.key.as_bytes());
+        body.extend_from_slice(b"\"\r\n");
+        body.extend_from_slice(b"\r\n");
+        body.extend_from_slice(field.value.as_bytes());
+        body.extend_from_slice(b"\r\n");
+    }
+
+    body.extend_from_slice(b"--");
+    body.extend_from_slice(boundary.as_bytes());
+    body.extend_from_slice(b"--\r\n");
+
+    let content_type = format!("multipart/form-data; boundary={}", boundary);
+    let req = http::Request::builder()
+        .header("content-type", content_type)
+        .body(())
+        .map_err(|e| format!("Build multipart request failed: {}", e))?;
+
+    Ok((req, body))
 }
 
 fn base64_encode(data: &[u8]) -> String {

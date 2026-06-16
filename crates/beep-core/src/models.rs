@@ -79,6 +79,26 @@ impl Default for Auth {
     }
 }
 
+/// A single form data field (key-value pair).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FormField {
+    pub key: String,
+    pub value: String,
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+    /// "text" or "file" (multipart only; urlencoded ignores).
+    #[serde(default = "default_field_type")]
+    pub field_type: String,
+}
+
+fn default_enabled() -> bool {
+    true
+}
+
+fn default_field_type() -> String {
+    "text".to_string()
+}
+
 /// HTTP Request structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HttpRequest {
@@ -95,9 +115,18 @@ pub struct HttpRequest {
 
     // GUI helper
     #[serde(default)]
-    pub body_mode: Option<String>, // raw, form, json, none
+    pub body_mode: Option<String>, // none, raw, form-urlencoded, form-multipart
     #[serde(default)]
-    pub body_type: Option<String>, // text, json, html
+    pub body_type: Option<String>, // text, json, html, xml
+    /// Draft: raw body content (preserved when switching to form modes)
+    #[serde(default)]
+    pub raw_body: Option<String>,
+    /// Draft: URL-encoded form fields
+    #[serde(default)]
+    pub form_urlencoded: Vec<FormField>,
+    /// Draft: multipart form fields
+    #[serde(default)]
+    pub form_multipart: Vec<FormField>,
 }
 
 impl HttpRequest {
@@ -111,6 +140,9 @@ impl HttpRequest {
             auth: Auth::None,
             body_mode: None,
             body_type: None,
+            raw_body: None,
+            form_urlencoded: Vec::new(),
+            form_multipart: Vec::new(),
         }
     }
 
