@@ -28,7 +28,6 @@ export interface HttpRequest {
   body: string | null;
   auth: Auth;
   body_mode?: string;
-  body_type?: string;
   raw_body?: string | null;
   form_urlencoded?: FormField[];
   form_multipart?: FormField[];
@@ -70,7 +69,6 @@ export function defaultRequest(): HttpRequest {
     body: null,
     auth: { type: "None" },
     body_mode: "none",
-    body_type: "text",
     raw_body: null,
     form_urlencoded: [],
     form_multipart: [],

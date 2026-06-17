@@ -1,5 +1,6 @@
 <script lang="ts">
     import type { FormField } from "$lib/types";
+    import DeleteRowButton from "$lib/components/buttons/DeleteRowButton.svelte";
 
     interface Props {
         initialValue: FormField[];
@@ -99,8 +100,7 @@
                 </td>
                 <td>
                     {#if !isLast}
-                        <button class="btn btn-ghost btn-xs text-error opacity-0 group-hover:opacity-100"
-                            onclick={() => removeRow(i)}>✕</button>
+                        <DeleteRowButton onclick={() => removeRow(i)} />
                     {/if}
                 </td>
             </tr>

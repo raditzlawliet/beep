@@ -1,5 +1,7 @@
 <script lang="ts">
     import type { FormField } from "$lib/types";
+    import { ChevronDownIcon, CheckIcon } from "@lucide/svelte";
+    import DeleteRowButton from "$lib/components/buttons/DeleteRowButton.svelte";
 
     interface Props {
         initialValue: FormField[];
@@ -85,7 +87,6 @@
             <th class="w-0"><input type="checkbox" class="checkbox checkbox-xs invisible" /></th>
             <th class="w-auto text-xs">Key</th>
             <th class="w-auto text-xs">Value</th>
-            <th class="w-12 text-xs">Type</th>
             <th class="w-0"></th>
         </tr>
     </thead>
@@ -98,10 +99,30 @@
                         checked={row.enabled} disabled={isLast} hidden={isLast}
                         onchange={() => toggleRow(i)} />
                 </td>
-                <td>
-                    <input class="input input-ghost input-xs w-full font-mono p-0"
+                <td class="flex items-center gap-1">
+                    <input class="input input-ghost input-xs flex-1 font-mono p-0"
                         placeholder="Key" value={row.key}
                         oninput={(e) => updateRow(i, "key", (e.target as HTMLInputElement).value)} />
+                    <div class="dropdown">
+                        <button class="btn btn-ghost btn-xs font-normal gap-1 shrink-0" role="menu" tabindex="0">
+                            {row.fieldType === "file" ? "File" : "Text"}
+                            <ChevronDownIcon class="w-2.5 h-2.5" />
+                        </button>
+                        <ul class="dropdown-content menu menu-sm bg-base-200 rounded-box z-1 shadow-sm border border-base-content/10 w-20 p-1 gap-0.5 fixed" tabindex="-1">
+                            <li>
+                                <button onclick={() => { setFieldType(i, "text"); (document.activeElement as HTMLElement)?.blur(); }}>
+                                    Text
+                                    <CheckIcon class="w-3 h-3 ml-auto {row.fieldType === "text" ? '' : 'invisible'}" />
+                                </button>
+                            </li>
+                            <li>
+                                <button onclick={() => { setFieldType(i, "file"); (document.activeElement as HTMLElement)?.blur(); }}>
+                                    File
+                                    <CheckIcon class="w-3 h-3 ml-auto {row.fieldType === "file" ? '' : 'invisible'}" />
+                                </button>
+                            </li>
+                        </ul>
+                    </div>
                 </td>
                 <td>
                     {#if row.fieldType === "text"}
@@ -113,17 +134,8 @@
                     {/if}
                 </td>
                 <td>
-                    <select class="select select-ghost select-xs font-normal"
-                        value={row.fieldType}
-                        onchange={(e) => setFieldType(i, (e.target as HTMLSelectElement).value as "text" | "file")}>
-                        <option value="text">Text</option>
-                        <option value="file">File</option>
-                    </select>
-                </td>
-                <td>
                     {#if !isLast}
-                        <button class="btn btn-ghost btn-xs text-error opacity-0 group-hover:opacity-100"
-                            onclick={() => removeRow(i)}>✕</button>
+                        <DeleteRowButton onclick={() => removeRow(i)} />
                     {/if}
                 </td>
             </tr>

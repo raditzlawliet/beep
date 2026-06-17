@@ -93,14 +93,14 @@ impl HttpClient {
         }
 
         // Infer body_mode if not explicitly set (CLI may not set it).
-        // Priority: explicit > multipart > urlencoded > raw > none.
+        // body_mode encodes both mode and type: "raw/json", "form-urlencoded", etc.
         let body_mode = request.body_mode.as_deref().unwrap_or_else(|| {
             if !request.form_multipart.is_empty() {
                 "form-multipart"
             } else if !request.form_urlencoded.is_empty() {
                 "form-urlencoded"
             } else if request.raw_body.is_some() || request.body.is_some() {
-                "raw"
+                "raw/text"
             } else {
                 "none"
             }
@@ -111,9 +111,7 @@ impl HttpClient {
                 let encoded = build_url_encoded_body(&request.form_urlencoded);
                 req_builder = req_builder.header(
                     HeaderName::from_static("content-type"),
-                    HeaderValue::from_static(
-                        "application/x-www-form-urlencoded",
-                    ),
+                    HeaderValue::from_static("application/x-www-form-urlencoded"),
                 );
                 let req = req_builder
                     .body(encoded.as_bytes())
@@ -123,7 +121,6 @@ impl HttpClient {
             "form-multipart" => {
                 let (mp_req, mp_body) = build_multipart_body(&request.form_multipart)
                     .map_err(|e| format!("Multipart build failed: {}", e))?;
-                // Copy Content-Type from multipart request
                 if let Some(ct) = mp_req.headers().get("content-type") {
                     if let Ok(v) = ct.to_str() {
                         req_builder = req_builder.header(
@@ -138,27 +135,27 @@ impl HttpClient {
                 self.agent.run(req)
             }
             _ => {
+                let content_type: Option<&str> = match body_mode {
+                    "raw/json" => Some("application/json"),
+                    "raw/xml" => Some("application/xml"),
+                    "raw/html" => Some("text/html"),
+                    "raw/text" => Some("text/plain"),
+                    _ => None,
+                };
+
                 let raw = request.raw_body.as_ref().or(request.body.as_ref());
                 if let Some(ref b) = raw {
-                    // with raw body
-                    let body_type =
-                        request.body_type.as_deref().unwrap_or("text");
-                    let content_type = match body_type {
-                        "json" => "application/json",
-                        "html" => "text/html",
-                        "xml" => "application/xml",
-                        _ => "text/plain",
-                    };
-                    req_builder = req_builder.header(
-                        HeaderName::from_static("content-type"),
-                        HeaderValue::from_str(content_type).unwrap(),
-                    );
+                    if let Some(ct) = content_type {
+                        req_builder = req_builder.header(
+                            HeaderName::from_static("content-type"),
+                            HeaderValue::from_str(ct).unwrap(),
+                        );
+                    }
                     let req = req_builder
                         .body(b.as_bytes())
                         .map_err(|e| format!("Build request failed: {}", e))?;
                     self.agent.run(req)
                 } else {
-                    // no body request
                     let req = req_builder
                         .body(())
                         .map_err(|e| format!("Build request failed: {}", e))?;
@@ -327,10 +324,13 @@ fn build_url_encoded_body(form_data: &[crate::models::FormField]) -> String {
 fn build_multipart_body(
     form_data: &[crate::models::FormField],
 ) -> Result<(http::Request<()>, Vec<u8>), String> {
-    let boundary = format!("----BeepFormBoundary{:x}", std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos());
+    let boundary = format!(
+        "----BeepFormBoundary{:x}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    );
 
     let mut body = Vec::new();
 

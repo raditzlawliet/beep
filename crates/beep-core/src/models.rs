@@ -115,9 +115,7 @@ pub struct HttpRequest {
 
     // GUI helper
     #[serde(default)]
-    pub body_mode: Option<String>, // none, raw, form-urlencoded, form-multipart
-    #[serde(default)]
-    pub body_type: Option<String>, // text, json, html, xml
+    pub body_mode: Option<String>, // none, raw/json, raw/xml, raw/html, raw/text, form-urlencoded, form-multipart
     /// Draft: raw body content (preserved when switching to form modes)
     #[serde(default)]
     pub raw_body: Option<String>,
@@ -139,7 +137,6 @@ impl HttpRequest {
             body: None,
             auth: Auth::None,
             body_mode: None,
-            body_type: None,
             raw_body: None,
             form_urlencoded: Vec::new(),
             form_multipart: Vec::new(),
