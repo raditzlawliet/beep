@@ -30,22 +30,38 @@
         return row.auto && row.key.trim() !== "" && overriddenKeys.has(row.key.trim().toLowerCase());
     }
 
+    function normalizeHeaderKey(key: string) {
+        return key.trim().toLowerCase();
+    }
+
     function initFromProps() {
-        const key = JSON.stringify(initialValue);
+        const key = JSON.stringify({ initialValue, defaultHeaders });
         if (key === _lastInit) return;
         _lastInit = key;
 
         rows = [];
 
+        const defaultsByKey = new Map(
+            defaultHeaders.map(([key, value]) => [normalizeHeaderKey(key), { key, value }]),
+        );
+
         // All headers from initialValue (preserves enabled/auto from history).
-        const allKeys = new Set(initialValue.map((h) => h.key.toLowerCase()));
+        const allKeys = new Set(initialValue.map((h) => normalizeHeaderKey(h.key)));
         for (const h of initialValue) {
-            rows.push({ key: h.key, value: h.value, enabled: h.enabled, auto: h.auto });
+            // rows.push({ key: h.key, value: h.value, enabled: h.enabled, auto: h.auto });
+            const defaultHeader = h.auto ? defaultsByKey.get(normalizeHeaderKey(h.key)) : undefined;
+            if (h.auto && !defaultHeader) continue;
+            rows.push({
+                key: defaultHeader?.key ?? h.key,
+                value: defaultHeader?.value ?? h.value,
+                enabled: h.enabled,
+                auto: h.auto,
+            });
         }
 
         // Auto-generated headers; skip if already present in initialValue.
         for (const [k, v] of defaultHeaders) {
-            if (!allKeys.has(k.toLowerCase())) {
+            if (!allKeys.has(normalizeHeaderKey(k))) {
                 rows.push({ key: k, value: v, enabled: true, auto: true });
             }
         }
@@ -64,7 +80,7 @@
             enabled: r.enabled,
             auto: r.auto,
         }));
-        _lastInit = JSON.stringify(out);
+        _lastInit = JSON.stringify({ initialValue: out, defaultHeaders });
         onchange(out);
     }
 
