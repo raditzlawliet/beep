@@ -1,84 +1,88 @@
 <script lang="ts">
     import { EyeIcon, EyeOffIcon } from "@lucide/svelte";
+    import type { HeaderField } from "$lib/types";
     import DeleteRowButton from "$lib/components/buttons/DeleteRowButton.svelte";
+    import AddRowButton from "$lib/components/buttons/AddRowButton.svelte";
 
     interface Props {
-        initialValue: Record<string, string>;
+        initialValue: HeaderField[];
         defaultHeaders: [string, string][];
-        onchange: (headers: Record<string, string>) => void;
+        onchange: (headers: HeaderField[]) => void;
     }
 
-    let { initialValue = {}, defaultHeaders = [], onchange }: Props = $props();
+    let { initialValue = [], defaultHeaders = [], onchange }: Props = $props();
 
     type Row = { key: string; value: string; enabled: boolean; auto: boolean };
     let rows = $state<Row[]>([]);
     let showAutoHeaders = $state(false);
 
     let _lastInit = $state("");
-    let _prevDefaultHeaders: [string, string][] = [];
 
-    // Init from props
+    const overriddenKeys = $derived(
+        new Set(
+            rows
+                .filter((r) => !r.auto && r.key.trim())
+                .map((r) => r.key.trim().toLowerCase()),
+        ),
+    );
+
+    function isOverridden(row: Row): boolean {
+        return row.auto && row.key.trim() !== "" && overriddenKeys.has(row.key.trim().toLowerCase());
+    }
+
     function initFromProps() {
-        const dhChanged = _prevDefaultHeaders.length !== defaultHeaders.length ||
-            _prevDefaultHeaders.some(([k, v], i) => defaultHeaders[i]?.[0] !== k || defaultHeaders[i]?.[1] !== v);
-        const rhKey = JSON.stringify(initialValue);
-        const rhChanged = rhKey !== _lastInit;
-
-        if (!dhChanged && !rhChanged) return;
-
-        _lastInit = rhKey;
-        _prevDefaultHeaders = [...defaultHeaders];
+        const key = JSON.stringify(initialValue);
+        if (key === _lastInit) return;
+        _lastInit = key;
 
         rows = [];
 
-        // Default headers first (auto-generated)
-        const existingKeys = new Set(Object.keys(initialValue).map((k) => k.toLowerCase()));
-        for (const [key, value] of defaultHeaders) {
-            if (!existingKeys.has(key.toLowerCase())) {
-                rows.push({ key, value, enabled: true, auto: true });
-            }
+        // All headers from initialValue (preserves enabled/auto from history).
+        const allKeys = new Set(initialValue.map((h) => h.key.toLowerCase()));
+        for (const h of initialValue) {
+            rows.push({ key: h.key, value: h.value, enabled: h.enabled, auto: h.auto });
         }
 
-        // User-defined headers
-        for (const [key, value] of Object.entries(initialValue)) {
-            rows.push({ key, value, enabled: true, auto: false });
+        // Auto-generated headers; skip if already present in initialValue.
+        for (const [k, v] of defaultHeaders) {
+            if (!allKeys.has(k.toLowerCase())) {
+                rows.push({ key: k, value: v, enabled: true, auto: true });
+            }
         }
-        ensureTempRow();
+        emit();
     }
 
     $effect(() => {
         void JSON.stringify(initialValue);
-        void defaultHeaders;
         initFromProps();
     });
 
-    // Row management
-    function ensureTempRow() {
-        const last = rows[rows.length - 1];
-        if (rows.length === 0 || (last && (last.key.trim() || last.value.trim()))) {
-            rows.push({ key: "", value: "", enabled: true, auto: false });
-        }
-    }
-
     function emit() {
-        const obj: Record<string, string> = {};
-        for (const r of rows) {
-            if (r.enabled && r.key.trim() && !r.auto) obj[r.key.trim()] = r.value;
-        }
-        _lastInit = JSON.stringify(obj);
-        onchange(obj);
+        const out: HeaderField[] = rows.map((r) => ({
+            key: r.key.trim(),
+            value: r.value,
+            enabled: r.enabled,
+            auto: r.auto,
+        }));
+        _lastInit = JSON.stringify(out);
+        onchange(out);
     }
 
     function updateRow(idx: number, field: "key" | "value", val: string) {
         const r = rows[idx];
+        if (r.auto) return;
         rows[idx] = { ...r, [field]: val };
-        ensureTempRow();
         emit();
     }
 
     function removeRow(idx: number) {
+        if (rows[idx].auto) return;
         rows.splice(idx, 1);
-        ensureTempRow();
+        emit();
+    }
+
+    function addRow() {
+        rows = [...rows, { key: "", value: "", enabled: true, auto: false }];
         emit();
     }
 
@@ -120,31 +124,50 @@
     <tbody>
         {#each rows as row, i}
             {@const isAuto = row.auto}
-            {@const isLast = i === rows.length - 1 && !row.key.trim() && !row.value.trim()}
+            {@const overridden = isOverridden(row)}
             <tr class="group hover:bg-base-300 divide-x divide-base-content/10"
                 class:opacity-50={isAuto}
+                class:line-through={overridden}
                 hidden={!showAutoHeaders && isAuto}>
                 <td>
                     <input type="checkbox" class="checkbox checkbox-xs"
-                        checked={row.enabled} disabled={isLast} hidden={isLast}
+                        checked={row.enabled}
                         onchange={() => toggleRow(i)} />
                 </td>
                 <td>
-                    <input class="input input-ghost input-xs w-full font-mono p-0"
-                        placeholder="Key" value={row.key}
-                        oninput={(e) => updateRow(i, "key", (e.target as HTMLInputElement).value)} />
+                    <input
+                        class="input input-ghost input-xs w-full font-mono p-0"
+                        class:tooltip={overridden}
+                        data-tip={overridden ? "This header is overridden by your custom header" : undefined}
+                        placeholder="Key"
+                        value={row.key}
+                        disabled={isAuto}
+                        oninput={(e) => updateRow(i, "key", (e.target as HTMLInputElement).value)}
+                    />
                 </td>
                 <td>
-                    <input class="input input-ghost input-xs w-full font-mono p-0"
-                        placeholder="Value" value={row.value}
-                        oninput={(e) => updateRow(i, "value", (e.target as HTMLInputElement).value)} />
+                    <input
+                        class="input input-ghost input-xs w-full font-mono p-0"
+                        class:tooltip={overridden}
+                        data-tip={overridden ? "This header is overridden by your custom header" : undefined}
+                        placeholder="Value"
+                        value={row.value}
+                        disabled={isAuto}
+                        oninput={(e) => updateRow(i, "value", (e.target as HTMLInputElement).value)}
+                    />
                 </td>
                 <td class="">
-                    {#if !isLast}
+                    {#if !isAuto}
                         <DeleteRowButton onclick={() => removeRow(i)} />
                     {/if}
                 </td>
             </tr>
         {/each}
+        <tr>
+            <td></td>
+            <td class="p-0">
+                <AddRowButton onclick={addRow} text="Add header" />
+            </td>
+        </tr>
     </tbody>
 </table>

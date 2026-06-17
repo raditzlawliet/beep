@@ -1,22 +1,22 @@
 <script lang="ts">
+    import type { QueryField } from "$lib/types";
     import DeleteRowButton from "$lib/components/buttons/DeleteRowButton.svelte";
+    import AddRowButton from "$lib/components/buttons/AddRowButton.svelte";
 
     interface Props {
-        initialValue: Record<string, string>;
+        initialValue: QueryField[];
         url: string;
-        onchange: (params: Record<string, string>, url: string) => void;
+        onchange: (params: QueryField[], url: string) => void;
     }
 
-    let { initialValue = {}, url = "", onchange }: Props = $props();
+    let { initialValue = [], url = "", onchange }: Props = $props();
 
     type Row = { key: string; value: string; enabled: boolean };
     let rows = $state<Row[]>([]);
 
-    // Track last synced state to avoid loops.
     let _lastQp = $state("");
     let _lastUrl = $state("");
 
-    // Init from props
     function initFromProps() {
         const qpKey = JSON.stringify(initialValue);
         const urlChanged = url !== _lastUrl;
@@ -26,12 +26,11 @@
 
         if (qpChanged) {
             _lastQp = qpKey;
-            rows = Object.entries(initialValue).map(([k, v]) => ({
-                key: k,
-                value: v,
-                enabled: true,
+            rows = initialValue.map((q) => ({
+                key: q.key,
+                value: q.value,
+                enabled: q.enabled,
             }));
-            ensureTempRow();
         }
 
         if (urlChanged) {
@@ -46,36 +45,32 @@
         initFromProps();
     });
 
-    // Row management
-    function ensureTempRow() {
-        const last = rows[rows.length - 1];
-        if (rows.length === 0 || (last && (last.key.trim() || last.value.trim()))) {
-            rows.push({ key: "", value: "", enabled: true });
-        }
-    }
-
     function emit() {
-        const obj: Record<string, string> = {};
-        for (const r of rows) {
-            if (r.enabled && r.key.trim()) obj[r.key.trim()] = r.value;
-        }
-        _lastQp = JSON.stringify(obj);
-        onchange(obj, url);
+        const out: QueryField[] = rows.map((r) => ({
+            key: r.key.trim(),
+            value: r.value,
+            enabled: r.enabled,
+        }));
+        _lastQp = JSON.stringify(out);
+        onchange(out, _lastUrl || url);
     }
 
     function updateRow(idx: number, field: "key" | "value", val: string) {
         const oldRows = rows.map((r) => ({ ...r }));
         const r = rows[idx];
         rows[idx] = { ...r, [field]: val };
-        ensureTempRow();
         syncUrlFromParams(oldRows);
     }
 
     function removeRow(idx: number) {
         const oldRows = rows.map((r) => ({ ...r }));
         rows.splice(idx, 1);
-        ensureTempRow();
         syncUrlFromParams(oldRows);
+    }
+
+    function addRow() {
+        rows = [...rows, { key: "", value: "", enabled: true }];
+        emit();
     }
 
     function toggleRow(idx: number) {
@@ -173,7 +168,7 @@
             const newUrl = buildUrlFromOrdered(url, newParams);
             if (newUrl !== url) {
                 _lastUrl = newUrl;
-                emit(); onchange({}, newUrl);
+                emit();
             }
             return;
         }
@@ -191,7 +186,7 @@
                 const newUrl = buildUrlFromOrdered(url, newParams);
                 if (newUrl !== url) {
                     _lastUrl = newUrl;
-                    emit(); onchange({}, newUrl);
+                    emit();
                 }
             }
             return;
@@ -202,7 +197,7 @@
         const newUrl = buildUrlWithParams(url, realRows);
         if (newUrl !== url) {
             _lastUrl = newUrl;
-            emit(); onchange({}, newUrl);
+            emit();
         }
     }
 
@@ -223,7 +218,6 @@
             }
         }
         rows = newRows;
-        ensureTempRow();
     }
 </script>
 
@@ -238,11 +232,10 @@
     </thead>
     <tbody>
         {#each rows as row, i}
-            {@const isLast = i === rows.length - 1 && !row.key.trim() && !row.value.trim()}
             <tr class="group hover:bg-base-300 divide-x divide-base-content/10">
                 <td>
                     <input type="checkbox" class="checkbox checkbox-xs"
-                        checked={row.enabled} disabled={isLast} hidden={isLast}
+                        checked={row.enabled}
                         onchange={() => toggleRow(i)} />
                 </td>
                 <td>
@@ -256,11 +249,15 @@
                         oninput={(e) => updateRow(i, "value", (e.target as HTMLInputElement).value)} />
                 </td>
                 <td class="">
-                    {#if !isLast}
-                        <DeleteRowButton onclick={() => removeRow(i)} />
-                    {/if}
+                    <DeleteRowButton onclick={() => removeRow(i)} />
                 </td>
             </tr>
         {/each}
+        <tr>
+            <td></td>
+            <td class="p-0">
+                <AddRowButton onclick={addRow} text="Add param" />
+            </td>
+        </tr>
     </tbody>
 </table>

@@ -89,6 +89,29 @@ pub struct FormField {
     /// "text" or "file" (multipart only; urlencoded ignores).
     #[serde(default = "default_field_type")]
     pub field_type: String,
+    /// MIME type for file uploads. Empty = auto-detect.
+    #[serde(default)]
+    pub content_type: String,
+}
+
+/// A single header field with auto-generate flag.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HeaderField {
+    pub key: String,
+    pub value: String,
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub auto: bool,
+}
+
+/// A single query parameter field.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QueryField {
+    pub key: String,
+    pub value: String,
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
 }
 
 fn default_enabled() -> bool {
@@ -105,9 +128,9 @@ pub struct HttpRequest {
     pub url: String,
     pub method: HttpMethod,
     #[serde(default)]
-    pub headers: HashMap<String, String>,
+    pub headers: Vec<HeaderField>,
     #[serde(default)]
-    pub query_params: HashMap<String, String>,
+    pub query_params: Vec<QueryField>,
     #[serde(default)]
     pub body: Option<String>,
     #[serde(default)]
@@ -132,8 +155,8 @@ impl HttpRequest {
         Self {
             url,
             method,
-            headers: HashMap::new(),
-            query_params: HashMap::new(),
+            headers: Vec::new(),
+            query_params: Vec::new(),
             body: None,
             auth: Auth::None,
             body_mode: None,
@@ -144,7 +167,12 @@ impl HttpRequest {
     }
 
     pub fn with_header(mut self, key: String, value: String) -> Self {
-        self.headers.insert(key, value);
+        self.headers.push(HeaderField {
+            key,
+            value,
+            enabled: true,
+            auto: false,
+        });
         self
     }
 
@@ -154,7 +182,11 @@ impl HttpRequest {
     }
 
     pub fn with_query(mut self, key: String, value: String) -> Self {
-        self.query_params.insert(key, value);
+        self.query_params.push(QueryField {
+            key,
+            value,
+            enabled: true,
+        });
         self
     }
 
@@ -214,7 +246,9 @@ mod tests {
 
         assert_eq!(req.url, "https://api.example.com");
         assert_eq!(req.method, HttpMethod::Get);
-        assert_eq!(req.headers.get("User-Agent"), Some(&"Beep".to_string()));
-        assert_eq!(req.query_params.get("key"), Some(&"value".to_string()));
+        assert_eq!(req.headers[0].key, "User-Agent");
+        assert_eq!(req.headers[0].value, "Beep");
+        assert_eq!(req.query_params[0].key, "key");
+        assert_eq!(req.query_params[0].value, "value");
     }
 }

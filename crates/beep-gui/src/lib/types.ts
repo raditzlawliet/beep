@@ -18,13 +18,27 @@ export interface FormField {
   value: string;
   enabled: boolean;
   field_type: string;
+  content_type: string;
+}
+
+export interface HeaderField {
+  key: string;
+  value: string;
+  enabled: boolean;
+  auto: boolean;
+}
+
+export interface QueryField {
+  key: string;
+  value: string;
+  enabled: boolean;
 }
 
 export interface HttpRequest {
   url: string;
   method: HttpMethod;
-  headers: Record<string, string>;
-  query_params: Record<string, string>;
+  headers: HeaderField[];
+  query_params: QueryField[];
   body: string | null;
   auth: Auth;
   body_mode?: string;
@@ -64,8 +78,8 @@ export function defaultRequest(): HttpRequest {
   return {
     url: "",
     method: "GET",
-    headers: {},
-    query_params: {},
+    headers: [],
+    query_params: [],
     body: null,
     auth: { type: "None" },
     body_mode: "none",

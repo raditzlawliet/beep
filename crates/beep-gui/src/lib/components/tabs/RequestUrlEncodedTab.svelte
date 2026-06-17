@@ -1,6 +1,7 @@
 <script lang="ts">
     import type { FormField } from "$lib/types";
     import DeleteRowButton from "$lib/components/buttons/DeleteRowButton.svelte";
+    import AddRowButton from "$lib/components/buttons/AddRowButton.svelte";
 
     interface Props {
         initialValue: FormField[];
@@ -24,22 +25,12 @@
             value: f.value,
             enabled: f.enabled,
         }));
-        ensureTempRow();
-    }
-
-    function ensureTempRow() {
-        const last = rows[rows.length - 1];
-        if (rows.length === 0 || (last && (last.key.trim() || last.value.trim()))) {
-            rows.push({ key: "", value: "", enabled: true });
-        }
     }
 
     function emit() {
         const out: FormField[] = [];
         for (const r of rows) {
-            if (r.key.trim()) {
-                out.push({ key: r.key.trim(), value: r.value, enabled: r.enabled, field_type: "text" });
-            }
+            out.push({ key: r.key.trim(), value: r.value, enabled: r.enabled, field_type: "text", content_type: "" });
         }
         onchange(out);
     }
@@ -47,13 +38,16 @@
     function updateRow(idx: number, field: "key" | "value", val: string) {
         const r = rows[idx];
         rows[idx] = { ...r, [field]: val };
-        ensureTempRow();
         emit();
     }
 
     function removeRow(idx: number) {
         rows.splice(idx, 1);
-        ensureTempRow();
+        emit();
+    }
+
+    function addRow() {
+        rows = [...rows, { key: "", value: "", enabled: true }];
         emit();
     }
 
@@ -81,11 +75,10 @@
     </thead>
     <tbody>
         {#each rows as row, i}
-            {@const isLast = i === rows.length - 1 && !row.key.trim() && !row.value.trim()}
             <tr class="group hover:bg-base-300 divide-x divide-base-content/10">
                 <td>
                     <input type="checkbox" class="checkbox checkbox-xs"
-                        checked={row.enabled} disabled={isLast} hidden={isLast}
+                        checked={row.enabled}
                         onchange={() => toggleRow(i)} />
                 </td>
                 <td>
@@ -99,11 +92,15 @@
                         oninput={(e) => updateRow(i, "value", (e.target as HTMLInputElement).value)} />
                 </td>
                 <td>
-                    {#if !isLast}
-                        <DeleteRowButton onclick={() => removeRow(i)} />
-                    {/if}
+                    <DeleteRowButton onclick={() => removeRow(i)} />
                 </td>
             </tr>
         {/each}
+        <tr>
+            <td></td>
+            <td class="p-0">
+                <AddRowButton onclick={addRow} text="Add field" />
+            </td>
+        </tr>
     </tbody>
 </table>

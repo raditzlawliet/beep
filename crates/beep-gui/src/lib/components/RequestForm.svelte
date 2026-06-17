@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { HttpRequest, HttpMethod } from "$lib/types";
+    import type { HttpRequest, HttpMethod, HeaderField } from "$lib/types";
     import { methodTextColor } from "$lib/types";
     import { jsonrepair } from "jsonrepair";
     import { format } from "prettier/standalone";
@@ -101,8 +101,23 @@
     ];
 
     // Tab badge indicators - derived directly from request data.
-    const hasParams = $derived(Object.keys(request.query_params).length > 0);
-    const headerCount = $derived(Object.keys(request.headers).length);
+    const hasParams = $derived(request.query_params.filter((q) => q.enabled && q.key).length > 0);
+    const headerCount = $derived(request.headers.filter((h) => h.enabled && (!h.auto || h.key)).length);
+
+    // Merge auto-generated default headers into request so the tab badge
+    // shows the correct count even before the headers tab is opened.
+    $effect(() => {
+        const existing = new Set(request.headers.map((h) => h.key.toLowerCase()));
+        const merged: HeaderField[] = [...request.headers];
+        for (const [k, v] of defaultHeaders) {
+            if (!existing.has(k.toLowerCase())) {
+                merged.push({ key: k, value: v, enabled: true, auto: true });
+            }
+        }
+        if (merged.length !== request.headers.length) {
+            onUpdate({ ...request, headers: merged });
+        }
+    });
 
     function emitUpdate(overrides: Partial<HttpRequest>) {
         onUpdate({ ...request, ...overrides });

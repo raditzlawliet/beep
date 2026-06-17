@@ -12,6 +12,9 @@ pub const DEFAULT_ACCEPT: &str = "*/*";
 pub const DEFAULT_ACCEPT_ENCODING: &str = "";
 pub const DEFAULT_USER_AGENT: &str = concat!("beep/", env!("CARGO_PKG_VERSION"));
 
+/// Maximum file size for multipart uploads (100 MB).
+pub const MAX_FILE_SIZE: u64 = 100 * 1024 * 1024;
+
 /// Map of default headers (key -> value) set on every HttpClient agent.
 pub fn default_headers() -> Vec<(&'static str, &'static str)> {
     vec![
@@ -60,11 +63,14 @@ impl HttpClient {
 
         let mut req_builder = Request::builder().method(&http_method).uri(&url);
 
-        for (key, value) in &headers {
-            let name = HeaderName::from_bytes(key.as_bytes())
-                .map_err(|e| format!("Invalid header name '{}': {}", key, e))?;
-            let val = HeaderValue::from_str(value)
-                .map_err(|e| format!("Invalid header value '{}': {}", value, e))?;
+        for field in &headers {
+            if !field.enabled || field.key.is_empty() {
+                continue;
+            }
+            let name = HeaderName::from_bytes(field.key.as_bytes())
+                .map_err(|e| format!("Invalid header name '{}': {}", field.key, e))?;
+            let val = HeaderValue::from_str(&field.value)
+                .map_err(|e| format!("Invalid header value '{}': {}", field.value, e))?;
             req_builder = req_builder.header(name, val);
         }
 
@@ -209,7 +215,8 @@ impl HttpClient {
         let mut params: Vec<String> = request
             .query_params
             .iter()
-            .map(|(k, v)| format!("{}={}", urlencode(k), urlencode(v)))
+            .filter(|q| q.enabled && !q.key.is_empty())
+            .map(|q| format!("{}={}", urlencode(&q.key), urlencode(&q.value)))
             .collect();
 
         // Append API key as query param if add_to is "query"
@@ -335,14 +342,50 @@ fn build_multipart_body(
     let mut body = Vec::new();
 
     for field in form_data.iter().filter(|f| f.enabled && !f.key.is_empty()) {
+        let is_file = field.field_type == "file";
         body.extend_from_slice(b"--");
         body.extend_from_slice(boundary.as_bytes());
         body.extend_from_slice(b"\r\n");
         body.extend_from_slice(b"Content-Disposition: form-data; name=\"");
         body.extend_from_slice(field.key.as_bytes());
+        if is_file && !field.value.is_empty() {
+            let filename = std::path::Path::new(&field.value)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("file");
+            body.extend_from_slice(format!("; filename=\"{}\"", filename).as_bytes());
+        }
         body.extend_from_slice(b"\"\r\n");
-        body.extend_from_slice(b"\r\n");
-        body.extend_from_slice(field.value.as_bytes());
+
+        if is_file && !field.value.is_empty() {
+            let file_path = &field.value;
+            let metadata = std::fs::metadata(file_path)
+                .map_err(|e| format!("Cannot read file '{}': {}", file_path, e))?;
+            let file_size = metadata.len();
+            if file_size > MAX_FILE_SIZE {
+                return Err(format!(
+                    "File '{}' exceeds max size ({} MB)",
+                    file_path,
+                    MAX_FILE_SIZE / (1024 * 1024)
+                ));
+            }
+            let file_data = std::fs::read(file_path)
+                .map_err(|e| format!("Failed to read file '{}': {}", file_path, e))?;
+
+            let ct = if field.content_type.is_empty() {
+                "application/octet-stream"
+            } else {
+                &field.content_type
+            };
+            body.extend_from_slice(b"Content-Type: ");
+            body.extend_from_slice(ct.as_bytes());
+            body.extend_from_slice(b"\r\n");
+            body.extend_from_slice(b"\r\n");
+            body.extend_from_slice(&file_data);
+        } else {
+            body.extend_from_slice(b"\r\n");
+            body.extend_from_slice(field.value.as_bytes());
+        }
         body.extend_from_slice(b"\r\n");
     }
 
