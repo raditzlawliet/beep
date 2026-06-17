@@ -39,11 +39,11 @@
     let _rawSnap: string | null | undefined = $state(undefined);
     $effect(() => {
         const rb = request.raw_body;
+        bodyMode = (request.body_mode as BodyMode) ||
+            (request.raw_body ? "raw/text" : "none");
         if (rb === _rawSnap) return;
         _rawSnap = rb;
         rawBodyContent = rb ?? "";
-        bodyMode = (request.body_mode as BodyMode) ||
-            (request.raw_body ? "raw/text" : "none");
     });
 
     function beautifyJson(): string {
