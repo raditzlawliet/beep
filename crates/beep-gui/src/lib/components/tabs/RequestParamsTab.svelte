@@ -80,9 +80,12 @@
         syncUrlFromParams(oldRows);
     }
 
+    function safeDecode(s: string): string {
+        try { return decodeURIComponent(s); } catch { return s; }
+    }
+
     // URL <-> table sync
     type UrlParam = { key: string; value: string };
-
     function parseUrlParamsOrdered(u: string): UrlParam[] {
         try {
             return [...new URL(u).searchParams].map(([k, v]) => ({ key: k, value: v }));
@@ -94,9 +97,9 @@
             for (const part of qs.split("&")) {
                 const eq = part.indexOf("=");
                 if (eq >= 0) {
-                    out.push({ key: decodeURIComponent(part.slice(0, eq)), value: decodeURIComponent(part.slice(eq + 1)) });
+                    out.push({ key: safeDecode(part.slice(0, eq)), value: safeDecode(part.slice(eq + 1)) });
                 } else if (part.trim()) {
-                    out.push({ key: decodeURIComponent(part), value: "" });
+                    out.push({ key: safeDecode(part), value: "" });
                 }
             }
             return out;
