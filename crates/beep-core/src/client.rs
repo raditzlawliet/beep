@@ -347,13 +347,15 @@ fn build_multipart_body(
         body.extend_from_slice(boundary.as_bytes());
         body.extend_from_slice(b"\r\n");
         body.extend_from_slice(b"Content-Disposition: form-data; name=\"");
-        body.extend_from_slice(field.key.as_bytes());
+        body.extend_from_slice(escape_quoted_string(&field.key).as_bytes());
         if is_file && !field.value.is_empty() {
             let filename = std::path::Path::new(&field.value)
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("file");
-            body.extend_from_slice(format!("; filename=\"{}\"", filename).as_bytes());
+            body.extend_from_slice(
+                format!("; filename=\"{}\"", escape_quoted_string(filename)).as_bytes(),
+            );
         }
         body.extend_from_slice(b"\"\r\n");
 
@@ -400,6 +402,14 @@ fn build_multipart_body(
         .map_err(|e| format!("Build multipart request failed: {}", e))?;
 
     Ok((req, body))
+}
+
+/// Escape special characters for a quoted-string in an HTTP header value
+fn escape_quoted_string(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\r', "")
+        .replace('\n', "")
 }
 
 fn base64_encode(data: &[u8]) -> String {

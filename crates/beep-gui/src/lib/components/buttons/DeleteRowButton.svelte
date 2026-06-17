@@ -11,6 +11,6 @@
 <button
     class="btn btn-ghost btn-xs text-error opacity-0 group-hover:opacity-100"
     {onclick}
->
+    aria-label="Delete row">
     <XIcon class="w-3 h-3" />
 </button>
