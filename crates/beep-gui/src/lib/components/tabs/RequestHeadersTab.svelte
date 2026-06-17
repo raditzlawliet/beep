@@ -17,7 +17,7 @@
     let _lastInit = $state("");
     let _prevDefaultHeaders: [string, string][] = [];
 
-    // --- Init from props ---
+    // Init from props
     function initFromProps() {
         const dhChanged = _prevDefaultHeaders.length !== defaultHeaders.length ||
             _prevDefaultHeaders.some(([k, v], i) => defaultHeaders[i]?.[0] !== k || defaultHeaders[i]?.[1] !== v);
@@ -52,7 +52,7 @@
         initFromProps();
     });
 
-    // --- Row management ---
+    // Row management
     function ensureTempRow() {
         const last = rows[rows.length - 1];
         if (rows.length === 0 || (last && (last.key.trim() || last.value.trim()))) {

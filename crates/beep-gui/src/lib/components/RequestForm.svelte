@@ -100,7 +100,7 @@
         "OPTIONS",
     ];
 
-    // Tab badge indicators — derived directly from request data.
+    // Tab badge indicators - derived directly from request data.
     const hasParams = $derived(Object.keys(request.query_params).length > 0);
     const headerCount = $derived(Object.keys(request.headers).length);
 

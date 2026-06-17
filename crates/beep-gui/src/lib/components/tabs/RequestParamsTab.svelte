@@ -16,7 +16,7 @@
     let _lastQp = $state("");
     let _lastUrl = $state("");
 
-    // --- Init from props ---
+    // Init from props
     function initFromProps() {
         const qpKey = JSON.stringify(initialValue);
         const urlChanged = url !== _lastUrl;
@@ -46,7 +46,7 @@
         initFromProps();
     });
 
-    // --- Row management ---
+    // Row management
     function ensureTempRow() {
         const last = rows[rows.length - 1];
         if (rows.length === 0 || (last && (last.key.trim() || last.value.trim()))) {
@@ -85,7 +85,7 @@
         syncUrlFromParams(oldRows);
     }
 
-    // --- URL <-> table sync ---
+    // URL <-> table sync
     type UrlParam = { key: string; value: string };
 
     function parseUrlParamsOrdered(u: string): UrlParam[] {

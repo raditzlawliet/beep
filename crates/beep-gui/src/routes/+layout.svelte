@@ -9,7 +9,7 @@
     const { children } = $props();
     const toast = getToastState();
 
-    // register Tauri event listeners (placeholders — backend may not emit yet)
+    // register Tauri event listeners (placeholders - backend may not emit yet)
     $effect(() => {
         onHistoryChanged(() => {
           // TODO
