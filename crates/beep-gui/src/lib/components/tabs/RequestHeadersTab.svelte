@@ -21,7 +21,7 @@
     const overriddenKeys = $derived(
         new Set(
             rows
-                .filter((r) => !r.auto && r.key.trim())
+                .filter((r) => !r.auto && r.enabled && r.key.trim())
                 .map((r) => r.key.trim().toLowerCase()),
         ),
     );
@@ -126,8 +126,6 @@
             {@const isAuto = row.auto}
             {@const overridden = isOverridden(row)}
             <tr class="group hover:bg-base-300 divide-x divide-base-content/10"
-                class:opacity-50={isAuto}
-                class:line-through={overridden}
                 hidden={!showAutoHeaders && isAuto}>
                 <td>
                     <input type="checkbox" class="checkbox checkbox-xs"
@@ -135,26 +133,33 @@
                         onchange={() => toggleRow(i)} />
                 </td>
                 <td>
-                    <input
-                        class="input input-ghost input-xs w-full font-mono p-0"
+                    <div
+                        class="w-full"
                         class:tooltip={overridden}
-                        data-tip={overridden ? "This header is overridden by your custom header" : undefined}
-                        placeholder="Key"
-                        value={row.key}
-                        disabled={isAuto}
-                        oninput={(e) => updateRow(i, "key", (e.target as HTMLInputElement).value)}
-                    />
+                        data-tip={overridden ? "This header is overridden by your custom header" : undefined}>
+                        <input
+                            class="input input-ghost input-xs w-full font-mono p-0"
+                            placeholder="Key"
+                            value={row.key}
+                            disabled={isAuto}
+                            oninput={(e) => updateRow(i, "key", (e.target as HTMLInputElement).value)}
+                        />
+                    </div>
                 </td>
                 <td>
-                    <input
-                        class="input input-ghost input-xs w-full font-mono p-0"
+                    <div
+                        class="w-full"
                         class:tooltip={overridden}
-                        data-tip={overridden ? "This header is overridden by your custom header" : undefined}
-                        placeholder="Value"
-                        value={row.value}
-                        disabled={isAuto}
-                        oninput={(e) => updateRow(i, "value", (e.target as HTMLInputElement).value)}
-                    />
+                        data-tip={overridden ? "This header is overridden by your custom header" : undefined}>
+                        <input
+                            class="input input-ghost input-xs w-full font-mono p-0"
+                            class:line-through={overridden}
+                            placeholder="Value"
+                            value={row.value}
+                            disabled={isAuto}
+                            oninput={(e) => updateRow(i, "value", (e.target as HTMLInputElement).value)}
+                        />
+                    </div>
                 </td>
                 <td class="">
                     {#if !isAuto}
