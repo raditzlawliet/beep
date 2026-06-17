@@ -222,7 +222,7 @@
                             {/if}
                             {#if row.fileName}
                                 <button class="btn btn-ghost btn-xs text-error shrink-0"
-                                    onclick={() => { const r = rows[i]; rows[i] = { ...r, value: "", fileName: "" }; emit(); }}>
+                                    onclick={() => { const r = rows[i]; rows[i] = { ...r, value: "", fileName: "", contentType: "" }; emit(); }}>
                                     <XIcon class="w-3 h-3" />
                                 </button>
                             {/if}
