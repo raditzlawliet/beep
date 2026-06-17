@@ -63,10 +63,11 @@ impl HttpClient {
 
         let mut req_builder = Request::builder().method(&http_method).uri(&url);
 
-        for field in &headers {
-            if !field.enabled || field.key.is_empty() {
-                continue;
-            }
+        // Auto headers first on builder
+        for field in headers
+            .iter()
+            .filter(|h| h.enabled && !h.key.is_empty() && h.auto)
+        {
             let name = HeaderName::from_bytes(field.key.as_bytes())
                 .map_err(|e| format!("Invalid header name '{}': {}", field.key, e))?;
             let val = HeaderValue::from_str(&field.value)
@@ -119,9 +120,10 @@ impl HttpClient {
                     HeaderName::from_static("content-type"),
                     HeaderValue::from_static("application/x-www-form-urlencoded"),
                 );
-                let req = req_builder
+                let mut req = req_builder
                     .body(encoded.as_bytes())
                     .map_err(|e| format!("Build request failed: {}", e))?;
+                overwrite_with_user_headers(req.headers_mut(), &headers)?;
                 self.agent.run(req)
             }
             "form-multipart" => {
@@ -135,9 +137,10 @@ impl HttpClient {
                         );
                     }
                 }
-                let req = req_builder
+                let mut req = req_builder
                     .body(mp_body.as_slice())
                     .map_err(|e| format!("Build request failed: {}", e))?;
+                overwrite_with_user_headers(req.headers_mut(), &headers)?;
                 self.agent.run(req)
             }
             _ => {
@@ -157,14 +160,16 @@ impl HttpClient {
                             HeaderValue::from_str(ct).unwrap(),
                         );
                     }
-                    let req = req_builder
+                    let mut req = req_builder
                         .body(b.as_bytes())
                         .map_err(|e| format!("Build request failed: {}", e))?;
+                    overwrite_with_user_headers(req.headers_mut(), &headers)?;
                     self.agent.run(req)
                 } else {
-                    let req = req_builder
+                    let mut req = req_builder
                         .body(())
                         .map_err(|e| format!("Build request failed: {}", e))?;
+                    overwrite_with_user_headers(req.headers_mut(), &headers)?;
                     self.agent.run(req)
                 }
             }
@@ -289,6 +294,29 @@ fn decode_body(data: &[u8], content_encoding: Option<&str>) -> Result<String, St
     }
 
     String::from_utf8(buf).map_err(|e| format!("Response body is not valid UTF-8: {}", e))
+}
+
+/// Append user headers with `HeaderMap::append` so duplicate keys (e.g. multiple `Set-Cookie`) are preserved per HTTP spec.
+/// Auto-generated key are removed when the first user header with that key is seen.
+fn overwrite_with_user_headers(
+    header_map: &mut http::HeaderMap,
+    headers: &[crate::models::HeaderField],
+) -> Result<(), String> {
+    let mut removed = std::collections::HashSet::new();
+    for field in headers
+        .iter()
+        .filter(|h| h.enabled && !h.key.is_empty() && !h.auto)
+    {
+        let name = HeaderName::from_bytes(field.key.as_bytes())
+            .map_err(|e| format!("Invalid header name '{}': {}", field.key, e))?;
+        let val = HeaderValue::from_str(&field.value)
+            .map_err(|e| format!("Invalid header value '{}': {}", field.value, e))?;
+        if removed.insert(name.as_str().to_lowercase()) {
+            header_map.remove(&name);
+        }
+        header_map.append(name, val);
+    }
+    Ok(())
 }
 
 fn extract_headers(header_map: &http::HeaderMap) -> HashMap<String, String> {
