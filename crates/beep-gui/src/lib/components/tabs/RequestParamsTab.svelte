@@ -171,8 +171,8 @@
             const newUrl = buildUrlFromOrdered(url, newParams);
             if (newUrl !== url) {
                 _lastUrl = newUrl;
-                emit();
             }
+            emit();
             return;
         }
 
@@ -189,8 +189,8 @@
                 const newUrl = buildUrlFromOrdered(url, newParams);
                 if (newUrl !== url) {
                     _lastUrl = newUrl;
-                    emit();
                 }
+                emit();
             }
             return;
         }
@@ -200,8 +200,8 @@
         const newUrl = buildUrlWithParams(url, realRows);
         if (newUrl !== url) {
             _lastUrl = newUrl;
-            emit();
         }
+        emit();
     }
 
     function syncTableFromUrl(u: string) {
