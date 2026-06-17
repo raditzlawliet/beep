@@ -131,7 +131,10 @@
     }
 
     function onDrop(e: DragEvent, idx: number) {
+        e.preventDefault();
         dragOverIdx = null;
+        if (rows[idx].fieldType !== "file") return;
+
         const files = e.dataTransfer?.files;
         if (!files || files.length === 0) return;
         const file = files[0];
@@ -158,7 +161,7 @@
             <th class="w-0"><input type="checkbox" class="checkbox checkbox-xs invisible" /></th>
             <th class="w-auto text-xs">Key</th>
             <th class="w-auto text-xs">Value</th>
-            <th class="w-40 text-xs">Content Type</th>
+            <th class="w-60 text-xs">Content Type</th>
             <th class="w-0"></th>
         </tr>
     </thead>
