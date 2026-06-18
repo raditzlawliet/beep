@@ -12,6 +12,9 @@ pub const DEFAULT_ACCEPT: &str = "*/*";
 pub const DEFAULT_ACCEPT_ENCODING: &str = "";
 pub const DEFAULT_USER_AGENT: &str = concat!("beep/", env!("CARGO_PKG_VERSION"));
 
+/// Maximum file size for multipart uploads (100 MB).
+pub const MAX_FILE_SIZE: u64 = 100 * 1024 * 1024;
+
 /// Map of default headers (key -> value) set on every HttpClient agent.
 pub fn default_headers() -> Vec<(&'static str, &'static str)> {
     vec![
@@ -53,7 +56,6 @@ impl HttpClient {
         let method = request.method;
         let headers = request.headers.clone();
         let auth = request.auth.clone();
-        let body = request.body.clone();
 
         let start = Instant::now();
 
@@ -61,11 +63,15 @@ impl HttpClient {
 
         let mut req_builder = Request::builder().method(&http_method).uri(&url);
 
-        for (key, value) in &headers {
-            let name = HeaderName::from_bytes(key.as_bytes())
-                .map_err(|e| format!("Invalid header name '{}': {}", key, e))?;
-            let val = HeaderValue::from_str(value)
-                .map_err(|e| format!("Invalid header value '{}': {}", value, e))?;
+        // Auto headers first on builder
+        for field in headers
+            .iter()
+            .filter(|h| h.enabled && !h.key.is_empty() && h.auto)
+        {
+            let name = HeaderName::from_bytes(field.key.as_bytes())
+                .map_err(|e| format!("Invalid header name '{}': {}", field.key, e))?;
+            let val = HeaderValue::from_str(&field.value)
+                .map_err(|e| format!("Invalid header value '{}': {}", field.value, e))?;
             req_builder = req_builder.header(name, val);
         }
 
@@ -93,24 +99,80 @@ impl HttpClient {
             Auth::None => {}
         }
 
-        let mut resp = if let Some(ref b) = body {
-            // with body request
-            req_builder = req_builder.header(
-                HeaderName::from_static("content-type"),
-                HeaderValue::from_static("application/json"),
-            );
-            let request = req_builder
-                .body(b.as_bytes())
-                .map_err(|e| format!("Build request failed: {}", e))?;
+        // Infer body_mode if not explicitly set (CLI may not set it).
+        // body_mode encodes both mode and type: "raw/json", "form-urlencoded", etc.
+        let body_mode = request.body_mode.as_deref().unwrap_or_else(|| {
+            if !request.form_multipart.is_empty() {
+                "form-multipart"
+            } else if !request.form_urlencoded.is_empty() {
+                "form-urlencoded"
+            } else if request.raw_body.is_some() || request.body.is_some() {
+                "raw/text"
+            } else {
+                "none"
+            }
+        });
 
-            self.agent.run(request)
-        } else {
-            // no body request
-            let request = req_builder
-                .body(())
-                .map_err(|e| format!("Build request failed: {}", e))?;
+        let mut resp = match body_mode {
+            "form-urlencoded" => {
+                let encoded = build_url_encoded_body(&request.form_urlencoded);
+                req_builder = req_builder.header(
+                    HeaderName::from_static("content-type"),
+                    HeaderValue::from_static("application/x-www-form-urlencoded"),
+                );
+                let mut req = req_builder
+                    .body(encoded.as_bytes())
+                    .map_err(|e| format!("Build request failed: {}", e))?;
+                overwrite_with_user_headers(req.headers_mut(), &headers)?;
+                self.agent.run(req)
+            }
+            "form-multipart" => {
+                let (mp_req, mp_body) = build_multipart_body(&request.form_multipart)
+                    .map_err(|e| format!("Multipart build failed: {}", e))?;
+                if let Some(ct) = mp_req.headers().get("content-type") {
+                    if let Ok(v) = ct.to_str() {
+                        req_builder = req_builder.header(
+                            HeaderName::from_static("content-type"),
+                            HeaderValue::from_str(v).unwrap(),
+                        );
+                    }
+                }
+                let mut req = req_builder
+                    .body(mp_body.as_slice())
+                    .map_err(|e| format!("Build request failed: {}", e))?;
+                overwrite_with_user_headers(req.headers_mut(), &headers)?;
+                self.agent.run(req)
+            }
+            _ => {
+                let content_type: Option<&str> = match body_mode {
+                    "raw/json" => Some("application/json"),
+                    "raw/xml" => Some("application/xml"),
+                    "raw/html" => Some("text/html"),
+                    "raw/text" => Some("text/plain"),
+                    _ => None,
+                };
 
-            self.agent.run(request)
+                let raw = request.raw_body.as_ref().or(request.body.as_ref());
+                if let Some(ref b) = raw {
+                    if let Some(ct) = content_type {
+                        req_builder = req_builder.header(
+                            HeaderName::from_static("content-type"),
+                            HeaderValue::from_str(ct).unwrap(),
+                        );
+                    }
+                    let mut req = req_builder
+                        .body(b.as_bytes())
+                        .map_err(|e| format!("Build request failed: {}", e))?;
+                    overwrite_with_user_headers(req.headers_mut(), &headers)?;
+                    self.agent.run(req)
+                } else {
+                    let mut req = req_builder
+                        .body(())
+                        .map_err(|e| format!("Build request failed: {}", e))?;
+                    overwrite_with_user_headers(req.headers_mut(), &headers)?;
+                    self.agent.run(req)
+                }
+            }
         }
         .map_err(|e| format!("Request failed: {}", e))?;
 
@@ -158,7 +220,8 @@ impl HttpClient {
         let mut params: Vec<String> = request
             .query_params
             .iter()
-            .map(|(k, v)| format!("{}={}", urlencode(k), urlencode(v)))
+            .filter(|q| q.enabled && !q.key.is_empty())
+            .map(|q| format!("{}={}", urlencode(&q.key), urlencode(&q.value)))
             .collect();
 
         // Append API key as query param if add_to is "query"
@@ -181,10 +244,6 @@ impl Default for HttpClient {
         Self::new()
     }
 }
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 /// Decompress response body based on Content-Encoding header value.
 /// Supports gzip, deflate, brotli, and identity (no compression).
@@ -237,6 +296,29 @@ fn decode_body(data: &[u8], content_encoding: Option<&str>) -> Result<String, St
     String::from_utf8(buf).map_err(|e| format!("Response body is not valid UTF-8: {}", e))
 }
 
+/// Append user headers with `HeaderMap::append` so duplicate keys (e.g. multiple `Set-Cookie`) are preserved per HTTP spec.
+/// Auto-generated key are removed when the first user header with that key is seen.
+fn overwrite_with_user_headers(
+    header_map: &mut http::HeaderMap,
+    headers: &[crate::models::HeaderField],
+) -> Result<(), String> {
+    let mut removed = std::collections::HashSet::new();
+    for field in headers
+        .iter()
+        .filter(|h| h.enabled && !h.key.is_empty() && !h.auto)
+    {
+        let name = HeaderName::from_bytes(field.key.as_bytes())
+            .map_err(|e| format!("Invalid header name '{}': {}", field.key, e))?;
+        let val = HeaderValue::from_str(&field.value)
+            .map_err(|e| format!("Invalid header value '{}': {}", field.value, e))?;
+        if removed.insert(name.as_str().to_lowercase()) {
+            header_map.remove(&name);
+        }
+        header_map.append(name, val);
+    }
+    Ok(())
+}
+
 fn extract_headers(header_map: &http::HeaderMap) -> HashMap<String, String> {
     let mut headers = HashMap::new();
     for (name, value) in header_map {
@@ -260,6 +342,102 @@ fn urlencode(s: &str) -> String {
         }
     }
     result
+}
+
+/// Build application/x-www-form-urlencoded body from form fields.
+fn build_url_encoded_body(form_data: &[crate::models::FormField]) -> String {
+    form_data
+        .iter()
+        .filter(|f| f.enabled && !f.key.is_empty())
+        .map(|f| format!("{}={}", urlencode(&f.key), urlencode(&f.value)))
+        .collect::<Vec<_>>()
+        .join("&")
+}
+
+/// Build multipart/form-data body from form fields.
+/// Returns (request_with_headers, body_bytes).
+fn build_multipart_body(
+    form_data: &[crate::models::FormField],
+) -> Result<(http::Request<()>, Vec<u8>), String> {
+    let boundary = format!(
+        "----BeepFormBoundary{:x}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    );
+
+    let mut body = Vec::new();
+
+    for field in form_data.iter().filter(|f| f.enabled && !f.key.is_empty()) {
+        let is_file = field.field_type == "file";
+        body.extend_from_slice(b"--");
+        body.extend_from_slice(boundary.as_bytes());
+        body.extend_from_slice(b"\r\n");
+        body.extend_from_slice(b"Content-Disposition: form-data; name=\"");
+        body.extend_from_slice(escape_quoted_string(&field.key).as_bytes());
+        if is_file && !field.value.is_empty() {
+            let filename = std::path::Path::new(&field.value)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("file");
+            body.extend_from_slice(
+                format!("; filename=\"{}\"", escape_quoted_string(filename)).as_bytes(),
+            );
+        }
+        body.extend_from_slice(b"\"\r\n");
+
+        if is_file && !field.value.is_empty() {
+            let file_path = &field.value;
+            let metadata = std::fs::metadata(file_path)
+                .map_err(|e| format!("Cannot read file '{}': {}", file_path, e))?;
+            let file_size = metadata.len();
+            if file_size > MAX_FILE_SIZE {
+                return Err(format!(
+                    "File '{}' exceeds max size ({} MB)",
+                    file_path,
+                    MAX_FILE_SIZE / (1024 * 1024)
+                ));
+            }
+            let file_data = std::fs::read(file_path)
+                .map_err(|e| format!("Failed to read file '{}': {}", file_path, e))?;
+
+            let ct = if field.content_type.is_empty() {
+                "application/octet-stream"
+            } else {
+                &field.content_type
+            };
+            body.extend_from_slice(b"Content-Type: ");
+            body.extend_from_slice(ct.as_bytes());
+            body.extend_from_slice(b"\r\n");
+            body.extend_from_slice(b"\r\n");
+            body.extend_from_slice(&file_data);
+        } else {
+            body.extend_from_slice(b"\r\n");
+            body.extend_from_slice(field.value.as_bytes());
+        }
+        body.extend_from_slice(b"\r\n");
+    }
+
+    body.extend_from_slice(b"--");
+    body.extend_from_slice(boundary.as_bytes());
+    body.extend_from_slice(b"--\r\n");
+
+    let content_type = format!("multipart/form-data; boundary={}", boundary);
+    let req = http::Request::builder()
+        .header("content-type", content_type)
+        .body(())
+        .map_err(|e| format!("Build multipart request failed: {}", e))?;
+
+    Ok((req, body))
+}
+
+/// Escape special characters for a quoted-string in an HTTP header value
+fn escape_quoted_string(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\r', "")
+        .replace('\n', "")
 }
 
 fn base64_encode(data: &[u8]) -> String {

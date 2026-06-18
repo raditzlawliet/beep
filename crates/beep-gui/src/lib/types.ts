@@ -13,15 +13,38 @@ export type Auth =
   | { type: "Bearer"; token: string }
   | { type: "ApiKey"; key: string; value: string; add_to: string };
 
+export interface FormField {
+  key: string;
+  value: string;
+  enabled: boolean;
+  field_type: string;
+  content_type: string;
+}
+
+export interface HeaderField {
+  key: string;
+  value: string;
+  enabled: boolean;
+  auto: boolean;
+}
+
+export interface QueryField {
+  key: string;
+  value: string;
+  enabled: boolean;
+}
+
 export interface HttpRequest {
   url: string;
   method: HttpMethod;
-  headers: Record<string, string>;
-  query_params: Record<string, string>;
+  headers: HeaderField[];
+  query_params: QueryField[];
   body: string | null;
   auth: Auth;
   body_mode?: string;
-  body_type?: string;
+  raw_body?: string | null;
+  form_urlencoded?: FormField[];
+  form_multipart?: FormField[];
 }
 
 export interface ResponseSize {
@@ -55,12 +78,14 @@ export function defaultRequest(): HttpRequest {
   return {
     url: "",
     method: "GET",
-    headers: {},
-    query_params: {},
+    headers: [],
+    query_params: [],
     body: null,
     auth: { type: "None" },
     body_mode: "none",
-    body_type: "Text",
+    raw_body: null,
+    form_urlencoded: [],
+    form_multipart: [],
   };
 }
 
