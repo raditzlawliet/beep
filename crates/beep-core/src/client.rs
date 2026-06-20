@@ -1,10 +1,10 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 use http::{HeaderName, HeaderValue};
 use reqwest::Client;
 
-use crate::models::{Auth, HttpRequest, HttpResponse, ResponseSize};
+use crate::models::{Auth, HeaderField, HttpRequest, HttpResponse, ResponseSize};
 
 /// Default header values used by HttpClient::new().
 pub const DEFAULT_ACCEPT: &str = "*/*";
@@ -34,6 +34,18 @@ impl HttpClient {
     fn base_builder() -> reqwest::ClientBuilder {
         Client::builder()
             .user_agent(DEFAULT_USER_AGENT)
+            .default_headers({
+                let mut h = http::HeaderMap::new();
+                h.insert(
+                    http::header::ACCEPT,
+                    HeaderValue::from_static(DEFAULT_ACCEPT),
+                );
+                h.insert(
+                    http::header::ACCEPT_ENCODING,
+                    HeaderValue::from_static(DEFAULT_ACCEPT_ENCODING),
+                );
+                h
+            })
             .gzip(true)
             .brotli(true)
             .deflate(true)
@@ -107,11 +119,12 @@ impl HttpClient {
         };
         let mut req_builder = version_client.request(http_method, &url);
 
-        // Auto headers first on builder
-        for field in headers
-            .iter()
-            .filter(|h| h.enabled && !h.key.is_empty() && h.auto)
-        {
+        // Merge auto + user headers with proper override:
+        // 1. auto headers first
+        // 2. user headers override matching auto keys (remove auto, keep user)
+        // 3. user headers with no matching auto key are appended
+        let merged = merge_headers(&headers);
+        for field in &merged {
             let name = HeaderName::from_bytes(field.key.as_bytes())
                 .map_err(|e| format!("Invalid header name '{}': {}", field.key, e))?;
             let val = HeaderValue::from_str(&field.value)
@@ -180,18 +193,6 @@ impl HttpClient {
             }
         }
 
-        // User headers (overwrite auto headers for same key)
-        for field in headers
-            .iter()
-            .filter(|h| h.enabled && !h.key.is_empty() && !h.auto)
-        {
-            let name = HeaderName::from_bytes(field.key.as_bytes())
-                .map_err(|e| format!("Invalid header name '{}': {}", field.key, e))?;
-            let val = HeaderValue::from_str(&field.value)
-                .map_err(|e| format!("Invalid header value '{}': {}", field.value, e))?;
-            req_builder = req_builder.header(name, val);
-        }
-
         let resp = req_builder
             .send()
             .await
@@ -256,6 +257,40 @@ impl Default for HttpClient {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Merge auto and user headers with explicit override logic:
+/// 1. auto headers first (skip any key also defined by user)
+/// 2. user headers appended last (so they take precedence)
+fn merge_headers(headers: &[HeaderField]) -> Vec<HeaderField> {
+    // Collect user-defined keys (case-insensitive) to know which auto headers to drop.
+    let user_keys: HashSet<String> = headers
+        .iter()
+        .filter(|h| h.enabled && !h.key.is_empty() && !h.auto)
+        .map(|h| h.key.to_lowercase())
+        .collect();
+
+    let mut merged: Vec<HeaderField> = Vec::new();
+
+    // Auto headers first, but skip any key that a user header overrides.
+    for h in headers
+        .iter()
+        .filter(|h| h.enabled && !h.key.is_empty() && h.auto)
+    {
+        if !user_keys.contains(&h.key.to_lowercase()) {
+            merged.push(h.clone());
+        }
+    }
+
+    // User headers: replace matching auto key, or append if no match.
+    for h in headers
+        .iter()
+        .filter(|h| h.enabled && !h.key.is_empty() && !h.auto)
+    {
+        merged.push(h.clone());
+    }
+
+    merged
 }
 
 fn extract_headers(header_map: &http::HeaderMap) -> HashMap<String, String> {
