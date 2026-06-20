@@ -141,10 +141,9 @@ impl HttpClient {
                 );
             }
             Auth::Bearer { token } => {
-                req_builder = req_builder.header(
-                    HeaderName::from_static("authorization"),
-                    HeaderValue::from_str(&format!("Bearer {}", token)).unwrap(),
-                );
+                let val = HeaderValue::from_str(&format!("Bearer {}", token))
+                    .map_err(|_| "Bearer token contains invalid characters".to_string())?;
+                req_builder = req_builder.header(HeaderName::from_static("authorization"), val);
             }
             Auth::ApiKey { key, value, add_to } if add_to == "header" => {
                 let name = HeaderName::from_bytes(key.as_bytes())
