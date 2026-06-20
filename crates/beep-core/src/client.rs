@@ -206,8 +206,7 @@ impl HttpClient {
             .bytes()
             .await
             .map_err(|e| format!("Read response body failed: {}", e))?;
-        let resp_body = String::from_utf8(raw_body.to_vec())
-            .map_err(|e| format!("Response body is not valid UTF-8: {}", e))?;
+        let resp_body = String::from_utf8_lossy(&raw_body).into_owned();
 
         // Compute sizes
         let response_headers_size: u64 = resp_headers
