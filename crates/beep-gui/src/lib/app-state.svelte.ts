@@ -37,7 +37,7 @@ export const request = {
         payload: req,
       });
       _response = res;
-      history.refresh();
+      history.refresh().catch(() => {});
       return res;
     } catch (e) {
       _response = null;
