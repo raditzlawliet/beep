@@ -9,6 +9,7 @@
     import RequestHeadersTab from "$lib/components/tabs/RequestHeadersTab.svelte";
     import RequestAuthTab from "$lib/components/tabs/RequestAuthTab.svelte";
     import RequestBodyTab from "$lib/components/tabs/RequestBodyTab.svelte";
+    import RequestSettingsTab from "$lib/components/tabs/RequestSettingsTab.svelte";
     import { showToast } from "$lib/toast.svelte";
 
     interface Props {
@@ -21,7 +22,7 @@
 
     let { request, loading, onSend, onUpdate, defaultHeaders }: Props = $props();
 
-    type Tab = "params" | "headers" | "auth" | "body";
+    type Tab = "params" | "headers" | "auth" | "body" | "settings";
     let activeTab = $state<Tab>("params");
 
     export type BodyMode = "none" | "raw/json" | "raw/xml" | "raw/html" | "raw/text" | "form-urlencoded" | "form-multipart";
@@ -34,6 +35,8 @@
 
     // Raw body editing state (CodeEditor needs local $state for reactivity).
     let rawBodyContent = $state("");
+
+    const httpVersion = $derived(request.http_version ?? "Auto");
 
     // Sync rawBodyContent from request on mount / history load.
     let _rawSnap: string | null | undefined = $state(undefined);
@@ -176,7 +179,7 @@
 
         <!-- tabs -->
         <div role="tablist" class="tabs tabs-bordered tabs-xs px-1">
-            {#each ["params", "auth", "headers", "body"] as tab}
+            {#each ["params", "auth", "headers", "body", "settings"] as tab}
                 <button
                     role="tab"
                     class="tab capitalize gap-1.5 {activeTab === tab
@@ -199,6 +202,11 @@
                         ></span>
                     {/if}
                     {#if tab === "body" && bodyMode !== "none"}
+                        <span
+                            class="w-1.5 h-1.5 rounded-full bg-accent inline-block"
+                        ></span>
+                    {/if}
+                    {#if tab === "settings" && httpVersion !== "Auto"}
                         <span
                             class="w-1.5 h-1.5 rounded-full bg-accent inline-block"
                         ></span>
@@ -252,6 +260,11 @@
                         emitUpdate({ form_multipart: fields });
                     }}
                     onBeautify={beautify}
+                />
+            {:else if activeTab === "settings"}
+                <RequestSettingsTab
+                    {httpVersion}
+                    onUpdate={(v) => emitUpdate({ http_version: v })}
                 />
             {/if}
         </div>

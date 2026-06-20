@@ -17,13 +17,24 @@ async fn execute_request(
     state: tauri::State<'_, AppState>,
     payload: HttpRequest,
 ) -> Result<HttpResponse, String> {
-    let response = state.client.execute(&payload)?;
-    state
-        .history
-        .lock()
-        .unwrap()
-        .add(payload, Some(response.clone()), None);
-    Ok(response)
+    match state.client.execute(&payload).await {
+        Ok(response) => {
+            state
+                .history
+                .lock()
+                .unwrap()
+                .add(payload, Some(response.clone()), None, None);
+            Ok(response)
+        }
+        Err(err) => {
+            state
+                .history
+                .lock()
+                .unwrap()
+                .add(payload, None, Some(err.clone()), None);
+            Err(err)
+        }
+    }
 }
 
 #[tauri::command]

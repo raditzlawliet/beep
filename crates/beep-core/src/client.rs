@@ -1,15 +1,14 @@
 use std::collections::HashMap;
-use std::io::{Cursor, Read};
 use std::time::{Duration, Instant};
 
-use flate2::read::{DeflateDecoder, GzDecoder};
-use http::{HeaderName, HeaderValue, Request};
+use http::{HeaderName, HeaderValue};
+use reqwest::Client;
 
 use crate::models::{Auth, HttpRequest, HttpResponse, ResponseSize};
 
 /// Default header values used by HttpClient::new().
 pub const DEFAULT_ACCEPT: &str = "*/*";
-pub const DEFAULT_ACCEPT_ENCODING: &str = "";
+pub const DEFAULT_ACCEPT_ENCODING: &str = "gzip, deflate, br";
 pub const DEFAULT_USER_AGENT: &str = concat!("beep/", env!("CARGO_PKG_VERSION"));
 
 /// Maximum file size for multipart uploads (100 MB).
@@ -24,34 +23,59 @@ pub fn default_headers() -> Vec<(&'static str, &'static str)> {
     ]
 }
 
+#[derive(Clone)]
 pub struct HttpClient {
-    agent: ureq::Agent,
+    client: Client, // Auto
+    client_http1: Client,
+    client_http2: Client,
 }
 
 impl HttpClient {
+    fn base_builder() -> reqwest::ClientBuilder {
+        Client::builder()
+            .user_agent(DEFAULT_USER_AGENT)
+            .gzip(true)
+            .brotli(true)
+            .deflate(true)
+            .zstd(true)
+    }
+
     pub fn new() -> Self {
         Self {
-            agent: ureq::Agent::config_builder()
-                .http_status_as_error(false)
-                .accept(DEFAULT_ACCEPT)
-                .accept_encoding(DEFAULT_ACCEPT_ENCODING)
-                .user_agent(DEFAULT_USER_AGENT)
+            client: Self::base_builder()
                 .build()
-                .into(),
+                .expect("Failed to build reqwest client"),
+            client_http1: Self::base_builder()
+                .http1_only()
+                .build()
+                .expect("Failed to build reqwest http1 client"),
+            client_http2: Self::base_builder()
+                .http2_prior_knowledge()
+                .build()
+                .expect("Failed to build reqwest http2 client"),
         }
     }
 
     pub fn with_timeout(timeout_secs: u64) -> Self {
         Self {
-            agent: ureq::Agent::config_builder()
-                .http_status_as_error(false)
-                .timeout_global(Some(Duration::from_secs(timeout_secs)))
+            client: Self::base_builder()
+                .timeout(Duration::from_secs(timeout_secs))
                 .build()
-                .into(),
+                .expect("Failed to build reqwest client"),
+            client_http1: Self::base_builder()
+                .timeout(Duration::from_secs(timeout_secs))
+                .http1_only()
+                .build()
+                .expect("Failed to build reqwest http1 client"),
+            client_http2: Self::base_builder()
+                .timeout(Duration::from_secs(timeout_secs))
+                .http2_prior_knowledge()
+                .build()
+                .expect("Failed to build reqwest http2 client"),
         }
     }
 
-    pub fn execute(&self, request: &HttpRequest) -> Result<HttpResponse, String> {
+    pub async fn execute(&self, request: &HttpRequest) -> Result<HttpResponse, String> {
         let url = self.build_url(request);
         let method = request.method;
         let headers = request.headers.clone();
@@ -59,9 +83,29 @@ impl HttpClient {
 
         let start = Instant::now();
 
+        // Infer body_mode if not explicitly set (CLI may not set it).
+        // body_mode encodes both mode and type: "raw/json", "form-urlencoded", etc.
+        let body_mode = request.body_mode.as_deref().unwrap_or_else(|| {
+            if !request.form_multipart.is_empty() {
+                "form-multipart"
+            } else if !request.form_urlencoded.is_empty() {
+                "form-urlencoded"
+            } else if request.raw_body.is_some() || request.body.is_some() {
+                "raw/text"
+            } else {
+                "none"
+            }
+        });
+
         let http_method = method.to_http_method();
 
-        let mut req_builder = Request::builder().method(&http_method).uri(&url);
+        // Route through the appropriate client based on HTTP version.
+        let version_client = match request.http_version {
+            crate::models::HttpVersion::Http1 => &self.client_http1,
+            crate::models::HttpVersion::Http2 => &self.client_http2,
+            _ => &self.client,
+        };
+        let mut req_builder = version_client.request(http_method, &url);
 
         // Auto headers first on builder
         for field in headers
@@ -99,49 +143,23 @@ impl HttpClient {
             Auth::None => {}
         }
 
-        // Infer body_mode if not explicitly set (CLI may not set it).
-        // body_mode encodes both mode and type: "raw/json", "form-urlencoded", etc.
-        let body_mode = request.body_mode.as_deref().unwrap_or_else(|| {
-            if !request.form_multipart.is_empty() {
-                "form-multipart"
-            } else if !request.form_urlencoded.is_empty() {
-                "form-urlencoded"
-            } else if request.raw_body.is_some() || request.body.is_some() {
-                "raw/text"
-            } else {
-                "none"
-            }
-        });
-
-        let mut resp = match body_mode {
+        // Body
+        match body_mode {
             "form-urlencoded" => {
                 let encoded = build_url_encoded_body(&request.form_urlencoded);
-                req_builder = req_builder.header(
-                    HeaderName::from_static("content-type"),
-                    HeaderValue::from_static("application/x-www-form-urlencoded"),
-                );
-                let mut req = req_builder
-                    .body(encoded.as_bytes())
-                    .map_err(|e| format!("Build request failed: {}", e))?;
-                overwrite_with_user_headers(req.headers_mut(), &headers)?;
-                self.agent.run(req)
+                req_builder = req_builder
+                    .header("content-type", "application/x-www-form-urlencoded")
+                    .body(encoded);
             }
             "form-multipart" => {
                 let (mp_req, mp_body) = build_multipart_body(&request.form_multipart)
                     .map_err(|e| format!("Multipart build failed: {}", e))?;
                 if let Some(ct) = mp_req.headers().get("content-type") {
                     if let Ok(v) = ct.to_str() {
-                        req_builder = req_builder.header(
-                            HeaderName::from_static("content-type"),
-                            HeaderValue::from_str(v).unwrap(),
-                        );
+                        req_builder = req_builder.header("content-type", v);
                     }
                 }
-                let mut req = req_builder
-                    .body(mp_body.as_slice())
-                    .map_err(|e| format!("Build request failed: {}", e))?;
-                overwrite_with_user_headers(req.headers_mut(), &headers)?;
-                self.agent.run(req)
+                req_builder = req_builder.body(mp_body);
             }
             _ => {
                 let content_type: Option<&str> = match body_mode {
@@ -155,45 +173,40 @@ impl HttpClient {
                 let raw = request.raw_body.as_ref().or(request.body.as_ref());
                 if let Some(ref b) = raw {
                     if let Some(ct) = content_type {
-                        req_builder = req_builder.header(
-                            HeaderName::from_static("content-type"),
-                            HeaderValue::from_str(ct).unwrap(),
-                        );
+                        req_builder = req_builder.header("content-type", ct);
                     }
-                    let mut req = req_builder
-                        .body(b.as_bytes())
-                        .map_err(|e| format!("Build request failed: {}", e))?;
-                    overwrite_with_user_headers(req.headers_mut(), &headers)?;
-                    self.agent.run(req)
-                } else {
-                    let mut req = req_builder
-                        .body(())
-                        .map_err(|e| format!("Build request failed: {}", e))?;
-                    overwrite_with_user_headers(req.headers_mut(), &headers)?;
-                    self.agent.run(req)
+                    req_builder = req_builder.body(b.to_string());
                 }
             }
         }
-        .map_err(|e| format!("Request failed: {}", e))?;
 
-        let status: u16 = resp.status().into();
+        // User headers (overwrite auto headers for same key)
+        for field in headers
+            .iter()
+            .filter(|h| h.enabled && !h.key.is_empty() && !h.auto)
+        {
+            let name = HeaderName::from_bytes(field.key.as_bytes())
+                .map_err(|e| format!("Invalid header name '{}': {}", field.key, e))?;
+            let val = HeaderValue::from_str(&field.value)
+                .map_err(|e| format!("Invalid header value '{}': {}", field.value, e))?;
+            req_builder = req_builder.header(name, val);
+        }
+
+        let resp = req_builder
+            .send()
+            .await
+            .map_err(|e| format!("Request failed: {}", e))?;
+
+        let status = resp.status().as_u16();
         let resp_headers = extract_headers(resp.headers());
 
-        // Read raw bytes and decompress if needed
+        // Read decoded body (reqwest auto-decompresses gzip/deflate/brotli)
         let raw_body = resp
-            .body_mut()
-            .read_to_vec()
+            .bytes()
+            .await
             .map_err(|e| format!("Read response body failed: {}", e))?;
-
-        let content_encoding = resp_headers.get("content-encoding").map(|s| s.as_str());
-        let resp_body = match decode_body(&raw_body, content_encoding) {
-            Ok(body) => body,
-            Err(e) => format!(
-                "[Body decode error: {}] (Content-Encoding: {})",
-                e,
-                content_encoding.unwrap_or("none"),
-            ),
-        };
+        let resp_body = String::from_utf8(raw_body.to_vec())
+            .map_err(|e| format!("Response body is not valid UTF-8: {}", e))?;
 
         // Compute sizes
         let response_headers_size: u64 = resp_headers
@@ -243,80 +256,6 @@ impl Default for HttpClient {
     fn default() -> Self {
         Self::new()
     }
-}
-
-/// Decompress response body based on Content-Encoding header value.
-/// Supports gzip, deflate, brotli, and identity (no compression).
-fn decode_body(data: &[u8], content_encoding: Option<&str>) -> Result<String, String> {
-    let encodings: Vec<&str> = content_encoding
-        .map(|s| {
-            s.split(',')
-                .map(|s| s.trim())
-                .filter(|s| !s.is_empty())
-                .collect()
-        })
-        .unwrap_or_default();
-
-    if encodings.is_empty() {
-        return String::from_utf8(data.to_vec())
-            .map_err(|e| format!("Response body is not valid UTF-8: {}", e));
-    }
-
-    let mut buf = data.to_vec();
-
-    for enc in &encodings {
-        buf = match *enc {
-            "gzip" | "x-gzip" => {
-                let mut d = GzDecoder::new(Cursor::new(&buf));
-                let mut out = Vec::new();
-                d.read_to_end(&mut out)
-                    .map_err(|e| format!("gzip decode failed: {}", e))?;
-                out
-            }
-            "deflate" => {
-                let mut d = DeflateDecoder::new(Cursor::new(&buf));
-                let mut out = Vec::new();
-                d.read_to_end(&mut out)
-                    .map_err(|e| format!("deflate decode failed: {}", e))?;
-                out
-            }
-            "br" => {
-                let mut out = Vec::new();
-                brotli::BrotliDecompress(&mut Cursor::new(&buf), &mut out)
-                    .map_err(|e| format!("brotli decode failed: {}", e))?;
-                out
-            }
-            "identity" | "" => buf,
-            other => {
-                return Err(format!("Unsupported Content-Encoding: {}", other));
-            }
-        };
-    }
-
-    String::from_utf8(buf).map_err(|e| format!("Response body is not valid UTF-8: {}", e))
-}
-
-/// Append user headers with `HeaderMap::append` so duplicate keys (e.g. multiple `Set-Cookie`) are preserved per HTTP spec.
-/// Auto-generated key are removed when the first user header with that key is seen.
-fn overwrite_with_user_headers(
-    header_map: &mut http::HeaderMap,
-    headers: &[crate::models::HeaderField],
-) -> Result<(), String> {
-    let mut removed = std::collections::HashSet::new();
-    for field in headers
-        .iter()
-        .filter(|h| h.enabled && !h.key.is_empty() && !h.auto)
-    {
-        let name = HeaderName::from_bytes(field.key.as_bytes())
-            .map_err(|e| format!("Invalid header name '{}': {}", field.key, e))?;
-        let val = HeaderValue::from_str(&field.value)
-            .map_err(|e| format!("Invalid header value '{}': {}", field.value, e))?;
-        if removed.insert(name.as_str().to_lowercase()) {
-            header_map.remove(&name);
-        }
-        header_map.append(name, val);
-    }
-    Ok(())
 }
 
 fn extract_headers(header_map: &http::HeaderMap) -> HashMap<String, String> {

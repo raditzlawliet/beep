@@ -10,6 +10,7 @@ pub struct HistoryEntry {
     pub id: u64,
     pub request: HttpRequest,
     pub response: Option<HttpResponse>,
+    pub error: Option<String>,
     pub timestamp: String,
     pub label: Option<String>,
 }
@@ -36,17 +37,19 @@ impl RequestHistory {
         }
     }
 
-    /// Adds a request to history, optionally with its response
+    /// Adds a request to history, optionally with its response and error.
     pub fn add(
         &mut self,
         request: HttpRequest,
         response: Option<HttpResponse>,
+        error: Option<String>,
         label: Option<String>,
     ) {
         let entry = HistoryEntry {
             id: self.next_id,
             request,
             response,
+            error,
             timestamp: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
             label,
         };
@@ -111,7 +114,7 @@ mod tests {
         let mut history = RequestHistory::new();
         let req = HttpRequest::new("https://api.example.com".to_string(), HttpMethod::Get);
 
-        history.add(req, None, Some("Test Request".to_string()));
+        history.add(req, None, None, Some("Test Request".to_string()));
         assert_eq!(history.len(), 1);
 
         let entries = history.get_all();
@@ -125,7 +128,7 @@ mod tests {
 
         for i in 0..5 {
             let req = HttpRequest::new(format!("https://api.example.com/{}", i), HttpMethod::Get);
-            history.add(req, None, None);
+            history.add(req, None, None, None);
         }
 
         assert_eq!(history.len(), 3); // Should only keep last 3

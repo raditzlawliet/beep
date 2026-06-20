@@ -1,6 +1,6 @@
 use beep_core::{HttpClient, HttpMethod, HttpRequest};
 
-pub fn request(
+pub async fn request(
     url: &str,
     method: &str,
     headers: &[String],
@@ -35,7 +35,7 @@ pub fn request(
     }
 
     let client = HttpClient::new();
-    let response = client.execute(&req)?;
+    let response = client.execute(&req).await?;
 
     println!("Status: {} ({}ms)", response.status, response.elapsed_ms);
 
