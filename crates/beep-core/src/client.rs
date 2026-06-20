@@ -165,6 +165,7 @@ impl HttpClient {
             }
             "form-multipart" => {
                 let (mp_req, mp_body) = build_multipart_body(&request.form_multipart)
+                    .await
                     .map_err(|e| format!("Multipart build failed: {}", e))?;
                 if let Some(ct) = mp_req.headers().get("content-type") {
                     if let Ok(v) = ct.to_str() {
@@ -328,7 +329,7 @@ fn build_url_encoded_body(form_data: &[crate::models::FormField]) -> String {
 
 /// Build multipart/form-data body from form fields.
 /// Returns (request_with_headers, body_bytes).
-fn build_multipart_body(
+async fn build_multipart_body(
     form_data: &[crate::models::FormField],
 ) -> Result<(http::Request<()>, Vec<u8>), String> {
     let boundary = format!(
@@ -361,7 +362,8 @@ fn build_multipart_body(
 
         if is_file && !field.value.is_empty() {
             let file_path = &field.value;
-            let metadata = std::fs::metadata(file_path)
+            let metadata = tokio::fs::metadata(file_path)
+                .await
                 .map_err(|e| format!("Cannot read file '{}': {}", file_path, e))?;
             let file_size = metadata.len();
             if file_size > MAX_FILE_SIZE {
@@ -371,7 +373,8 @@ fn build_multipart_body(
                     MAX_FILE_SIZE / (1024 * 1024)
                 ));
             }
-            let file_data = std::fs::read(file_path)
+            let file_data = tokio::fs::read(file_path)
+                .await
                 .map_err(|e| format!("Failed to read file '{}': {}", file_path, e))?;
 
             let ct = if field.content_type.is_empty() {
