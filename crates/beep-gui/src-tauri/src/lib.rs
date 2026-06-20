@@ -22,7 +22,7 @@ async fn execute_request(
             state
                 .history
                 .lock()
-                .unwrap()
+                .map_err(|e| format!("failed to lock request history: {e}"))?
                 .add(payload, Some(response.clone()), None, None);
             Ok(response)
         }
@@ -30,7 +30,7 @@ async fn execute_request(
             state
                 .history
                 .lock()
-                .unwrap()
+                .map_err(|e| format!("failed to lock request history: {e}"))?
                 .add(payload, None, Some(err.clone()), None);
             Err(err)
         }
