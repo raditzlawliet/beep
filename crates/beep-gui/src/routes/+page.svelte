@@ -56,7 +56,8 @@
         try {
             await request.send(req);
         } catch (e) {
-            reqError = String(e);
+            reqError = typeof e === "string" ? e : (e as Error)?.message ?? String(e);
+            history.refresh().catch(() => {});
         } finally {
             sending = false;
         }
@@ -93,7 +94,7 @@
 
     function handleHistorySelect(entry: import("$lib/types").HistoryEntry) {
         request.loadFromHistory(entry);
-        reqError = null;
+        reqError = entry.error ?? null;
     }
 
     // initialise
@@ -146,7 +147,7 @@
                 onmousedown={splitterStart}
             ></div>
             <div class="flex-1 overflow-hidden">
-                <ResponseView response={request.response} loading={sending} />
+                <ResponseView response={request.response} loading={sending} error={reqError} />
             </div>
         </div>
     </div>

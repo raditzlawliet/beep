@@ -1,3 +1,5 @@
+export type HttpVersion = "Auto" | "Http1" | "Http2";
+
 export type HttpMethod =
   | "GET"
   | "POST"
@@ -45,6 +47,7 @@ export interface HttpRequest {
   raw_body?: string | null;
   form_urlencoded?: FormField[];
   form_multipart?: FormField[];
+  http_version?: HttpVersion;
 }
 
 export interface ResponseSize {
@@ -70,6 +73,7 @@ export interface HistoryEntry {
   id: number;
   request: HttpRequest;
   response: HttpResponse | null;
+  error: string | null;
   timestamp: string;
   label: string | null;
 }
@@ -86,6 +90,7 @@ export function defaultRequest(): HttpRequest {
     raw_body: null,
     form_urlencoded: [],
     form_multipart: [],
+    http_version: "Auto",
   };
 }
 

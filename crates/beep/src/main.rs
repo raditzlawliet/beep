@@ -40,7 +40,8 @@ fn resolve_method_and_url(
     }
 }
 
-fn main() {
+#[tokio::main(flavor = "current_thread")]
+async fn main() {
     let args = Args::parse();
 
     let (method, url) = match resolve_method_and_url(args.arg1.as_deref(), args.arg2.as_deref()) {
@@ -51,7 +52,7 @@ fn main() {
         }
     };
 
-    if let Err(e) = commands::request(&url, &method, &args.header, args.body.as_deref()) {
+    if let Err(e) = commands::request(&url, &method, &args.header, args.body.as_deref()).await {
         eprintln!("Error: {}", e);
         std::process::exit(1);
     }

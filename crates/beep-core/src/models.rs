@@ -3,6 +3,16 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// HTTP version to use for the request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "PascalCase")]
+pub enum HttpVersion {
+    #[default]
+    Auto,
+    Http1,
+    Http2,
+}
+
 /// HTTP methods supported by Beep
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
@@ -128,6 +138,8 @@ pub struct HttpRequest {
     pub url: String,
     pub method: HttpMethod,
     #[serde(default)]
+    pub http_version: HttpVersion,
+    #[serde(default)]
     pub headers: Vec<HeaderField>,
     #[serde(default)]
     pub query_params: Vec<QueryField>,
@@ -139,7 +151,7 @@ pub struct HttpRequest {
     // GUI helper
     #[serde(default)]
     pub body_mode: Option<String>, // none, raw/json, raw/xml, raw/html, raw/text, form-urlencoded, form-multipart
-    /// Draft: raw body content (preserved when switching to form modes)
+    /// Draft: raw body content
     #[serde(default)]
     pub raw_body: Option<String>,
     /// Draft: URL-encoded form fields
@@ -163,6 +175,7 @@ impl HttpRequest {
             raw_body: None,
             form_urlencoded: Vec::new(),
             form_multipart: Vec::new(),
+            http_version: HttpVersion::default(),
         }
     }
 

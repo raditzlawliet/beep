@@ -32,12 +32,17 @@ export const request = {
 
   // execute an HTTP request via the Tauri
   async send(req: HttpRequest): Promise<HttpResponse> {
-    const res = await invoke<HttpResponse>("execute_request", { payload: req });
-    _response = res;
-
-    history.refresh();
-
-    return res;
+    try {
+      const res = await invoke<HttpResponse>("execute_request", {
+        payload: req,
+      });
+      _response = res;
+      history.refresh().catch(() => {});
+      return res;
+    } catch (e) {
+      _response = null;
+      throw e;
+    }
   },
 
   // Update the draft request (called on every form edit).
