@@ -10,7 +10,7 @@
 
     let { response }: Props = $props();
 
-    type BodyDisplay = "html" | "json" | "xml" | "raw";
+    type BodyDisplay = "html" | "json" | "xml" | "raw" | "base64";
     type CodeLanguage = "html" | "json" | "xml" | "text";
     type ActiveTab = "body" | "preview";
 
@@ -34,9 +34,7 @@
     }
 
     $effect(() => {
-        bodyDisplay = detectDisplayFromContentType(
-            response.headers["content-type"] || "",
-        );
+        bodyDisplay = detectedDisplay;
     });
 
     function formatBody(body: string): string {
@@ -47,10 +45,6 @@
         }
     }
 
-    let displayBody = $derived(
-        bodyDisplay === "json" ? formatBody(response.body) : response.body,
-    );
-
     let bodyDisplayLabel = $derived(
         bodyDisplay === "html"
             ? "HTML"
@@ -58,7 +52,9 @@
               ? "JSON"
               : bodyDisplay === "xml"
                 ? "XML"
-                : "Raw",
+                : bodyDisplay === "base64"
+                  ? "Base64"
+                  : "Raw",
     );
 
     let codeLanguage = $derived<CodeLanguage>(
@@ -71,9 +67,44 @@
                 : "text",
     );
 
+    let detectedDisplay = $derived(
+        detectDisplayFromContentType(response.headers["content-type"] || ""),
+    );
+
     let isImage = $derived(
         (response.headers["content-type"] || "").startsWith("image/")
         && response.body_encoding === "base64",
+    );
+
+    let isBinary = $derived(response.body_encoding === "base64");
+
+    let hidePreview = $derived(isBinary && !isImage);
+
+    $effect(() => {
+        if (hidePreview && activeTab === "preview") {
+            activeTab = "body";
+        }
+    });
+
+    let binaryPreview = $derived.by(() => {
+        if (!isBinary) return "";
+        try {
+            const raw = atob(response.body);
+            const chars: string[] = [];
+            for (let i = 0; i < raw.length; i++) {
+                chars.push(String.fromCharCode(raw.charCodeAt(i)));
+            }
+            return chars.join("");
+        } catch {
+            return response.body;
+        }
+    });
+
+    let displayBody = $derived(
+        bodyDisplay === "json" ? formatBody(response.body)
+        : bodyDisplay === "base64" ? response.body
+        : isBinary ? binaryPreview
+        : response.body,
     );
 
     function selectBodyDisplay(mode: BodyDisplay) {
@@ -137,6 +168,7 @@
                     <ul
                         class="dropdown-content menu menu-sm bg-base-200 rounded-box z-50 shadow-sm border border-base-content/10 w-28 p-1"
                     >
+                        {#if !isBinary}
                         <li>
                             <button onclick={() => selectBodyDisplay("json")}>
                                 <BracesIcon class="w-3.5 h-3.5" /> JSON
@@ -156,15 +188,23 @@
                             </button>
                         </li>
                         <li class="m-0 p-0 my-1"></li>
+                        {/if}
                         <li>
                             <button onclick={() => selectBodyDisplay("raw")}>
                                 <FileTextIcon class="w-3.5 h-3.5" /> Raw
                                 {@render check("raw")}
                             </button>
                         </li>
+                        <li>
+                            <button onclick={() => selectBodyDisplay("base64")}>
+                                <FileTextIcon class="w-3.5 h-3.5" /> Base64
+                                {@render check("base64")}
+                            </button>
+                        </li>
                     </ul>
                 {/if}
             </div>
+            {#if !hidePreview}
             <button
                 role="tab"
                 class="tab"
@@ -173,6 +213,7 @@
             >
                 Preview
             </button>
+            {/if}
         </div>
 
         <!-- Spacer -->
