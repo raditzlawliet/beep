@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use http::{HeaderName, HeaderValue};
 use reqwest::Client;
 
-use crate::models::{Auth, HeaderField, HttpRequest, HttpResponse, ResponseSize};
+use crate::models::{Auth, BodyEncoding, HeaderField, HttpRequest, HttpResponse, ResponseSize};
 
 /// Default header values used by HttpClient::new().
 pub const DEFAULT_ACCEPT: &str = "*/*";
@@ -201,19 +201,27 @@ impl HttpClient {
         let status = resp.status().as_u16();
         let resp_headers = extract_headers(resp.headers());
 
-        // Read decoded body (reqwest auto-decompresses gzip/deflate/brotli)
+        // Read decoded body (reqwest auto-decompresses gzip/deflate/brotli/zstd)
         let raw_body = resp
             .bytes()
             .await
             .map_err(|e| format!("Read response body failed: {}", e))?;
-        let resp_body = String::from_utf8_lossy(&raw_body).into_owned();
+
+        // For now, we use simple response encoding because Tauri commands serialized to json.
+        // If the response body isn't valid UTF-8, base64-encode it.
+        // While this is not efficient (33% overhead), it's more simple to maintain for now.
+        // TODO Improve response encoding overhead by using custom protocol or else.
+        let (resp_body, body_encoding) = match String::from_utf8(raw_body.to_vec()) {
+            Ok(s) => (s, BodyEncoding::Utf8),
+            Err(_) => (base64_encode(&raw_body), BodyEncoding::Base64),
+        };
 
         // Compute sizes
         let response_headers_size: u64 = resp_headers
             .iter()
             .map(|(k, v)| (k.len() + v.len() + 4) as u64)
             .sum();
-        let response_body_size = resp_body.len() as u64;
+        let response_body_size = raw_body.len() as u64;
 
         let elapsed_ms = start.elapsed().as_millis() as u64;
 
@@ -221,6 +229,7 @@ impl HttpClient {
             status,
             headers: resp_headers,
             body: resp_body,
+            body_encoding,
             elapsed_ms,
             size: ResponseSize {
                 response_body: response_body_size,

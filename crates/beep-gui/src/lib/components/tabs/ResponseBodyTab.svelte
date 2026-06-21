@@ -71,6 +71,11 @@
                 : "text",
     );
 
+    let isImage = $derived(
+        (response.headers["content-type"] || "").startsWith("image/")
+        && response.body_encoding === "base64",
+    );
+
     function selectBodyDisplay(mode: BodyDisplay) {
         bodyDisplay = mode;
         bodyDropdownOpen = false;
@@ -209,6 +214,14 @@
             <!-- viewer -->
             {#if bodyDisplay === "xml"}
                 <XmlTreeView xml={response.body} />
+            {:else if isImage}
+                <div class="flex items-center justify-center h-full p-4 bg-[repeating-conic-gradient(#80808010_0%_25%,transparent_0%_50%)_50%/20px_20px]">
+                    <img
+                        src="data:{response.headers['content-type']};base64,{response.body}"
+                        alt=""
+                        class="max-w-full max-h-full object-contain"
+                    />
+                </div>
             {:else}
             <iframe
                 class="w-full h-full border-0"
