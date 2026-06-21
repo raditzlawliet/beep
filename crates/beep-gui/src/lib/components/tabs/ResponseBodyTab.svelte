@@ -2,7 +2,7 @@
     import type { HttpResponse } from "$lib/types";
     import CodeEditor from "$lib/components/CodeEditor.svelte";
     import XmlTreeView from "$lib/components/XmlTreeView.svelte";
-    import { ChevronDownIcon, CopyIcon, TextWrapIcon } from "@lucide/svelte";
+    import { BracesIcon, CheckIcon, ChevronDownIcon, CodeXmlIcon, CopyIcon, FileCodeIcon, FileTextIcon, TextWrapIcon } from "@lucide/svelte";
 
     interface Props {
         response: HttpResponse;
@@ -111,35 +111,51 @@
                     class:tab-active={activeTab === "body"}
                     onclick={handleBodyTabClick}
                 >
+                    {#if bodyDisplay === "json"}
+                        <BracesIcon class="w-3 h-3" />
+                    {:else if bodyDisplay === "xml"}
+                        <FileCodeIcon class="w-3 h-3" />
+                    {:else if bodyDisplay === "html"}
+                        <CodeXmlIcon class="w-3 h-3" />
+                    {:else}
+                        <FileTextIcon class="w-3 h-3" />
+                    {/if}
                     {bodyDisplayLabel}
                     {#if activeTab === "body"}
                         <ChevronDownIcon class="w-3 h-3" />
                     {/if}
                 </button>
                 {#if bodyDropdownOpen}
+                    {#snippet check(mode: BodyDisplay)}
+                        <CheckIcon class="w-3 h-3 ml-auto {bodyDisplay === mode ? '' : 'invisible'}" />
+                    {/snippet}
                     <ul
-                        class="dropdown-content menu menu-sm bg-base-200 rounded-box z-50 shadow-sm border border-base-content/10 w-16 p-1"
+                        class="dropdown-content menu menu-sm bg-base-200 rounded-box z-50 shadow-sm border border-base-content/10 w-28 p-1"
                     >
                         <li>
-                            <button onclick={() => selectBodyDisplay("html")}
-                                >HTML</button
-                            >
+                            <button onclick={() => selectBodyDisplay("json")}>
+                                <BracesIcon class="w-3.5 h-3.5" /> JSON
+                                {@render check("json")}
+                            </button>
                         </li>
                         <li>
-                            <button onclick={() => selectBodyDisplay("json")}
-                                >JSON</button
-                            >
+                            <button onclick={() => selectBodyDisplay("xml")}>
+                                <FileCodeIcon class="w-3.5 h-3.5" /> XML
+                                {@render check("xml")}
+                            </button>
                         </li>
                         <li>
-                            <button onclick={() => selectBodyDisplay("xml")}
-                                >XML</button
-                            >
+                            <button onclick={() => selectBodyDisplay("html")}>
+                                <CodeXmlIcon class="w-3.5 h-3.5" /> HTML
+                                {@render check("html")}
+                            </button>
                         </li>
                         <li class="m-0 p-0 my-1"></li>
                         <li>
-                            <button onclick={() => selectBodyDisplay("raw")}
-                                >Raw</button
-                            >
+                            <button onclick={() => selectBodyDisplay("raw")}>
+                                <FileTextIcon class="w-3.5 h-3.5" /> Raw
+                                {@render check("raw")}
+                            </button>
                         </li>
                     </ul>
                 {/if}
