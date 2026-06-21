@@ -67,6 +67,7 @@ export interface HttpResponse {
   body: string;
   elapsed_ms: number;
   size: ResponseSize;
+  body_encoding?: "utf8" | "base64";
 }
 
 export interface HistoryEntry {

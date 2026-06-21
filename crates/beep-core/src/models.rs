@@ -225,6 +225,15 @@ impl ResponseSize {
     }
 }
 
+/// How the response body bytes are encoded for string transport.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum BodyEncoding {
+    #[default]
+    Utf8,
+    Base64,
+}
+
 /// HTTP Response structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HttpResponse {
@@ -233,6 +242,8 @@ pub struct HttpResponse {
     pub body: String,
     pub elapsed_ms: u64,
     pub size: ResponseSize,
+    #[serde(default)]
+    pub body_encoding: BodyEncoding,
 }
 
 #[cfg(test)]
