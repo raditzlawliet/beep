@@ -89,12 +89,7 @@
     let binaryPreview = $derived.by(() => {
         if (!isBinary) return "";
         try {
-            const raw = atob(response.body);
-            const chars: string[] = [];
-            for (let i = 0; i < raw.length; i++) {
-                chars.push(String.fromCharCode(raw.charCodeAt(i)));
-            }
-            return chars.join("");
+            return atob(response.body);
         } catch {
             return response.body;
         }
