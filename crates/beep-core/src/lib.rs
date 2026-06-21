@@ -9,5 +9,5 @@ pub mod models;
 
 // Re-exports alias
 pub use client::HttpClient;
-pub use history::RequestHistory;
+pub use history::{HistoryEntrySummary, RequestHistory};
 pub use models::{HttpMethod, HttpRequest, HttpResponse, ResponseSize};

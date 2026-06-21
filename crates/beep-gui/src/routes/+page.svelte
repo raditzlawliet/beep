@@ -92,9 +92,9 @@
         reqError = null;
     }
 
-    function handleHistorySelect(entry: import("$lib/types").HistoryEntry) {
-        request.loadFromHistory(entry);
-        reqError = entry.error ?? null;
+    async function handleHistorySelect(summary: import("$lib/types").HistoryEntrySummary) {
+        await request.loadFromHistory(summary);
+        reqError = summary.error ?? null;
     }
 
     // initialise

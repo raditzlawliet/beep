@@ -210,7 +210,7 @@ impl HttpRequest {
 }
 
 /// Size breakdown for the response
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct ResponseSize {
     /// Size of the response body in bytes
     pub response_body: u64,

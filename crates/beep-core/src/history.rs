@@ -4,6 +4,19 @@ use crate::models::{HttpRequest, HttpResponse};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 
+/// Lightweight summary for the sidebar — no request/response bodies.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HistoryEntrySummary {
+    pub id: u64,
+    pub method: String,
+    pub url: String,
+    pub status: Option<u16>,
+    pub size: Option<crate::models::ResponseSize>,
+    pub error: Option<String>,
+    pub timestamp: String,
+    pub label: Option<String>,
+}
+
 /// A stored request in history with metadata and the latest response
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HistoryEntry {
@@ -63,16 +76,6 @@ impl RequestHistory {
         }
     }
 
-    /// Gets all history entries
-    pub fn get_all(&self) -> Vec<&HistoryEntry> {
-        self.entries.iter().collect()
-    }
-
-    /// Gets the last N entries
-    pub fn get_recent(&self, n: usize) -> Vec<&HistoryEntry> {
-        self.entries.iter().rev().take(n).collect()
-    }
-
     /// Clears all history
     pub fn clear(&mut self) {
         self.entries.clear();
@@ -86,6 +89,28 @@ impl RequestHistory {
         } else {
             false
         }
+    }
+
+    /// Returns lightweight summaries of all entries (for sidebar display).
+    pub fn get_all_summaries(&self) -> Vec<HistoryEntrySummary> {
+        self.entries
+            .iter()
+            .map(|e| HistoryEntrySummary {
+                id: e.id,
+                method: e.request.method.to_string(),
+                url: e.request.url.clone(),
+                status: e.response.as_ref().map(|r| r.status),
+                size: e.response.as_ref().map(|r| r.size),
+                error: e.error.clone(),
+                timestamp: e.timestamp.clone(),
+                label: e.label.clone(),
+            })
+            .collect()
+    }
+
+    /// Returns a full entry by id.
+    pub fn get_entry_by_id(&self, id: u64) -> Option<&HistoryEntry> {
+        self.entries.iter().find(|e| e.id == id)
     }
 
     /// Returns the number of entries in history
@@ -117,9 +142,11 @@ mod tests {
         history.add(req, None, None, Some("Test Request".to_string()));
         assert_eq!(history.len(), 1);
 
-        let entries = history.get_all();
+        let entries = history.get_all_summaries();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].label, Some("Test Request".to_string()));
+        assert_eq!(entries[0].url, "https://api.example.com");
+        assert_eq!(entries[0].method, "GET");
     }
 
     #[test]
