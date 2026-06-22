@@ -60,7 +60,7 @@
             onclick={() => onToggleDir(node.path)}
         >
             {#if isOpen}
-                <FolderOpen class="h-3.5 w-3.5 me-1.5" />
+                <FolderOpen class="h-3.5 w-3.5 me-1.5 fill-base-content/40"/>
             {:else}
                 <Folder class="h-3.5 w-3.5 me-1.5 opacity-70" />
             {/if}
@@ -90,7 +90,7 @@
             style="padding-left: {padLeft + 0}px"
             onclick={() => onFileSelect(node)}
         >
-            <File class="h-3.5 w-3.5 me-1.5" />
+            <File class="h-3.5 w-3.5 me-1.5 fill-base-content/40" />
             <span class="truncate">{node.name}</span>
         </button>
         </div>
