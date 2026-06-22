@@ -59,11 +59,15 @@ export const request = {
 
   // Populate the form from a history entry.
   async loadFromHistory(summary: HistoryEntrySummary) {
-    const entry = await invoke<HistoryEntry>("get_history_entry", {
-      id: summary.id,
-    });
-    _request = { ...entry.request };
-    _response = entry.response ? { ...entry.response } : null;
+    try {
+      const entry = await invoke<HistoryEntry>("get_history_entry", {
+        id: summary.id,
+      });
+      _request = { ...entry.request };
+      _response = entry.response ? { ...entry.response } : null;
+    } catch (e) {
+      throw e;
+    }
   },
 };
 

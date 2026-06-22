@@ -93,8 +93,12 @@
     }
 
     async function handleHistorySelect(summary: import("$lib/types").HistoryEntrySummary) {
-        await request.loadFromHistory(summary);
-        reqError = summary.error ?? null;
+        try {
+            await request.loadFromHistory(summary);
+            reqError = summary.error ?? null;
+        } catch (e) {
+            reqError = typeof e === "string" ? e : (e as Error)?.message ?? String(e);
+        }
     }
 
     // initialise

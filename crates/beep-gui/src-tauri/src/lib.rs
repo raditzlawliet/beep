@@ -47,9 +47,16 @@ fn get_history(state: tauri::State<'_, AppState>) -> Vec<HistoryEntrySummary> {
 fn get_history_entry(
     state: tauri::State<'_, AppState>,
     id: u64,
-) -> Option<beep_core::history::HistoryEntry> {
-    let history = state.history.lock().unwrap();
-    history.get_entry_by_id(id).cloned()
+) -> Result<beep_core::history::HistoryEntry, String> {
+    let history = state
+        .history
+        .lock()
+        .map_err(|_| "Failed to access history".to_string())?;
+
+    history
+        .get_entry_by_id(id)
+        .cloned()
+        .ok_or("history entry not found".to_string())
 }
 
 #[tauri::command]
