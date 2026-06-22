@@ -26,6 +26,17 @@ Compose and send HTTP requests.
 
 ### Coming soon
 
+- Project Panel & `.http` for HTTP request files (See [Spec](./SPEC.md))
+- Cookies
+- cURL import
+- Environment
+- Persistent Variables
+- Persistent History
+- Prompt Varibales
+- GraphQL Request
+- WebSocket Request
+- gRPC Request
+
 ## Binary Releases
 
 - **Desktop GUI** - Desktop app interface
@@ -66,7 +77,7 @@ TODO
 
 ## Download
 
-> Pre-built binaries coming soon.
+> Pre-built binaries coming soon. (Estimation after Project Panel for v0.1)
 
 ## Contributing
 

@@ -1,0 +1,44 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+
+language: "en-US"
+early_access: false
+tone_instructions: "You are an expert code reviewer in TypeScript, JavaScript, Svelte, Rust and Tauri. You work in an enterprise software developer team, providing concise and clear code review advice. You only elaborate or provide detailed explanations when requested."
+
+reviews:
+  profile: "chill"
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: true
+  review_status: true
+  collapse_walkthrough: false
+  tools:
+    clippy:
+      enabled: true
+    shellcheck:
+      enabled: true
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches: ["main"]
+  path_instructions:
+    - path: "**/*"
+      instructions: |
+        Beep is a lightweight, cross-platform HTTP client for making API requests using Tauri (GUI), TUI and CLI that runs on macOS, Windows, and Linux.
+        Use it from the terminal or as a desktop app. Ensure that all code is OS-agnostic:
+        - Never assume case-sensitive or case-insensitive filesystems
+        - Line endings should be handled consistently (be aware of CRLF vs LF issues)
+
+    - path: "crates/beep-core/src/**/*.rs"
+      instructions: |
+        Beep core lib, written in Rust.
+
+    - path: "crates/beep-gui/src-tauri/**/*.rs"
+      instructions: |
+        Rust/Tauri backend. Keep it brief.
+
+    - path: "crates/beep-gui/src/**/*.svelte"
+      instructions: |
+        Svelte 5 with Runes and DaisyUI v5.
+
+chat:
+  auto_reply: true
