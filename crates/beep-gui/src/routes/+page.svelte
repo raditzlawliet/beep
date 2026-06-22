@@ -1,15 +1,23 @@
 <script lang="ts">
     import type { HttpRequest } from "$lib/types";
-    import { request, history, app } from "$lib/app-state.svelte";
+    import { request, history, app, project } from "$lib/app-state.svelte";
+    import { invoke } from "@tauri-apps/api/core";
+    import { open } from "@tauri-apps/plugin-dialog";
+    import { listen } from "@tauri-apps/api/event";
+    import { SvelteSet } from "svelte/reactivity";
     import TitleBar from "$lib/components/TitleBar.svelte";
     import StatusBar from "$lib/components/StatusBar.svelte";
     import RequestForm from "$lib/components/RequestForm.svelte";
     import ResponseView from "$lib/components/ResponseView.svelte";
     import HistorySidebar from "$lib/components/HistorySidebar.svelte";
+    import ProjectSidebar from "$lib/components/ProjectSidebar.svelte";
 
     // local UI state (belongs to this page, not shared)
 
     let sidebarOpen = $state(false);
+    let activePanel = $state<"history" | "project">("history");
+    let activeFilePath = $state<string | null>(null);
+    let expandedProject = new SvelteSet<string>();
 
     // request lifecycle
     let sending = $state(false);
@@ -19,7 +27,7 @@
     let histLoading = $state(false);
     let histError = $state<string | null>(null);
 
-    // resizable splitter
+    // resizable vertical splitter (request/response)
     let mainPanelEl = $state<HTMLDivElement | null>(null);
     let requestHeight = $state(300);
     let isDragging = $state(false);
@@ -45,8 +53,85 @@
         isDragging = false;
     }
 
+    // resizable horizontal splitter (sidebar)
+    let sidebarWidth = $state(260);
+    let isDraggingSidebar = $state(false);
+
+    const MIN_SIDEBAR = 180;
+    const MAX_SIDEBAR = 480;
+
+    function sidebarSplitterStart(e: MouseEvent) {
+        isDraggingSidebar = true;
+        e.preventDefault();
+    }
+
+    function sidebarSplitterMove(e: MouseEvent) {
+        if (!isDraggingSidebar) return;
+        let w = e.clientX;
+        w = Math.max(MIN_SIDEBAR, Math.min(MAX_SIDEBAR, w));
+        sidebarWidth = w;
+    }
+
+    function sidebarSplitterEnd() {
+        isDraggingSidebar = false;
+    }
+
     function toggleSidebar() {
         sidebarOpen = !sidebarOpen;
+    }
+
+    function switchToHistory() {
+        if (activePanel === "history" && sidebarOpen) {
+            sidebarOpen = false;
+        } else {
+            activePanel = "history";
+            sidebarOpen = true;
+        }
+    }
+
+    function switchToProject() {
+        if (activePanel === "project" && sidebarOpen) {
+            sidebarOpen = false;
+        } else {
+            activePanel = "project";
+            sidebarOpen = true;
+        }
+    }
+
+    async function handleOpenProject() {
+        const selected = await open({ directory: true, multiple: false });
+        if (selected && typeof selected === "string") {
+            expandedProject.clear();
+            activeFilePath = null;
+            await project.open(selected);
+            // auto-expand root
+            if (project.tree.length > 0) {
+                const rootPath = project.tree[0].path.replace(/[/\\][^/\\]*$/, '');
+                expandedProject.add(rootPath);
+            }
+            activePanel = "project";
+            sidebarOpen = true;
+        }
+    }
+
+    function handleCloseProject() {
+        project.close();
+        expandedProject.clear();
+        activeFilePath = null;
+        if (activePanel === "project") {
+            activePanel = "history";
+            if (history.entries.length === 0) {
+                sidebarOpen = false;
+            }
+        }
+    }
+
+    function toggleProjectDir(path: string) {
+        if (expandedProject.has(path)) {
+            expandedProject.delete(path);
+        } else {
+            expandedProject.add(path);
+        }
     }
 
     // function wrapper
@@ -101,6 +186,17 @@
         }
     }
 
+    async function handleFileSelect(node: import("$lib/types").ProjectNode) {
+        activeFilePath = node.path;
+        try {
+            const content = await invoke("read_file_content", { path: node.path });
+            console.log(`--- ${node.name} ---`);
+            console.log(content);
+        } catch (e) {
+            console.error(`Failed to read ${node.name}:`, e);
+        }
+    }
+
     // initialise
     $effect(() => {
         histLoading = true;
@@ -110,27 +206,76 @@
             .finally(() => (histLoading = false));
     });
 
+    // watch project directory for live tree updates
+    $effect(() => {
+        const p = project.path;
+        if (!p) return;
+
+        invoke("watch_project", { path: p });
+
+        const unlisten = listen<{ parent_path: string; children: import("$lib/types").ProjectNode[] }>("fs-change", (event) => {
+            // Do not remove; Debugging watcher
+            const childNames = event.payload.children.map(c => c?.name ?? "null").join(", ");
+            console.log(`[event/fs-change] ${event.payload.parent_path} : ${event.payload.children.length} children: ${childNames}`);
+
+            project.applyNode(event.payload.parent_path, event.payload.children);
+        });
+
+        return () => {
+            invoke("unwatch_project");
+            unlisten.then((fn) => fn());
+        };
+    });
+
 </script>
 
 <div class="flex flex-col h-screen">
-    <TitleBar onNewRequest={handleNewRequest} />
+    <TitleBar
+        onNewRequest={handleNewRequest}
+        onOpenProject={handleOpenProject}
+        onCloseProject={handleCloseProject}
+        projectName={project.name}
+    />
 
     <div class="flex flex-1 overflow-hidden">
         {#if sidebarOpen}
-            <div class="w-60 shrink-0">
-                <HistorySidebar
-                    entries={history.entries}
-                    onSelect={handleHistorySelect}
-                    onClearAll={handleClearHistory}
-                    onDelete={handleDeleteHistory}
-                />
+            <div
+                class="shrink-0 overflow-hidden"
+                style="width: {sidebarWidth}px"
+            >
+                {#if activePanel === "project"}
+                    <ProjectSidebar
+                        tree={project.tree}
+                        projectName={project.name ?? ''}
+                        activeFilePath={activeFilePath}
+                        expanded={expandedProject}
+                        onToggleDir={toggleProjectDir}
+                        onFileSelect={handleFileSelect}
+                        onOpenProject={handleOpenProject}
+                    />
+                {:else}
+                    <HistorySidebar
+                        entries={history.entries}
+                        onSelect={handleHistorySelect}
+                        onClearAll={handleClearHistory}
+                        onDelete={handleDeleteHistory}
+                    />
+                {/if}
             </div>
+
+            <!-- sidebar resize handle -->
+            <div
+                role="presentation"
+                class="w-1 bg-base-300 hover:bg-primary cursor-col-resize shrink-0 transition-colors"
+                class:bg-primary={isDraggingSidebar}
+                onmousedown={sidebarSplitterStart}
+            ></div>
         {/if}
 
         <div
             class="flex flex-col flex-1 overflow-hidden"
             bind:this={mainPanelEl}
-            class:select-none={isDragging}
+            class:select-none={isDragging || isDraggingSidebar}
         >
             <div
                 class="shrink-0 border-b border-base-300 overflow-hidden"
@@ -156,7 +301,16 @@
         </div>
     </div>
 
-    <StatusBar onToggleSidebar={toggleSidebar} response={request.response} loading={sending} error={reqError} />
+    <StatusBar
+        onSwitchToHistory={switchToHistory}
+        onSwitchToProject={switchToProject}
+        activePanel={activePanel}
+        sidebarOpen={sidebarOpen}
+        hasProject={project.path !== null}
+        response={request.response}
+        loading={sending}
+        error={reqError}
+    />
 </div>
 
-<svelte:window onmousemove={splitterMove} onmouseup={splitterEnd} />
+<svelte:window onmousemove={(e) => { splitterMove(e); sidebarSplitterMove(e); }} onmouseup={() => { splitterEnd(); sidebarSplitterEnd(); }} />

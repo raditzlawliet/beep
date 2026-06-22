@@ -90,6 +90,13 @@ export interface HistoryEntry {
   label: string | null;
 }
 
+export interface ProjectNode {
+  name: string;
+  path: string;
+  is_dir: boolean;
+  children?: ProjectNode[];
+}
+
 export function defaultRequest(): HttpRequest {
   return {
     url: "",

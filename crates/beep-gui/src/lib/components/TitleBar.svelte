@@ -6,9 +6,12 @@
 
     interface Props {
         onNewRequest: () => void;
+        onOpenProject: () => void;
+        onCloseProject: () => void;
+        projectName: string | null;
     }
 
-    let { onNewRequest }: Props = $props();
+    let { onNewRequest, onOpenProject, onCloseProject, projectName }: Props = $props();
 
     let aboutDialog = $state<HTMLDialogElement | null>(null);
 
@@ -26,6 +29,16 @@
 
     function handleNewRequest() {
         onNewRequest();
+        closeAll();
+    }
+
+    function handleOpenProject() {
+        onOpenProject();
+        closeAll();
+    }
+
+    function handleCloseProject() {
+        onCloseProject();
         closeAll();
     }
 
@@ -123,6 +136,14 @@
                     <li>
                         <button onclick={handleNewRequest}>New Request</button>
                     </li>
+                    <li></li>
+                    <li>
+                        <button onclick={handleOpenProject}>Open Project</button>
+                    </li>
+                    <li></li>
+                    <li>
+                        <button onclick={handleCloseProject}>Close Project</button>
+                    </li>
                 </ul>
             </div>
         </div>
@@ -133,9 +154,11 @@
                 onclick={toggleMenu}
                 aria-label="Menu"
             >
-                <!-- <img src="/favicon.png" alt="Menu" class="h-4 w-4" /> -->
                 <MenuIcon class="h-4 w-4" />
             </button>
+            {#if projectName}
+                <span class="text-xs opacity-50 ms-1">{projectName}</span>
+            {/if}
         </div>
     {/if}
 
