@@ -70,6 +70,17 @@ export interface HttpResponse {
   body_encoding?: "utf8" | "base64";
 }
 
+export interface HistoryEntrySummary {
+  id: number;
+  method: string;
+  url: string;
+  status: number | null;
+  size: ResponseSize | null;
+  error: string | null;
+  timestamp: string;
+  label: string | null;
+}
+
 export interface HistoryEntry {
   id: number;
   request: HttpRequest;

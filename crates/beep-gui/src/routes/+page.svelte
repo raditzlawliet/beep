@@ -92,9 +92,13 @@
         reqError = null;
     }
 
-    function handleHistorySelect(entry: import("$lib/types").HistoryEntry) {
-        request.loadFromHistory(entry);
-        reqError = entry.error ?? null;
+    async function handleHistorySelect(summary: import("$lib/types").HistoryEntrySummary) {
+        try {
+            await request.loadFromHistory(summary);
+            reqError = summary.error ?? null;
+        } catch (e) {
+            reqError = typeof e === "string" ? e : (e as Error)?.message ?? String(e);
+        }
     }
 
     // initialise

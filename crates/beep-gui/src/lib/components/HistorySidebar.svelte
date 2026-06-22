@@ -1,12 +1,12 @@
 <script lang="ts">
-    import type { HistoryEntry } from "$lib/types";
+    import type { HistoryEntrySummary } from "$lib/types";
     import MethodBadge from "$lib/components/MethodBadge.svelte";
     import StatusBadge from "$lib/components/StatusBadge.svelte";
     import { BrushCleaning, Trash2 } from "@lucide/svelte";
 
     interface Props {
-        entries: HistoryEntry[];
-        onSelect: (entry: HistoryEntry) => void;
+        entries: HistoryEntrySummary[];
+        onSelect: (entry: HistoryEntrySummary) => void;
         onClearAll: () => void;
         onDelete: (id: number) => void;
     }
@@ -60,17 +60,17 @@
                         onclick={() => onSelect(entry)}
                     >
                         <span class="flex items-center gap-1.5 min-w-0">
-                            <MethodBadge method={entry.request.method} />
-                            {#if entry.response}
+                            <MethodBadge method={entry.method as import("$lib/types").HttpMethod} />
+                            {#if entry.status}
                                 <StatusBadge
-                                    status={entry.response.status}
+                                    status={entry.status}
                                     showLabel={false}
                                 />
                             {/if}
                             <span
                                 class="truncate opacity-70"
-                                title={entry.request.url || "(empty)"}
-                                >{entry.request.url || "(empty)"}</span
+                                title={entry.url || "(empty)"}
+                                >{entry.url || "(empty)"}</span
                             >
                         </span>
                     </button>

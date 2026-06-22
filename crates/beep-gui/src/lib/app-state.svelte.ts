@@ -4,13 +4,14 @@ import type {
   HttpRequest,
   HttpResponse,
   HistoryEntry,
+  HistoryEntrySummary,
 } from "./types";
 import { defaultRequest } from "./types";
 
 // Internal state
 let _request = $state<HttpRequest>(defaultRequest());
 let _response = $state<HttpResponse | null>(null);
-let _history = $state<HistoryEntry[]>([]);
+let _history = $state<HistoryEntrySummary[]>([]);
 let _constants = $state<AppConstants | null>(null);
 
 // Eagerly load constants at module init (SSR is disabled so invoke is safe).
@@ -57,9 +58,16 @@ export const request = {
   },
 
   // Populate the form from a history entry.
-  loadFromHistory(entry: HistoryEntry) {
-    _request = { ...entry.request };
-    _response = entry.response ? { ...entry.response } : null;
+  async loadFromHistory(summary: HistoryEntrySummary) {
+    try {
+      const entry = await invoke<HistoryEntry>("get_history_entry", {
+        id: summary.id,
+      });
+      _request = { ...entry.request };
+      _response = entry.response ? { ...entry.response } : null;
+    } catch (e) {
+      throw e;
+    }
   },
 };
 
@@ -70,8 +78,8 @@ export const history = {
   },
 
   // Fetch all latest history
-  async refresh(): Promise<HistoryEntry[]> {
-    _history = await invoke<HistoryEntry[]>("get_history");
+  async refresh(): Promise<HistoryEntrySummary[]> {
+    _history = await invoke<HistoryEntrySummary[]>("get_history");
     return _history;
   },
 
@@ -84,7 +92,7 @@ export const history = {
   // Delete a single history entry
   async delete(id: number) {
     await invoke("delete_history_entry", { id });
-    _history = await invoke<HistoryEntry[]>("get_history");
+    _history = await invoke<HistoryEntrySummary[]>("get_history");
   },
 };
 

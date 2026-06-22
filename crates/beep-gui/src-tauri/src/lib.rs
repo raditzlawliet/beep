@@ -3,7 +3,7 @@ mod models;
 use std::sync::Mutex;
 
 use beep_core::client::default_headers;
-use beep_core::{HttpClient, HttpRequest, HttpResponse, RequestHistory};
+use beep_core::{HistoryEntrySummary, HttpClient, HttpRequest, HttpResponse, RequestHistory};
 
 use models::AppConstants;
 
@@ -38,9 +38,25 @@ async fn execute_request(
 }
 
 #[tauri::command]
-fn get_history(state: tauri::State<'_, AppState>) -> Vec<beep_core::history::HistoryEntry> {
+fn get_history(state: tauri::State<'_, AppState>) -> Vec<HistoryEntrySummary> {
     let history = state.history.lock().unwrap();
-    history.get_all().into_iter().cloned().collect()
+    history.get_all_summaries()
+}
+
+#[tauri::command]
+fn get_history_entry(
+    state: tauri::State<'_, AppState>,
+    id: u64,
+) -> Result<beep_core::history::HistoryEntry, String> {
+    let history = state
+        .history
+        .lock()
+        .map_err(|_| "Failed to access history".to_string())?;
+
+    history
+        .get_entry_by_id(id)
+        .cloned()
+        .ok_or("history entry not found".to_string())
 }
 
 #[tauri::command]
@@ -99,6 +115,7 @@ pub fn run() {
             execute_request,
             //
             get_history,
+            get_history_entry,
             clear_history,
             delete_history_entry,
         ])
