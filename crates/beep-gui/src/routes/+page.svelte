@@ -21,7 +21,7 @@
     let expandedProject = new SvelteSet<string>();
 
     let tabs = $state<Tab[]>([
-        { id: "__request__", type: "request", label: "Request", persistent: true },
+        { id: "__request__", type: "request", label: "Request", persistent: true, content: "" },
     ]);
     let activeTabId = $state<string>("__request__");
 
@@ -255,10 +255,10 @@
         if (selected && typeof selected === "string") {
             // clear old project file tabs when opening a different folder
             if (project.path && project.path !== selected) {
-                tabs = tabs.filter((t) => t.type === "request");
                 if (activeTabId !== "__request__") {
                     activeTabId = "__request__";
                 }
+                tabs = tabs.filter((t) => t.type === "request");
             }
 
             expandedProject.clear();
@@ -280,10 +280,10 @@
         expandedProject.clear();
         activeFilePath = null;
 
-        tabs = tabs.filter((t) => t.type === "request");
         if (activeTabId !== "__request__") {
             activeTabId = "__request__";
         }
+        tabs = tabs.filter((t) => t.type === "request");
 
         if (activePanel === "project") {
             activePanel = "history";
@@ -507,7 +507,12 @@
                         onContentChange={(v) => {
                             if (activeTab) {
                                 activeTab.content = v;
-                                if (!activeTab.persistent && v !== activeTab.originalContent) activeTab.persistent = true;
+                                // make persistent if user try to edit
+                                if (!activeTab.persistent
+                                    && activeTab.originalContent !== undefined
+                                    && v !== activeTab.originalContent) {
+                                      activeTab.persistent = true;
+                                }
                             }
                         }}
                     />

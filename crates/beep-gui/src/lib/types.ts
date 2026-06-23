@@ -102,7 +102,7 @@ export interface Tab {
   type: "request" | "file";
   label: string;
   filePath?: string;
-  content?: string;
+  content: string;
   originalContent?: string;
   diskChanged?: boolean;
   persistent: boolean;
