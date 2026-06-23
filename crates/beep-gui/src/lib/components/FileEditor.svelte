@@ -5,6 +5,7 @@
         keymap,
         lineNumbers,
         highlightActiveLine,
+        highlightActiveLineGutter,
     } from "@codemirror/view";
     import { EditorState } from "@codemirror/state";
     import {
@@ -45,6 +46,7 @@
         const extensions = [
             lineNumbers(),
             highlightActiveLine(),
+            highlightActiveLineGutter(),
             ...(wrap ? [EditorView.lineWrapping] : []),
             history(),
             bracketMatching(),

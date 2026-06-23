@@ -36,13 +36,13 @@ export const monokaiTheme = EditorView.theme(
     // "&.cm-focused .cm-cursor": {
     //     borderLeftColor: "#F8F8F0",
     // },
-    // "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection":
-    //     {
-    //         backgroundColor: "#49483E",
-    //     },
-    // ".cm-activeLine": {
-    //     backgroundColor: "#3E3D32",
-    // },
+    "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection":
+      {
+        backgroundColor: "#49483E",
+      },
+    ".cm-activeLine": {
+      backgroundColor: "#3E3D32",
+    },
     ".cm-gutters": {
       // backgroundColor: "#272822",
       // color: "#75715E",
