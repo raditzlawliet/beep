@@ -163,6 +163,13 @@
         activeTabId = id;
     }
 
+    function makeTabPersistent(id: string) {
+        const tab = tabs.find((t) => t.id === id);
+        if (tab && !tab.persistent) {
+            tab.persistent = true;
+        }
+    }
+
     // request lifecycle
     let sending = $state(false);
     let reqError = $state<string | null>(null);
@@ -452,7 +459,7 @@
             bind:this={mainPanelEl}
             class:select-none={isDragging || isDraggingSidebar}
         >
-            <TabBar {tabs} {activeTabId} onSelectTab={selectTab} onCloseTab={closeTab} />
+            <TabBar {tabs} {activeTabId} onSelectTab={selectTab} onCloseTab={closeTab} onDblClickTab={makeTabPersistent} />
 
             {#if activeTab?.type === "request"}
                 <div
@@ -486,7 +493,10 @@
                             if (activeTab) activeTab.cursorPos = pos;
                         }}
                         onContentChange={(v) => {
-                            if (activeTab) activeTab.content = v;
+                            if (activeTab) {
+                                activeTab.content = v;
+                                if (!activeTab.persistent && v !== activeTab.originalContent) activeTab.persistent = true;
+                            }
                         }}
                     />
                 </div>

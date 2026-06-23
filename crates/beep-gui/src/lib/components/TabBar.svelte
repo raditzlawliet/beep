@@ -7,9 +7,10 @@
         activeTabId: string;
         onSelectTab: (id: string) => void;
         onCloseTab: (id: string) => void;
+        onDblClickTab: (id: string) => void;
     }
 
-    let { tabs, activeTabId, onSelectTab, onCloseTab }: Props = $props();
+    let { tabs, activeTabId, onSelectTab, onCloseTab, onDblClickTab }: Props = $props();
 
     function wheelHandler(e: WheelEvent) {
         const el = e.currentTarget as HTMLElement;
@@ -33,7 +34,7 @@
             role="tab"
             tabindex="0"
             class="group flex items-center
-                gap-1.5 h-8 px-2 text-xs
+                gap-1.5 h-8 px-2 text-xs select-none
                 {activeTabId === tab.id ? 'text-base-content' : 'text-base-content/50'}
                 border-r border-base-content/10
                 hover:bg-base-200 transition-colors
@@ -44,6 +45,7 @@
             class:border-t-primary={activeTabId === tab.id}
             class:italic={!tab.persistent}
             onclick={() => onSelectTab(tab.id)}
+            ondblclick={() => onDblClickTab(tab.id)}
             onkeydown={(e: KeyboardEvent) => {
                 if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
