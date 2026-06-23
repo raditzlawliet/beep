@@ -253,6 +253,14 @@
     async function handleOpenProject() {
         const selected = await open({ directory: true, multiple: false });
         if (selected && typeof selected === "string") {
+            // clear old project file tabs when opening a different folder
+            if (project.path && project.path !== selected) {
+                tabs = tabs.filter((t) => t.type === "request");
+                if (activeTabId !== "__request__") {
+                    activeTabId = "__request__";
+                }
+            }
+
             expandedProject.clear();
             activeFilePath = null;
             await project.open(selected);
