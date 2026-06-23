@@ -23,6 +23,8 @@
         value: string;
         language?: "text" | "json" | "html" | "xml";
         onchange?: (value: string) => void;
+        oncursorchange?: (pos: number) => void;
+        initialCursorPos?: number;
         class?: string;
         wrapLines?: boolean;
     }
@@ -31,6 +33,8 @@
         value,
         language = "text",
         onchange,
+        oncursorchange,
+        initialCursorPos,
         class: className = "",
         wrapLines = true,
     }: Props = $props();
@@ -56,6 +60,11 @@
             EditorView.updateListener.of((update) => {
                 if (update.docChanged && onchange) {
                     onchange(update.state.doc.toString());
+                }
+                // Track cursor position changes
+                if (update.selectionSet && oncursorchange) {
+                    const pos = update.state.selection.main.head;
+                    oncursorchange(pos);
                 }
             }),
             EditorView.theme({
@@ -91,6 +100,8 @@
 
         view = createEditor(initVal, language, wrapLines);
 
+        view.focus();
+
         return () => {
             view?.destroy();
             view = undefined;
@@ -99,6 +110,7 @@
 
     $effect(() => {
         const currentValue = value;
+        const pos = initialCursorPos;
         if (!view) return;
         if (view.state.doc.toString() === currentValue) return;
 
@@ -109,6 +121,18 @@
                 insert: currentValue,
             },
         });
+
+        // Cursor position
+        if (pos !== undefined) {
+            const clampedPos = pos < 0 ? 0 : Math.min(pos, view.state.doc.length);
+            view.dispatch({
+                selection: { anchor: clampedPos, head: clampedPos },
+                scrollIntoView: true,
+            });
+        }
+
+        // Auto focus
+        view.focus();
     });
 </script>
 

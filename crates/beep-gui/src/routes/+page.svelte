@@ -481,6 +481,10 @@
                     <FileViewer
                         fileName={activeTab.label}
                         content={activeTab.content ?? ""}
+                        initialCursorPos={activeTab.cursorPos}
+                        oncursorchange={(pos) => {
+                            if (activeTab) activeTab.cursorPos = pos;
+                        }}
                         onContentChange={(v) => {
                             if (activeTab) activeTab.content = v;
                         }}

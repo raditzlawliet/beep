@@ -106,6 +106,7 @@ export interface Tab {
   originalContent?: string;
   diskChanged?: boolean;
   persistent: boolean;
+  cursorPos?: number;
 }
 
 export function defaultRequest(): HttpRequest {

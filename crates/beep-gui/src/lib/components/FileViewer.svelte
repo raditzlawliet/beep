@@ -5,9 +5,11 @@
         fileName: string;
         content: string;
         onContentChange?: (newContent: string) => void;
+        initialCursorPos?: number;
+        oncursorchange?: (pos: number) => void;
     }
 
-    let { fileName, content, onContentChange }: Props = $props();
+    let { fileName, content, onContentChange, initialCursorPos, oncursorchange }: Props = $props();
 
     function detectLanguage(name: string, raw: string): "text" | "json" | "html" | "xml" {
         const ext = name.split(".").pop()?.toLowerCase();
@@ -34,6 +36,8 @@
         {language}
         wrapLines={true}
         onchange={(v) => onContentChange?.(v)}
+        {initialCursorPos}
+        {oncursorchange}
         class="flex-1 min-h-0"
     />
 </div>
