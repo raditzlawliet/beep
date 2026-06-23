@@ -2,6 +2,7 @@
     import type { HttpResponse } from "$lib/types";
     import { HistoryIcon, FolderTree } from "@lucide/svelte";
     import StatusBadge from "$lib/components/StatusBadge.svelte";
+    import HorizontalDivider from "./uis/HorizontalDivider.svelte";
 
     interface Props {
         onSwitchToHistory: () => void;
@@ -36,7 +37,7 @@
         title="History"
     >
         <span class:text-primary={sidebarOpen && activePanel === "history"}>
-            <HistoryIcon class="h-4 w-4" />
+            <HistoryIcon class="h-3 w-3" />
         </span>
     </button>
     <button
@@ -46,7 +47,7 @@
         title="Project"
     >
         <span class:text-primary={sidebarOpen && activePanel === "project"}>
-            <FolderTree class="h-4 w-4" />
+            <FolderTree class="h-3 w-3" />
         </span>
     </button>
     <div class="divider divider-horizontal w-1 m-0"></div>

@@ -188,7 +188,7 @@
         onclick={toggleMenu}
         aria-label="Menu"
       >
-        <MenuIcon class="h-4 w-4" />
+        <MenuIcon class="h-3.5 w-3.5" />
       </button>
       {#if projectName}
         <span class="text-xs opacity-50 ms-1">{projectName}</span>
