@@ -25,7 +25,7 @@
 </script>
 
 <div
-    class="flex items-center border-b border-base-300 bg-base-200/50 overflow-x-auto shrink-0 tab-bar-scroll"
+    class="flex items-center bg-base-200/50 overflow-x-auto shrink-0 tab-bar-scroll"
     onwheel={wheelHandler}
 >
     {#each tabs as tab (tab.id)}
@@ -39,6 +39,7 @@
                 hover:bg-base-200 transition-colors
                 shrink-0 max-w-48 cursor-pointer"
             class:bg-base-100={activeTabId === tab.id}
+            class:border-b={activeTabId !== tab.id}
             class:border-t-2={activeTabId === tab.id}
             class:border-t-primary={activeTabId === tab.id}
             class:italic={!tab.persistent}
@@ -74,7 +75,7 @@
             {/if}
         </div>
     {/each}
-    <div class="flex-1 h-8 border-b border-b-transparent"></div>
+    <div class="flex-1 h-8 border-b border-base-content/10"></div>
 </div>
 
 <style>

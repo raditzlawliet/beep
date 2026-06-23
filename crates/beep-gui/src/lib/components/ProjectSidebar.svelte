@@ -54,7 +54,7 @@
             </button>
         </div>
     {:else}
-        <div class="flex-1 overflow-y-auto py-1">
+        <div class="flex-1 overflow-auto py-1 overlay-scrollbar">
             {@render TreeNode({ node: rootNode, expanded, onToggleDir, activeFilePath, depth: 0 })}
         </div>
     {/if}
@@ -83,11 +83,11 @@
             onclick={() => onToggleDir(node.path)}
         >
             {#if isOpen}
-                <FolderOpen class="h-3.5 w-3.5 me-1.5 fill-base-content/40"/>
+                <FolderOpen class="h-3.5 w-3.5 me-1.5 shrink-0 fill-base-content/40"/>
             {:else}
-                <Folder class="h-3.5 w-3.5 me-1.5 opacity-70" />
+                <Folder class="h-3.5 w-3.5 me-1.5 shrink-0 opacity-70" />
             {/if}
-            <span class="truncate">{node.name}</span>
+            <span class="whitespace-nowrap">{node.name}</span>
         </button>
         </div>
 
@@ -113,8 +113,8 @@
             style="padding-left: {padLeft + 0}px"
             onclick={() => handleFileClick(node)}
         >
-            <File class="h-3.5 w-3.5 me-1.5 fill-base-content/40" />
-            <span class="truncate">{node.name}</span>
+            <File class="h-3.5 w-3.5 me-1.5 shrink-0 fill-base-content/40" />
+            <span class="whitespace-nowrap">{node.name}</span>
         </button>
         </div>
     {/if}
