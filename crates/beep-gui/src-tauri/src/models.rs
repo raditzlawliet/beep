@@ -32,3 +32,8 @@ pub struct FsChangePayload {
     pub parent_path: String,
     pub children: Vec<ProjectNode>,
 }
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct FsContentChangePayload {
+    pub path: String,
+}

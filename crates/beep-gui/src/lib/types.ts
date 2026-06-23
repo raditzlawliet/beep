@@ -97,6 +97,17 @@ export interface ProjectNode {
   children?: ProjectNode[];
 }
 
+export interface Tab {
+  id: string;
+  type: "request" | "file";
+  label: string;
+  filePath?: string;
+  content?: string;
+  originalContent?: string;
+  diskChanged?: boolean;
+  persistent: boolean;
+}
+
 export function defaultRequest(): HttpRequest {
   return {
     url: "",
@@ -127,7 +138,7 @@ export function methodBadgeColor(method: HttpMethod): string {
   return map[method] || "badge-ghost";
 }
 
-// Tailwind text-color classes for inline colored method text (Postman-style)
+// Tailwind text-color classes for inline colored method text
 export function methodTextColor(method: HttpMethod): string {
   const map: Record<HttpMethod, string> = {
     GET: "text-success",

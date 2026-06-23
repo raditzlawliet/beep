@@ -9,10 +9,11 @@
         expanded: Set<string>;
         onToggleDir: (path: string) => void;
         onFileSelect: (node: ProjectNode) => void;
+        onFileDblClick: (node: ProjectNode) => void;
         onOpenProject: () => void;
     }
 
-    let { tree, projectName, activeFilePath, expanded, onToggleDir, onFileSelect, onOpenProject }: Props = $props();
+    let { tree, projectName, activeFilePath, expanded, onToggleDir, onFileSelect, onFileDblClick, onOpenProject }: Props = $props();
 
     let rootNode = $derived<ProjectNode>({
         name: projectName,
@@ -20,6 +21,28 @@
         is_dir: true,
         children: tree,
     });
+
+    let clickTimer: ReturnType<typeof setTimeout> | null = $state(null);
+    let lastClickedPath = $state<string | null>(null);
+
+    function handleFileClick(node: ProjectNode) {
+        if (clickTimer && lastClickedPath === node.path) {
+            // second click on same file within window - double click
+            clearTimeout(clickTimer);
+            clickTimer = null;
+            lastClickedPath = null;
+            onFileDblClick(node);
+        } else {
+            // first click - act immediately, set timer to catch double-click
+            if (clickTimer) clearTimeout(clickTimer);
+            onFileSelect(node);
+            lastClickedPath = node.path;
+            clickTimer = setTimeout(() => {
+                clickTimer = null;
+                lastClickedPath = null;
+            }, 350);
+        }
+    }
 </script>
 
 <div class="flex flex-col h-full border-r border-base-300 w-full">
@@ -32,13 +55,13 @@
         </div>
     {:else}
         <div class="flex-1 overflow-y-auto py-1">
-            {@render TreeNode({ node: rootNode, expanded, onToggleDir, activeFilePath, onFileSelect, depth: 0 })}
+            {@render TreeNode({ node: rootNode, expanded, onToggleDir, activeFilePath, depth: 0 })}
         </div>
     {/if}
 </div>
 
-{#snippet TreeNode(props: { node: ProjectNode; expanded: Set<string>; onToggleDir: (path: string) => void; activeFilePath: string | null; onFileSelect: (node: ProjectNode) => void; depth: number })}
-    {@const { node, expanded, onToggleDir, activeFilePath, onFileSelect, depth } = props}
+{#snippet TreeNode(props: { node: ProjectNode; expanded: Set<string>; onToggleDir: (path: string) => void; activeFilePath: string | null; depth: number })}
+    {@const { node, expanded, onToggleDir, activeFilePath, depth } = props}
     {@const isOpen = expanded.has(node.path)}
     {@const isActive = activeFilePath === node.path}
     {@const padLeft = depth * 20 + 8}
@@ -70,7 +93,7 @@
 
         {#if isOpen && node.children}
             {#each node.children as child (child.path)}
-                {@render TreeNode({ node: child, expanded, onToggleDir, activeFilePath, onFileSelect, depth: depth + 1 })}
+                {@render TreeNode({ node: child, expanded, onToggleDir, activeFilePath, depth: depth + 1 })}
             {/each}
         {/if}
     {:else}
@@ -88,7 +111,7 @@
             class="flex items-center w-full text-left text-xs py-1 hover:bg-base-200/50"
             class:bg-base-200={isActive}
             style="padding-left: {padLeft + 0}px"
-            onclick={() => onFileSelect(node)}
+            onclick={() => handleFileClick(node)}
         >
             <File class="h-3.5 w-3.5 me-1.5 fill-base-content/40" />
             <span class="truncate">{node.name}</span>

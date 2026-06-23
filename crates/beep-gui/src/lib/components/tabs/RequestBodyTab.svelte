@@ -30,7 +30,7 @@
         onFormMultipartChange,
     }: Props = $props();
 
-    // Derived: body type extracted from combined bodyMode ("raw/json" → "json").
+    // Derived: body type extracted from combined bodyMode ("raw/json" to "json").
     const bodyType = $derived(
         bodyMode.startsWith("raw/") ? bodyMode.slice(4) : "text",
     );

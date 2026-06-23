@@ -23,7 +23,6 @@
         language?: "text" | "json" | "html" | "xml";
         onchange?: (value: string) => void;
         class?: string;
-        readonly?: boolean;
         wrapLines?: boolean;
     }
 
@@ -32,7 +31,6 @@
         language = "text",
         onchange,
         class: className = "",
-        readonly = false,
         wrapLines = true,
     }: Props = $props();
 
@@ -82,14 +80,9 @@
             parent: container,
         });
 
-        if (readonly) {
-            editor.contentDOM.setAttribute("contenteditable", "false");
-        }
-
         return editor;
     }
 
-    // Create editor on mount or when language changes
     $effect(() => {
         if (!container) return;
         const initVal = untrack(() => value);
@@ -102,7 +95,6 @@
         };
     });
 
-    // Sync external value changes into the editor
     $effect(() => {
         const currentValue = value;
         if (!view) return;

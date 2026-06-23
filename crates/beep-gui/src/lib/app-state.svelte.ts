@@ -15,7 +15,7 @@ function mergeChildren(
   newChildren: ProjectNode[],
 ): ProjectNode[] {
   if (targetPath === null) {
-    // root level — merge into top-level tree entries
+    // root level - merge into top-level tree entries
     return newChildren.map((nc) => {
       if (nc.is_dir && !nc.children) {
         const old = tree.find((c) => c.path === nc.path);

@@ -10,7 +10,7 @@ use tauri::Emitter;
 use beep_core::client::default_headers;
 use beep_core::{HistoryEntrySummary, HttpClient, HttpRequest, HttpResponse, RequestHistory};
 
-use models::{AppConstants, AppState, FsChangePayload, ProjectNode};
+use models::{AppConstants, AppState, FsChangePayload, FsContentChangePayload, ProjectNode};
 
 // directories excluded from tree and watcher
 const SKIP_DIRS: &[&str] = &[
@@ -146,6 +146,11 @@ fn read_file_content(path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+fn save_file_content(path: String, content: String) -> Result<(), String> {
+    fs::write(&path, &content).map_err(|e| format!("Failed to save file: {e}"))
+}
+
+#[tauri::command]
 fn watch_project(
     path: String,
     app: tauri::AppHandle,
@@ -156,31 +161,47 @@ fn watch_project(
 
     let mut watcher = notify::recommended_watcher(move |res: Result<Event, notify::Error>| {
         if let Ok(event) = res {
-            let relevant = matches!(
+            let is_modify = matches!(event.kind, EventKind::Modify(_));
+            let is_structural = matches!(
                 event.kind,
                 EventKind::Create(_)
                     | EventKind::Remove(_)
                     | EventKind::Modify(notify::event::ModifyKind::Name(_))
             );
-            if !relevant {
+
+            if !is_modify && !is_structural {
                 return;
             }
+
             if let Some(p) = event.paths.first() {
-                // skip paths under excluded dirs
                 if p.components()
                     .any(|c| is_skip_dir(&c.as_os_str().to_string_lossy()))
                 {
                     return;
                 }
-                let parent = p.parent().map(|d| d.to_path_buf()).unwrap_or(p.clone());
-                let children = build_tree(&parent, false);
-                let _ = app.emit(
-                    "fs-change",
-                    FsChangePayload {
-                        parent_path: parent.to_string_lossy().to_string(),
-                        children,
-                    },
-                );
+
+                let file_path = p.to_string_lossy().to_string();
+
+                // any Modify (Data or Name) can change file content
+                if is_modify {
+                    let _ = app.emit(
+                        "fs-content-change",
+                        FsContentChangePayload { path: file_path },
+                    );
+                }
+
+                // structural changes need tree refresh
+                if is_structural {
+                    let parent = p.parent().map(|d| d.to_path_buf()).unwrap_or(p.clone());
+                    let children = build_tree(&parent, false);
+                    let _ = app.emit(
+                        "fs-change",
+                        FsChangePayload {
+                            parent_path: parent.to_string_lossy().to_string(),
+                            children,
+                        },
+                    );
+                }
             }
         }
     })
@@ -245,6 +266,7 @@ pub fn run() {
             //
             open_project_folder,
             read_file_content,
+            save_file_content,
             watch_project,
             unwatch_project,
             //
