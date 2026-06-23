@@ -257,7 +257,7 @@
             activeFilePath = null;
             await project.open(selected);
 
-            // auto-expand root
+            // auto-expand root node
             if (project.tree.length > 0) {
                 const rootPath = project.tree[0].path.replace(/[/\\][^/\\]*$/, '');
                 expandedProject.add(rootPath);
@@ -285,11 +285,14 @@
         }
     }
 
-    function toggleProjectDir(path: string) {
+    async function toggleProjectDir(path: string) {
         if (expandedProject.has(path)) {
             expandedProject.delete(path);
         } else {
             expandedProject.add(path);
+            if (!project.isLoaded(path)) {
+                await project.expand(path);
+            }
         }
     }
 
@@ -430,6 +433,7 @@
                         projectName={project.name ?? ''}
                         activeFilePath={activeFilePath}
                         expanded={expandedProject}
+                        loadingDirs={project.loadingDirs}
                         onToggleDir={toggleProjectDir}
                         onFileSelect={handleFileSelect}
                         onFileDblClick={handleFileDblClick}

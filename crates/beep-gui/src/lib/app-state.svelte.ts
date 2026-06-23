@@ -138,6 +138,8 @@ export const history = {
 };
 
 // project domain
+let _loadingDirs = $state<Set<string>>(new Set());
+
 export const project = {
   get path() {
     return _projectPath;
@@ -151,15 +153,32 @@ export const project = {
     return _projectTree;
   },
 
+  get loadingDirs() {
+    return _loadingDirs;
+  },
+
   async open(folderPath: string) {
     _projectPath = folderPath;
     _projectName = folderPath.split(/[/\\]/).pop() || folderPath;
-    _projectTree = await invoke<ProjectNode[]>("open_project_folder", {
+    _projectTree = await invoke<ProjectNode[]>("read_dir_children", {
       path: folderPath,
-      recursive: true,
     });
   },
 
+  // expand folders and Lazy-load children of a directory
+  async expand(dirPath: string) {
+    _loadingDirs.add(dirPath);
+    try {
+      const children = await invoke<ProjectNode[]>("read_dir_children", {
+        path: dirPath,
+      });
+      project.applyNode(dirPath, children);
+    } finally {
+      _loadingDirs.delete(dirPath);
+    }
+  },
+
+  // Merge children from a watcher event into the tree.
   applyNode(parentPath: string, newChildren: ProjectNode[]) {
     if (!_projectPath) return;
     _projectTree = mergeChildren(
@@ -169,10 +188,27 @@ export const project = {
     );
   },
 
+  // Check if a directory has been lazy-loaded.
+  isLoaded(dirPath: string): boolean {
+    function findNode(nodes: ProjectNode[], path: string): ProjectNode | null {
+      for (const n of nodes) {
+        if (n.path === path) return n;
+        if (n.children) {
+          const found = findNode(n.children, path);
+          if (found) return found;
+        }
+      }
+      return null;
+    }
+    const node = findNode(_projectTree, dirPath);
+    return node ? node.children !== undefined : false;
+  },
+
   close() {
     _projectPath = null;
     _projectName = null;
     _projectTree = [];
+    _loadingDirs.clear();
   },
 };
 

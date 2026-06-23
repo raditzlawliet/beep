@@ -21,13 +21,16 @@ const SKIP_DIRS: &[&str] = &[
     "build",
     "__pycache__",
     "coverage",
+    ".svelte-kit",
+    "gen",
 ];
 
 fn is_skip_dir(name: &str) -> bool {
     SKIP_DIRS.contains(&name)
 }
 
-fn build_tree(dir: &Path, recursive: bool) -> Vec<ProjectNode> {
+/// read_dir_path_children Read immediate children of a single directory (non-recursive) by path
+fn read_dir_path_children(dir: &Path) -> Vec<ProjectNode> {
     let mut nodes = Vec::new();
     let entries = match fs::read_dir(dir) {
         Ok(e) => e,
@@ -36,24 +39,21 @@ fn build_tree(dir: &Path, recursive: bool) -> Vec<ProjectNode> {
 
     for entry in entries.flatten() {
         let path = entry.path();
-        let name = entry.file_name().to_string_lossy().to_string();
+        let name = entry.file_name().to_string_lossy().into_owned();
 
         // skip excluded dirs
-        if path.is_dir() && is_skip_dir(&name) {
+        let is_dir = path.is_dir();
+        if is_dir && is_skip_dir(&name) {
             continue;
         }
 
-        if path.is_dir() {
-            let children = if recursive {
-                Some(build_tree(&path, recursive))
-            } else {
-                None
-            };
+        if is_dir {
+            // children: None signals "not yet loaded" to the frontend
             nodes.push(ProjectNode {
                 name,
                 path: path.to_string_lossy().to_string(),
                 is_dir: true,
-                children,
+                children: None,
             });
         } else if let Some(ext) = path.extension() {
             let ext = ext.to_string_lossy().to_lowercase();
@@ -135,9 +135,11 @@ fn delete_history_entry(state: tauri::State<'_, AppState>, id: u64) -> bool {
     state.history.lock().unwrap().remove_by_id(id)
 }
 
+/// read_dir_children return list children of a single directory
+/// TODO for now this always Ok, we can use the Err check in the future.
 #[tauri::command]
-fn open_project_folder(path: String, recursive: Option<bool>) -> Vec<ProjectNode> {
-    build_tree(Path::new(&path), recursive.unwrap_or(true))
+async fn read_dir_children(path: String) -> Result<Vec<ProjectNode>, String> {
+    Ok(read_dir_path_children(Path::new(&path)))
 }
 
 #[tauri::command]
@@ -193,7 +195,7 @@ fn watch_project(
                 // structural changes need tree refresh
                 if is_structural {
                     let parent = p.parent().map(|d| d.to_path_buf()).unwrap_or(p.clone());
-                    let children = build_tree(&parent, false);
+                    let children = read_dir_path_children(&parent);
                     let _ = app.emit(
                         "fs-change",
                         FsChangePayload {
@@ -264,7 +266,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_app_constants,
             //
-            open_project_folder,
+            read_dir_children,
             read_file_content,
             save_file_content,
             watch_project,

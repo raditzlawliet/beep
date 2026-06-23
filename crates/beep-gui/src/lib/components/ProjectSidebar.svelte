@@ -1,19 +1,20 @@
 <script lang="ts">
     import type { ProjectNode } from "$lib/types";
-    import { Folder, File, FolderOpen } from "@lucide/svelte";
+    import { Folder, File, FolderOpen, Loader } from "@lucide/svelte";
 
     interface Props {
         tree: ProjectNode[];
         projectName: string;
         activeFilePath: string | null;
         expanded: Set<string>;
+        loadingDirs: Set<string>;
         onToggleDir: (path: string) => void;
         onFileSelect: (node: ProjectNode) => void;
         onFileDblClick: (node: ProjectNode) => void;
         onOpenProject: () => void;
     }
 
-    let { tree, projectName, activeFilePath, expanded, onToggleDir, onFileSelect, onFileDblClick, onOpenProject }: Props = $props();
+    let { tree, projectName, activeFilePath, expanded, loadingDirs, onToggleDir, onFileSelect, onFileDblClick, onOpenProject }: Props = $props();
 
     let rootNode = $derived<ProjectNode>({
         name: projectName,
@@ -55,14 +56,15 @@
         </div>
     {:else}
         <div class="flex-1 overflow-auto py-1 overlay-scrollbar">
-            {@render TreeNode({ node: rootNode, expanded, onToggleDir, activeFilePath, depth: 0 })}
+            {@render TreeNode({ node: rootNode, expanded, loadingDirs, onToggleDir, activeFilePath, depth: 0 })}
         </div>
     {/if}
 </div>
 
-{#snippet TreeNode(props: { node: ProjectNode; expanded: Set<string>; onToggleDir: (path: string) => void; activeFilePath: string | null; depth: number })}
-    {@const { node, expanded, onToggleDir, activeFilePath, depth } = props}
+{#snippet TreeNode(props: { node: ProjectNode; expanded: Set<string>; loadingDirs: Set<string>; onToggleDir: (path: string) => void; activeFilePath: string | null; depth: number })}
+    {@const { node, expanded, loadingDirs, onToggleDir, activeFilePath, depth } = props}
     {@const isOpen = expanded.has(node.path)}
+    {@const isLoading = loadingDirs.has(node.path)}
     {@const isActive = activeFilePath === node.path}
     {@const padLeft = depth * 20 + 8}
 
@@ -90,11 +92,17 @@
             <span class="whitespace-nowrap">{node.name}</span>
         </button>
         </div>
+        {@const showLoader = isOpen && isLoading}
 
         {#if isOpen && node.children}
             {#each node.children as child (child.path)}
-                {@render TreeNode({ node: child, expanded, onToggleDir, activeFilePath, depth: depth + 1 })}
+                {@render TreeNode({ node: child, expanded, loadingDirs, onToggleDir, activeFilePath, depth: depth + 1 })}
             {/each}
+        {:else if showLoader}
+            <div class="flex items-center gap-1 text-xs opacity-50 py-1" style="padding-left: {padLeft + 20}px">
+                <Loader class="h-3 w-3 animate-spin" />
+                <span>Loading...</span>
+            </div>
         {/if}
     {:else}
         <div class="relative">
