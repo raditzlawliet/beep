@@ -35,7 +35,9 @@ Each `###` marks the start of a new request block. The `###` may optionally be f
 
 ## 2. Comments
 
-Use `//` for comments anywhere in the file. Comments are ignored by the parser.
+Use `//` for comments anywhere in the file. Comments by default are ignored by the parser except some case.
+
+Lines starting with `//- ` (double slash + dash) are **disabled items**, not comments; they are parsed and preserved across save/load. See the sections below for disabled headers, query params, and form fields.
 
 ```http
 // This is a file-level comment
@@ -102,6 +104,22 @@ Authorization: Bearer {{token}}
 X-Request-ID: {{$guid}}
 ```
 
+### 5.1 Disabling Headers
+
+Prefix a header with `//- ` to disable it. Disabled headers are **preserved in the file** and survive save/load roundtrips, but are **excluded** from the sent request.
+
+```http
+### Request with disabled headers
+GET https://api.example.com/users HTTP/1.1
+Accept: application/json
+Authorization: Bearer {{token}}
+//- X-Debug: true
+//- X-Forwarded-For: 10.0.0.1
+//- Cache-Control: no-cache
+```
+
+In the example above, only `Accept` and `Authorization` are sent. `X-Debug`, `X-Forwarded-For`, and `Cache-Control` are disabled and excluded from the request.
+
 ---
 
 ## 6. Request Body
@@ -153,6 +171,21 @@ username=john
 &remember=true
 ```
 
+**Disabling form fields:** Prefix a field with `//- ` to disable it.
+
+```http
+### Form with disabled fields
+POST https://api.example.com/auth/login HTTP/1.1
+Content-Type: application/x-www-form-urlencoded
+
+username=john
+&password=secret
+//- &remember=true
+//- &redirect_uri=/dashboard
+```
+
+In the example above, `username` and `password` are sent. `remember` and `redirect_uri` are disabled and excluded from the request body. Only multiline support disabled option.
+
 ### 6.4 Multipart Form Data
 
 ```http
@@ -171,6 +204,31 @@ Content-Type: image/png
 < ./assets/photo.png
 --boundary--
 ```
+
+**Disabling multipart fields:** Prefix every line of the disabled field's block with `//- `, including the boundary separator, headers, blank line, and value.
+
+```http
+### Multipart with disabled fields
+POST https://api.example.com/users/1/profile HTTP/1.1
+Content-Type: multipart/form-data; boundary=boundary
+
+--boundary
+Content-Disposition: form-data; name="display_name"
+
+John Doe
+//- --boundary
+//- Content-Disposition: form-data; name="phone"
+//- 
+//- +1-555-0000
+--boundary
+Content-Disposition: form-data; name="avatar"; filename="photo.png"
+Content-Type: image/png
+
+< ./assets/photo.png
+--boundary--
+```
+
+In the example above, `display_name` and `avatar` are sent. `phone` is disabled and excluded. Note that disabled boundary lines use `//- --boundary` (the `//-` sigil followed by `--boundary`).
 
 ### 6.5 Plain Text / Raw
 
@@ -221,13 +279,13 @@ Content-Type: application/xml
 
 ## 7. Query String
 
-### Inline
+### 7.1 Inline
 
 ```http
 GET https://api.example.com/users?page=1&limit=20&sort=name HTTP/1.1
 ```
 
-### Multiline
+### 7.2 Multiline
 
 Spread query params across lines using `?` for the first and `&` for subsequent params, indented below the URL.
 
@@ -239,6 +297,22 @@ GET https://api.example.com/users HTTP/1.1
     &filter=active
 Accept: application/json
 ```
+
+### 7.3 Disabling Query Params
+
+Prefix a param with `//- ` to disable it. Disabled params can only be used in multiline format.
+
+```http
+### Query with disabled params
+GET https://api.example.com/users HTTP/1.1
+    ?page=1
+    &limit=20
+    //- &sort=name
+    //- &filter=active
+Accept: application/json
+```
+
+In the example above, `page` and `limit` are sent. `sort` and `filter` are disabled and excluded from the URL.
 
 ---
 
