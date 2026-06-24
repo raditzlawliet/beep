@@ -1,3 +1,4 @@
+mod commands;
 mod models;
 
 use std::fs;
@@ -278,6 +279,13 @@ pub fn run() {
             get_history_entry,
             clear_history,
             delete_history_entry,
+            //
+            commands::http::http_parse,
+            commands::http::http_serialize_req,
+            commands::http::http_serialize_vars,
+            commands::http::http_update_vars,
+            commands::http::http_update_req,
+            commands::http::http_append_req,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
