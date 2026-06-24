@@ -3,33 +3,46 @@
   import { X, Minus, Square, MenuIcon } from "@lucide/svelte";
   import Unmaximize from "$lib/components/icons/Unmaximize.svelte";
   import AboutDialog from "$lib/components/modals/AboutDialog.svelte";
+  import NewRequestPopup from "$lib/components/NewRequestPopup.svelte";
 
   interface Props {
+    activeFileName: string | null;
+    projectName: string | null;
+    hasActiveHttpTab: boolean;
+    hasActiveFileTab: boolean;
+    hasUnsavedTabs: boolean;
+    //
+    onNewUntitled: () => void;
+    onNewInFile: () => void;
     onNewRequest: () => void;
     onOpenProject: () => void;
     onCloseProject: () => void;
+    onCloseTab: () => void;
     onSave: () => void;
     onSaveAll: () => void;
-    projectName: string | null;
-    hasActiveFileTab: boolean;
-    hasUnsavedTabs: boolean;
   }
 
   let {
+    activeFileName,
+    projectName,
+    hasActiveHttpTab,
+    hasActiveFileTab,
+    hasUnsavedTabs,
+    //
+    onNewUntitled,
+    onNewInFile,
     onNewRequest,
     onOpenProject,
     onCloseProject,
+    onCloseTab,
     onSave,
     onSaveAll,
-    projectName,
-    hasActiveFileTab,
-    hasUnsavedTabs,
   }: Props = $props();
 
   let aboutDialog = $state<HTMLDialogElement | null>(null);
-
   let menuOpen = $state(false);
   let maximized = $state(false);
+  let newPopupOpen = $state(false);
 
   function toggleMenu(e: MouseEvent) {
     menuOpen = !menuOpen;
@@ -38,6 +51,23 @@
 
   function closeAll() {
     menuOpen = false;
+    newPopupOpen = false;
+  }
+
+  function openNewRequestPopup(e: Event) {
+    closeAll();
+    e.stopPropagation();
+    newPopupOpen = true;
+  }
+
+  function handleNewUntitled() {
+    onNewUntitled();
+    closeAll();
+  }
+
+  function handleNewInFile() {
+    onNewInFile();
+    closeAll();
   }
 
   function handleNewRequest() {
@@ -52,6 +82,11 @@
 
   function handleCloseProject() {
     onCloseProject();
+    closeAll();
+  }
+
+  function handleCloseTab() {
+    onCloseTab();
     closeAll();
   }
 
@@ -93,11 +128,17 @@
     await getCurrentWindow().close();
   }
 
-  function handleKeydown(e: KeyboardEvent) {}
+  function handleKeydown(e: KeyboardEvent) {
+    if (e.key === "Escape") {
+      closeAll();
+    }
+  }
 
   function handleWindowClick() {
-    if (menuOpen) closeAll();
+    if (menuOpen || newPopupOpen) closeAll();
   }
+
+  const hasActiveTab = $derived(hasActiveHttpTab || hasActiveFileTab);
 
   // auto-detect maximize state on window resize / drag
   $effect(() => {
@@ -157,26 +198,43 @@
           tabindex="-1"
         >
           <li>
-            <button onclick={handleNewRequest}>New Request</button>
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <button onclick={openNewRequestPopup}>
+              <span>New</span>
+            </button>
+          </li>
+          <li>
+            <button onclick={handleNewRequest}>
+              <span>New Request</span>
+            </button>
           </li>
           <li></li>
           <li>
-            <button onclick={handleOpenProject}>Open Project</button>
+            <button onclick={handleOpenProject}>
+                <span>Open Project...</span>
+            </button>
           </li>
           <li></li>
           <li>
-            <button onclick={handleSave} disabled={!hasActiveFileTab}>
-              Save
+            <button onclick={handleSave} disabled={!hasActiveTab}>
+              <span>Save</span>
             </button>
           </li>
           <li>
             <button onclick={handleSaveAll} disabled={!hasUnsavedTabs}>
-              Save All
+                <span>Save All</span>
             </button>
           </li>
           <li></li>
           <li>
-            <button onclick={handleCloseProject}>Close Project</button>
+            <button onclick={handleCloseTab} disabled={!hasActiveTab}>
+              <span>Close Tab</span>
+            </button>
+          </li>
+          <li>
+            <button onclick={handleCloseProject}>
+              <span>Close Project</span>
+            </button>
           </li>
         </ul>
       </div>
@@ -233,6 +291,14 @@
     </button>
   </div>
 </div>
+
+<NewRequestPopup
+    open={newPopupOpen}
+    {activeFileName}
+    onNewUntitled={handleNewUntitled}
+    onNewInFile={handleNewInFile}
+    onClose={() => (newPopupOpen = false)}
+/>
 
 <!-- about modal -->
 <AboutDialog getDialog={(d) => (aboutDialog = d)} />
