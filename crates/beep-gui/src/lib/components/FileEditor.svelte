@@ -112,15 +112,17 @@
         const currentValue = value;
         const pos = initialCursorPos;
         if (!view) return;
-        if (view.state.doc.toString() === currentValue) return;
 
-        view.dispatch({
-            changes: {
-                from: 0,
-                to: view.state.doc.length,
-                insert: currentValue,
-            },
-        });
+        // Update content if changed
+        if (view.state.doc.toString() !== currentValue) {
+            view.dispatch({
+                changes: {
+                    from: 0,
+                    to: view.state.doc.length,
+                    insert: currentValue,
+                },
+            });
+        }
 
         // Cursor position
         if (pos !== undefined) {

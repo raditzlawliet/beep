@@ -11,6 +11,8 @@
         activeRequestIdx: number;
         onNavigateToRequest: (idx: number) => void;
         onVariablesUpdate: (vars: ParsedFileVariable[]) => void;
+        initialSubTab?: string;
+        onSubTabChange?: (tab: string) => void;
     }
 
     let {
@@ -19,10 +21,16 @@
         activeRequestIdx,
         onNavigateToRequest,
         onVariablesUpdate,
+        initialSubTab = "requests",
+        onSubTabChange,
     }: Props = $props();
 
     type SubTab = "requests" | "variables";
     let subTab = $state<SubTab>("requests");
+
+    $effect(() => {
+        subTab = (initialSubTab as SubTab) || "requests";
+    });
 
     function addVariable() {
         onVariablesUpdate([...variables, { key: "", value: "" }]);
@@ -51,7 +59,7 @@
         <button
             role="tab"
             class="tab gap-1.5 {subTab === 'requests' ? 'tab-active' : ''}"
-            onclick={() => (subTab = 'requests')}
+            onclick={() => { subTab = 'requests'; onSubTabChange?.('requests'); }}
         >
             Requests
             <span class="text-xs opacity-50">({requests.length})</span>
@@ -59,7 +67,7 @@
         <button
             role="tab"
             class="tab gap-1.5 {subTab === 'variables' ? 'tab-active' : ''}"
-            onclick={() => (subTab = 'variables')}
+            onclick={() => { subTab = 'variables'; onSubTabChange?.('variables'); }}
         >
             Variables
             <span class="text-xs opacity-50">({variables.length})</span>

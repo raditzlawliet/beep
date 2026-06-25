@@ -18,12 +18,18 @@
         onSend: (req: HttpRequest) => void;
         onUpdate: (req: HttpRequest) => void;
         defaultHeaders: [string, string][];
+        initialTab?: string;
+        onTabChange?: (tab: string) => void;
     }
 
-    let { request, loading, onSend, onUpdate, defaultHeaders }: Props = $props();
+    let { request, loading, onSend, onUpdate, defaultHeaders, initialTab = "params", onTabChange }: Props = $props();
 
     type Tab = "params" | "headers" | "auth" | "body" | "settings";
     let activeTab = $state<Tab>("params");
+
+    $effect(() => {
+        activeTab = (initialTab as Tab) || "params";
+    });
 
     export type BodyMode = "none" | "raw/json" | "raw/xml" | "raw/html" | "raw/text" | "form-urlencoded" | "form-multipart";
     let bodyMode = $state<BodyMode>("none");
@@ -185,7 +191,7 @@
                     class="tab capitalize gap-1.5 {activeTab === tab
                         ? 'tab-active'
                         : ''}"
-                    onclick={() => (activeTab = tab as Tab)}
+                    onclick={() => { activeTab = tab as Tab; onTabChange?.(tab); }}
                 >
                     {tab}
                     {#if tab === "headers" && headerCount > 0}

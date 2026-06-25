@@ -164,6 +164,9 @@ export interface Tab {
   activeRequestIdx?: number;
   parsedRequests?: ParsedRequest[];
   fileVariables?: ParsedFileVariable[];
+  // sub-tab state preservation
+  requestFormTab?: string;
+  fileOverviewTab?: string;
 }
 
 export function defaultRequest(): HttpRequest {

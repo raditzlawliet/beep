@@ -45,6 +45,8 @@
     let viewMode = $state<ViewMode>("request");
     let cursorPos = $state<number | undefined>(undefined);
     let formRequest = $state<HttpRequest>(parsedToHttpRequest(undefined));
+    let requestFormTab = $state<string>("params");
+    let fileOverviewTab = $state<string>("requests");
 
     function saveTabState(state: Partial<Tab>) {
         onTabStateChange(state);
@@ -60,6 +62,8 @@
         activeRequestIdx = tab.activeRequestIdx ?? 0;
         viewMode = tab.viewMode ?? "request";
         cursorPos = tab.cursorPos;
+        requestFormTab = tab.requestFormTab ?? "params";
+        fileOverviewTab = tab.fileOverviewTab ?? "requests";
         formRequest = parsedToHttpRequest(parsedRequests[activeRequestIdx]);
     });
 
@@ -135,6 +139,16 @@
             formRequest = parsedToHttpRequest(parsedRequests[activeRequestIdx]);
         }
         saveTabState({ viewMode });
+    }
+
+    function handleRequestFormTabChange(tabName: string) {
+        requestFormTab = tabName;
+        saveTabState({ requestFormTab: tabName });
+    }
+
+    function handleFileOverviewTabChange(tabName: string) {
+        fileOverviewTab = tabName;
+        saveTabState({ fileOverviewTab: tabName });
     }
 
     function handleNavigateToRequest(idx: number) {
@@ -217,6 +231,8 @@ async function handleVariablesUpdate(vars: ParsedFileVariable[]) {
             {activeRequestIdx}
             onNavigateToRequest={handleNavigateToRequest}
             onVariablesUpdate={handleVariablesUpdate}
+            initialSubTab={fileOverviewTab}
+            onSubTabChange={handleFileOverviewTabChange}
         />
     {:else}
         <div class="shrink-0 border-b border-base-300 overflow-hidden" style="height: {requestHeight}px">
@@ -226,6 +242,8 @@ async function handleVariablesUpdate(vars: ParsedFileVariable[]) {
                 onSend={handleSend}
                 onUpdate={handleFormUpdate}
                 defaultHeaders={app.defaultHeaders}
+                initialTab={requestFormTab}
+                onTabChange={handleRequestFormTabChange}
             />
         </div>
         <div role="presentation"
