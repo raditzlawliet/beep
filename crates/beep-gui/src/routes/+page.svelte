@@ -15,6 +15,7 @@
     import FileViewer from "$lib/components/FileViewer.svelte";
     import { PlusIcon, FolderOpenIcon } from "@lucide/svelte";
     import MainEditorViewer from "$lib/components/MainEditorViewer.svelte";
+    import MainEditorToolbar from "$lib/components/MainEditorToolbar.svelte";
 
     // local UI state
     let sidebarOpen = $state(false);
@@ -646,6 +647,20 @@
                     onSplitterStart={splitterStart}
                 />
             {:else if activeTab?.type === "file"}
+                <MainEditorToolbar
+                    fileName={activeTab.filePath
+                        ? (project.path && activeTab.filePath.startsWith(project.path)
+                            ? activeTab.filePath.slice(project.path.length).replace(/^[/\\]/, "")
+                            : activeTab.label)
+                        : activeTab.label}
+                    tabType="file"
+                    requests={[]}
+                    activeRequestIdx={0}
+                    viewMode="code"
+                    onSelectRequest={() => {}}
+                    onSetMode={() => {}}
+                    onSend={() => {}}
+                />
                 <div class="flex-1 min-h-0 overflow-hidden">
                     <FileViewer
                         fileName={activeTab.label}

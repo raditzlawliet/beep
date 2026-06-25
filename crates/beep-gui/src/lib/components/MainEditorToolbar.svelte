@@ -1,10 +1,11 @@
 <script lang="ts">
-    import type { ParsedRequest, ViewMode, HttpMethod } from "$lib/types";
+    import type { ParsedRequest, ViewMode, HttpMethod, TabType } from "$lib/types";
     import MethodBadge from "$lib/components/MethodBadge.svelte";
     import { ChevronDownIcon, CodeIcon, FileText, LayoutList } from "@lucide/svelte";
 
     interface Props {
         fileName: string;
+        tabType: TabType;
         requests: ParsedRequest[];
         activeRequestIdx: number;
         viewMode: ViewMode;
@@ -15,6 +16,7 @@
 
     let {
         fileName,
+        tabType,
         requests,
         activeRequestIdx,
         viewMode,
@@ -49,9 +51,9 @@
 
 <svelte:window onclick={handleOutsideClick} />
 
-<div class="flex items-center h-8 border-b border-base-content/10 px-2 py-0 text-xs shrink-0 select-none">
+<div class="flex items-center h-8 border-b border-base-content/10 py-0 text-xs shrink-0 select-none">
     <!-- File name -->
-    <span class="opacity-60 font-mono shrink-0">{fileName}</span>
+    <span class="opacity-60 font-mono shrink-0 ps-2">{fileName}</span>
 
     <!-- Request dropdown -->
     {#if requests.length > 0}
@@ -110,6 +112,9 @@
                 </div>
             {/if}
         </div>
+    {:else}
+        <!-- spacer -->
+        <div class="flex-1"></div>
     {/if}
 
     <!-- Mode tabs -->
@@ -122,19 +127,21 @@
         >
             <CodeIcon class="h-3.5 w-3.5" />
         </button>
-        <button
-            class="tab gap-1 {viewMode === 'file' ? 'tab-active text-primary' : ''}"
-            onclick={() => onSetMode('file')}
-            title="File"
-        >
-            <LayoutList class="h-3.5 w-3.5" />
-        </button>
-        <button
-            class="tab gap-1 {viewMode === 'request' ? 'tab-active text-primary' : ''}"
-            onclick={() => onSetMode('request')}
-            title="Request"
-        >
-            <FileText class="h-3.5 w-3.5" />
-        </button>
+        {#if tabType === 'http-file'}
+            <button
+                class="tab gap-1 {viewMode === 'file' ? 'tab-active text-primary' : ''}"
+                onclick={() => onSetMode('file')}
+                title="File"
+            >
+                <LayoutList class="h-3.5 w-3.5" />
+            </button>
+            <button
+                class="tab gap-1 {viewMode === 'request' ? 'tab-active text-primary' : ''}"
+                onclick={() => onSetMode('request')}
+                title="Request"
+            >
+                <FileText class="h-3.5 w-3.5" />
+            </button>
+        {/if}
     </div>
 </div>

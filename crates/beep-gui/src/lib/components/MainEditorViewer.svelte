@@ -189,6 +189,7 @@ async function handleVariablesUpdate(vars: ParsedFileVariable[]) {
 <div class="flex flex-col h-full min-h-0">
     <MainEditorToolbar
         {fileName}
+        tabType="http-file"
         requests={parsedRequests}
         {activeRequestIdx}
         {viewMode}
