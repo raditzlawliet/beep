@@ -86,6 +86,9 @@ pub struct ParsedRequest {
     pub pre_script: Option<String>,
     /// Post-request script content, if any.
     pub post_script: Option<String>,
+    /// HTTP version parsed from request line ("HTTP/1.1", "HTTP/2", etc.).
+    #[serde(default)]
+    pub http_version: Option<String>,
 }
 
 /// Result of parsing an .http file.
@@ -214,6 +217,7 @@ fn parse_request_block(block: &str, offset: usize) -> ParsedRequest {
     // Parse request line: METHOD URL [HTTP/Version]
     let mut method = String::new();
     let mut url = String::new();
+    let mut http_version: Option<String> = None;
 
     if let Some(rl_idx) = request_line_idx {
         let rl = lines[rl_idx].trim();
@@ -221,6 +225,9 @@ fn parse_request_block(block: &str, offset: usize) -> ParsedRequest {
         if parts.len() >= 2 {
             method = parts[0].to_uppercase();
             url = parts[1].to_string();
+            if parts.len() >= 3 {
+                http_version = Some(parts[2].to_uppercase());
+            }
         }
         i = rl_idx + 1;
     }
@@ -362,6 +369,7 @@ fn parse_request_block(block: &str, offset: usize) -> ParsedRequest {
         offset_end,
         pre_script,
         post_script,
+        http_version,
     }
 }
 
@@ -686,7 +694,12 @@ pub fn serialize_request_block(req: &ParsedRequest) -> String {
             .collect();
         format!("{}?{}", req.url, qs.join("&"))
     };
-    lines.push(format!("{} {}", req.method, url_with_query));
+    let request_line = if let Some(ref ver) = req.http_version {
+        format!("{} {} {}", req.method, url_with_query, ver)
+    } else {
+        format!("{} {}", req.method, url_with_query)
+    };
+    lines.push(request_line);
 
     // Multiline disabled query params
     for q in &disabled_params {
@@ -854,6 +867,7 @@ mod tests {
             offset_end: 0,
             pre_script: None,
             post_script: None,
+            http_version: None,
         }
     }
 
