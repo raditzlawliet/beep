@@ -97,9 +97,61 @@ export interface ProjectNode {
   children?: ProjectNode[];
 }
 
+// Tab types
+
+export type TabType = "http-file" | "file";
+export type ViewMode = "code" | "file" | "request";
+
+export interface ParsedFileVariable {
+  key: string;
+  value: string;
+}
+
+export interface ParsedHeaderField {
+  key: string;
+  value: string;
+  enabled: boolean;
+}
+
+export interface ParsedQueryField {
+  key: string;
+  value: string;
+  enabled: boolean;
+}
+
+export interface ParsedFormField {
+  key: string;
+  value: string;
+  enabled: boolean;
+  field_type: string;
+  content_type: string;
+}
+
+export interface ParsedRequest {
+  title: string;
+  method: string;
+  url: string;
+  headers: ParsedHeaderField[];
+  query_params: ParsedQueryField[];
+  body: string | null;
+  body_mode: string | null;
+  form_urlencoded: ParsedFormField[];
+  form_multipart: ParsedFormField[];
+  offset_start: number;
+  offset_end: number;
+  pre_script: string | null;
+  post_script: string | null;
+  http_version: string | null;
+}
+
+export interface ParsedHttpFileResult {
+  variables: ParsedFileVariable[];
+  requests: ParsedRequest[];
+}
+
 export interface Tab {
   id: string;
-  type: "request" | "file";
+  type: TabType;
   label: string;
   filePath?: string;
   content: string;
@@ -107,6 +159,11 @@ export interface Tab {
   diskChanged?: boolean;
   persistent: boolean;
   cursorPos?: number;
+  // http-file specific
+  viewMode?: ViewMode;
+  activeRequestIdx?: number;
+  parsedRequests?: ParsedRequest[];
+  fileVariables?: ParsedFileVariable[];
 }
 
 export function defaultRequest(): HttpRequest {
@@ -122,6 +179,25 @@ export function defaultRequest(): HttpRequest {
     form_urlencoded: [],
     form_multipart: [],
     http_version: "Auto",
+  };
+}
+
+export function emptyParsedRequest(): ParsedRequest {
+  return {
+    title: "Untitled",
+    method: "GET",
+    url: "https://example.com",
+    headers: [],
+    query_params: [],
+    body: null,
+    body_mode: "none",
+    form_urlencoded: [],
+    form_multipart: [],
+    offset_start: 0,
+    offset_end: 0,
+    pre_script: null,
+    post_script: null,
+    http_version: null,
   };
 }
 
@@ -183,4 +259,9 @@ export function statusText(status: number): string {
     503: "Unavailable",
   };
   return map[status] || "";
+}
+
+export function isHttpFile(name: string): boolean {
+  const ext = name.split(".").pop()?.toLowerCase();
+  return ext === "http" || ext === "rest";
 }

@@ -249,7 +249,7 @@
         <MenuIcon class="h-3.5 w-3.5" />
       </button>
       {#if projectName}
-        <span class="text-xs opacity-50 ms-1">{projectName}</span>
+        <span class="text-xs ms-1">{projectName}</span>
       {/if}
     </div>
   {/if}

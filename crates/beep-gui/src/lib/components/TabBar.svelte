@@ -18,7 +18,7 @@
     }
 
     function dotClass(tab: Tab): string {
-        if (tab.type !== "file" || tab.originalContent === undefined) return "";
+        if (tab.originalContent === undefined) return "";
         if (tab.content === tab.originalContent) return "";
         if (tab.diskChanged) return "bg-warning";
         return "bg-primary";
@@ -59,7 +59,7 @@
                 <span class="w-1.5 h-1.5 shrink-0"></span>
             {/if}
             <span class="truncate">{tab.label}</span>
-            {#if tab.type !== "request"}
+            {#if true}
                 <button
                     class="btn btn-ghost btn-xs p-0 shrink-0 m-0
                         opacity-0 group-hover:opacity-50 hover:opacity-100!

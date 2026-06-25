@@ -5,6 +5,9 @@ import type {
   HttpResponse,
   HistoryEntry,
   HistoryEntrySummary,
+  ParsedRequest,
+  ParsedFileVariable,
+  ParsedHttpFileResult,
   ProjectNode,
 } from "./types";
 import { defaultRequest } from "./types";
@@ -209,6 +212,35 @@ export const project = {
     _projectName = null;
     _projectTree = [];
     _loadingDirs.clear();
+  },
+};
+
+// http-file domain - parse, serialize, update .http file content
+export const httpFile = {
+  async parse(content: string): Promise<ParsedHttpFileResult> {
+    return invoke<ParsedHttpFileResult>("http_parse", { content });
+  },
+
+  async updateVars(
+    content: string,
+    variables: ParsedFileVariable[],
+  ): Promise<string> {
+    return invoke<string>("http_update_vars", { content, variables });
+  },
+
+  async updateRequest(
+    content: string,
+    requestIdx: number,
+    updated: ParsedRequest,
+  ): Promise<string> {
+    return invoke<string>("http_update_req", { content, requestIdx, updated });
+  },
+
+  async appendRequest(
+    content: string,
+    newRequest: ParsedRequest,
+  ): Promise<string> {
+    return invoke<string>("http_append_req", { content, newRequest });
   },
 };
 
