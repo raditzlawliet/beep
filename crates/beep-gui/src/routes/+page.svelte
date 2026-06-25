@@ -58,7 +58,7 @@
         const id = `__untitled_${untitledCounter}__`;
         untitledCounter++;
         const tab = createHttpTab(id, `Untitled-${untitledCounter - 1}.http`, undefined, true);
-        tab.content = "";
+        tab.content = "### New Request\nGET https://example.com\n";
         return tab;
     }
 
