@@ -678,7 +678,7 @@
                     <div class="flex flex-col gap-6 w-80 select-none">
                         <!-- Header: icon + title -->
                         <div class="flex items-center justify-center gap-4">
-                            <img src="/favicon.png" alt="Beep" class="w-10 h-10 opacity-80 shrink-0" />
+                            <img src="/icon.png" alt="Beep" class="w-10 h-10 opacity-80 shrink-0" />
                             <div>
                                 <div class="text-lg">Welcome back to Beep</div>
                                 <div class="text-sm italic font-thin text-neutral-content">The next intuitive API client</div>
