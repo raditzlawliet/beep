@@ -581,6 +581,7 @@ pub fn detect_body_mode(headers: &[HttpHeaderField], body: Option<&str>) -> Opti
     let body = body.unwrap();
     let ct = headers
         .iter()
+        .filter(|h| h.enabled)
         .find(|h| h.key.eq_ignore_ascii_case("content-type"))
         .map(|h| h.value.to_lowercase());
 
