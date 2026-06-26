@@ -58,9 +58,9 @@
     <!-- Request dropdown -->
     {#if requests.length > 0}
         <span class="opacity-60 font-mono ps-1">›</span>
-        <div class="dropdown {requestDropdownOpen ? 'dropdown-open' : ''} flex-1">
+        <div class="dropdown {requestDropdownOpen ? 'dropdown-open' : ''} flex-1 min-w-0">
             <button
-                class="flex items-center gap-1 hover:bg-base-200 px-1 py-0.5 rounded text-xs font-mono w-full"
+                class="flex items-center gap-1 hover:bg-base-200 px-1 py-0.5 rounded text-xs font-mono w-full min-w-0"
                 onclick={(e) => toggleRequestDropdown(e)}
                 onkeydown={(e: KeyboardEvent) => {
                     if (e.key === "Enter" || e.key === " ") {
@@ -70,19 +70,19 @@
                     }
                 }}
             >
-                <MethodBadge method={requests[activeRequestIdx]?.method as HttpMethod} />
-                <span class="truncate max-w-40"
+                <span class="shrink-0"><MethodBadge method={requests[activeRequestIdx]?.method as HttpMethod} /></span>
+                <span class="truncate flex-1 min-w-0 text-left"
                     class:italic={!requests[activeRequestIdx]?.title}
                     class:opacity-80={!requests[activeRequestIdx]?.title}
                 >{requests[activeRequestIdx]?.title || "Untitled Request"}</span>
-                <ChevronDownIcon class="w-3 h-3 opacity-60 transform transition-transform duration-200 {requestDropdownOpen ? 'rotate-180' : ''}" />
+                <ChevronDownIcon class="w-3 h-3 shrink-0 opacity-60 transform transition-transform duration-200 {requestDropdownOpen ? 'rotate-180' : ''}" />
             </button>
             {#if requestDropdownOpen}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <div
-                    class="dropdown-content menu menu-xs bg-base-200
+                    class="dropdown-content bg-base-200
                         rounded-box z-50 shadow-sm border border-base-content/10
-                        w-full max-h-60 overflow-y-auto p-1 mt-0.5"
+                        w-full max-h-60 overflow-y-auto overflow-x-hidden p-1 mt-0.5"
                     onkeydown={handleDropdownKeydown}
                 >
                     {#each requests as req, i}
