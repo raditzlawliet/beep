@@ -102,6 +102,9 @@ pub struct FormField {
     /// MIME type for file uploads. Empty = auto-detect.
     #[serde(default)]
     pub content_type: String,
+    /// Whether inline (single-line) or multiline. Preserved for history.
+    #[serde(default = "default_enabled")]
+    pub is_inline: bool,
 }
 
 /// A single header field with auto-generate flag.
@@ -122,6 +125,10 @@ pub struct QueryField {
     pub value: String,
     #[serde(default = "default_enabled")]
     pub enabled: bool,
+    /// Whether this param is inline in the URL (true) or multiline (false).
+    /// Preserved for history roundtrip; executor ignores it.
+    #[serde(default = "default_enabled")]
+    pub is_inline: bool,
 }
 
 fn default_enabled() -> bool {
@@ -199,6 +206,7 @@ impl HttpRequest {
             key,
             value,
             enabled: true,
+            is_inline: true,
         });
         self
     }

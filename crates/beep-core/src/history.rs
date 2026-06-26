@@ -4,7 +4,7 @@ use crate::models::{HttpRequest, HttpResponse};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 
-/// Lightweight summary for the sidebar — no request/response bodies.
+/// Lightweight summary for the sidebar - no request/response bodies.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HistoryEntrySummary {
     pub id: u64,

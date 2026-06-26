@@ -23,8 +23,9 @@
         value: string;
         language?: "text" | "json" | "html" | "xml";
         onchange?: (value: string) => void;
+        oncursorchange?: (pos: number) => void;
+        initialCursorPos?: number;
         class?: string;
-        readonly?: boolean;
         wrapLines?: boolean;
     }
 
@@ -32,8 +33,9 @@
         value,
         language = "text",
         onchange,
+        oncursorchange,
+        initialCursorPos,
         class: className = "",
-        readonly = false,
         wrapLines = true,
     }: Props = $props();
 
@@ -58,6 +60,11 @@
             EditorView.updateListener.of((update) => {
                 if (update.docChanged && onchange) {
                     onchange(update.state.doc.toString());
+                }
+                // Track cursor position changes
+                if (update.selectionSet && oncursorchange) {
+                    const pos = update.state.selection.main.head;
+                    oncursorchange(pos);
                 }
             }),
             EditorView.theme({
@@ -84,19 +91,16 @@
             parent: container,
         });
 
-        if (readonly) {
-            editor.contentDOM.setAttribute("contenteditable", "false");
-        }
-
         return editor;
     }
 
-    // Create editor on mount or when language changes
     $effect(() => {
         if (!container) return;
         const initVal = untrack(() => value);
 
         view = createEditor(initVal, language, wrapLines);
+
+        view.focus();
 
         return () => {
             view?.destroy();
@@ -104,19 +108,33 @@
         };
     });
 
-    // Sync external value changes into the editor
     $effect(() => {
         const currentValue = value;
+        const pos = initialCursorPos;
         if (!view) return;
-        if (view.state.doc.toString() === currentValue) return;
 
-        view.dispatch({
-            changes: {
-                from: 0,
-                to: view.state.doc.length,
-                insert: currentValue,
-            },
-        });
+        // Update content if changed
+        if (view.state.doc.toString() !== currentValue) {
+            view.dispatch({
+                changes: {
+                    from: 0,
+                    to: view.state.doc.length,
+                    insert: currentValue,
+                },
+            });
+        }
+
+        // Cursor position
+        if (pos !== undefined) {
+            const clampedPos = pos < 0 ? 0 : Math.min(pos, view.state.doc.length);
+            view.dispatch({
+                selection: { anchor: clampedPos, head: clampedPos },
+                scrollIntoView: true,
+            });
+        }
+
+        // Auto focus
+        view.focus();
     });
 </script>
 

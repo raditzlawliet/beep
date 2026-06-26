@@ -1,16 +1,30 @@
 <script lang="ts">
     import type { HttpResponse } from "$lib/types";
-    import { PanelLeft, HistoryIcon } from "@lucide/svelte";
+    import { HistoryIcon, FolderTree } from "@lucide/svelte";
     import StatusBadge from "$lib/components/StatusBadge.svelte";
+    import HorizontalDivider from "./uis/HorizontalDivider.svelte";
 
     interface Props {
-        onToggleSidebar: () => void;
+        onSwitchToHistory: () => void;
+        onSwitchToProject: () => void;
+        activePanel: "history" | "project";
+        sidebarOpen: boolean;
+        hasProject: boolean;
         response: HttpResponse | null;
         loading: boolean;
         error: string | null;
     }
 
-    let { onToggleSidebar, response, loading, error }: Props = $props();
+    let {
+        onSwitchToHistory,
+        onSwitchToProject,
+        activePanel,
+        sidebarOpen,
+        hasProject,
+        response,
+        loading,
+        error,
+    }: Props = $props();
 </script>
 
 <div
@@ -18,10 +32,23 @@
 >
     <button
         class="btn btn-ghost btn-xs btn-square"
-        onclick={onToggleSidebar}
-        aria-label="Toggle sidebar"
+        onclick={onSwitchToHistory}
+        aria-label="History panel"
+        title="History"
     >
-        <HistoryIcon class="h-4 w-4" />
+        <span class:text-primary={sidebarOpen && activePanel === "history"}>
+            <HistoryIcon class="h-3 w-3" />
+        </span>
+    </button>
+    <button
+        class="btn btn-ghost btn-xs btn-square"
+        onclick={onSwitchToProject}
+        aria-label="Project panel"
+        title="Project"
+    >
+        <span class:text-primary={sidebarOpen && activePanel === "project"}>
+            <FolderTree class="h-3 w-3" />
+        </span>
     </button>
     <div class="divider divider-horizontal w-1 m-0"></div>
 

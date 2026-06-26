@@ -1,0 +1,24 @@
+@layer utilities {
+  .overlay-scrollbar {
+    overflow: overlay;
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+  .overlay-scrollbar:hover {
+    scrollbar-color: oklch(var(--bc) / 0.2) transparent;
+  }
+  .overlay-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .overlay-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .overlay-scrollbar::-webkit-scrollbar-thumb {
+    background: transparent;
+    border-radius: 3px;
+  }
+  .overlay-scrollbar:hover::-webkit-scrollbar-thumb {
+    background: oklch(var(--bc) / 0.2);
+  }
+}

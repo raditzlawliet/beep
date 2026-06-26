@@ -18,12 +18,19 @@
         onSend: (req: HttpRequest) => void;
         onUpdate: (req: HttpRequest) => void;
         defaultHeaders: [string, string][];
+        initialTab?: string;
+        onTabChange?: (tab: string) => void;
+        onUrlBlur?: () => void;
     }
 
-    let { request, loading, onSend, onUpdate, defaultHeaders }: Props = $props();
+    let { request, loading, onSend, onUpdate, defaultHeaders, initialTab = "params", onTabChange, onUrlBlur }: Props = $props();
 
     type Tab = "params" | "headers" | "auth" | "body" | "settings";
     let activeTab = $state<Tab>("params");
+
+    $effect(() => {
+        activeTab = (initialTab as Tab) || "params";
+    });
 
     export type BodyMode = "none" | "raw/json" | "raw/xml" | "raw/html" | "raw/text" | "form-urlencoded" | "form-multipart";
     let bodyMode = $state<BodyMode>("none");
@@ -38,14 +45,17 @@
 
     const httpVersion = $derived(request.http_version ?? "Auto");
 
-    // Sync rawBodyContent from request on mount / history load.
-    let _rawSnap: string | null | undefined = $state(undefined);
+    // Sync rawBodyContent from request on mount / request switch.
+    let _lastSyncedRawBody: string | null | undefined = $state(undefined);
     $effect(() => {
         const rb = request.raw_body;
         bodyMode = (request.body_mode as BodyMode) ||
             (request.raw_body ? "raw/text" : "none");
-        if (rb === _rawSnap) return;
-        _rawSnap = rb;
+
+        // TODO not tested yet, since this review suggestion and the edge-case.
+        // Editing raw body, then something triggers a re-parse that restores a slightly different version.
+        if (rb === _lastSyncedRawBody) return;
+        _lastSyncedRawBody = rb;
         rawBodyContent = rb ?? "";
     });
 
@@ -112,12 +122,14 @@
     $effect(() => {
         const existing = new Set(request.headers.map((h) => h.key.toLowerCase()));
         const merged: HeaderField[] = [...request.headers];
+        let changed = false;
         for (const [k, v] of defaultHeaders) {
-            if (!existing.has(k.toLowerCase())) {
+            if (!request.headers.some((h) => h.auto && h.key.toLowerCase() === k.toLowerCase())) {
                 merged.push({ key: k, value: v, enabled: true, auto: true });
+                changed = true;
             }
         }
-        if (merged.length !== request.headers.length) {
+        if (changed) {
             onUpdate({ ...request, headers: merged });
         }
     });
@@ -159,6 +171,7 @@
                 oninput={(e) => {
                     emitUpdate({ url: (e.target as HTMLInputElement).value });
                 }}
+                onblur={() => onUrlBlur?.()}
                 onkeydown={(e) => {
                     if (e.key === "Enter" && !loading && request.url.trim())
                         handleSend();
@@ -185,7 +198,7 @@
                     class="tab capitalize gap-1.5 {activeTab === tab
                         ? 'tab-active'
                         : ''}"
-                    onclick={() => (activeTab = tab as Tab)}
+                    onclick={() => { activeTab = tab as Tab; onTabChange?.(tab); }}
                 >
                     {tab}
                     {#if tab === "headers" && headerCount > 0}
@@ -222,8 +235,8 @@
                 <RequestParamsTab
                     initialValue={request.query_params}
                     url={request.url}
-                    onchange={(params, newUrl) => {
-                        emitUpdate({ query_params: params, url: newUrl });
+                    onchange={(params, displayUrl) => {
+                        emitUpdate({ query_params: params, url: displayUrl });
                     }}
                 />
             {:else if activeTab === "headers"}

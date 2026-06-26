@@ -30,14 +30,15 @@
         onFormMultipartChange,
     }: Props = $props();
 
-    // Derived: body type extracted from combined bodyMode ("raw/json" → "json").
+    // Derived: body type extracted from combined bodyMode ("raw/json" to "json").
     const bodyType = $derived(
         bodyMode.startsWith("raw/") ? bodyMode.slice(4) : "text",
     );
 
     const selectedLabel = $derived(
-        bodyMode === "form-multipart" ? "Multipart Form"
-        : bodyMode === "form-urlencoded" ? "Form URL Encoded"
+        // TODO: enable when multipart is implemented
+        // bodyMode === "form-multipart" ? "Multipart Form"
+        bodyMode === "form-urlencoded" ? "Form URL Encoded"
         : bodyMode === "raw/json" ? "JSON"
         : bodyMode === "raw/xml" ? "XML"
         : bodyMode === "raw/html" ? "HTML"
@@ -82,12 +83,14 @@
                     <CheckIcon class="w-3 h-3 ml-auto {selectedValue === val ? '' : 'invisible'}" />
                 {/snippet}
                 <li class="menu-title p-0 px-2 text-xs">Form</li>
+                <!-- TODO: enable when multipart is implemented
                 <li>
                     <button onclick={() => select("form-multipart")}>
                         <PaperclipIcon class="w-3.5 h-3.5" /> Multipart Form
                         {@render item("form-multipart")}
                     </button>
                 </li>
+                -->
                 <li>
                     <button onclick={() => select("form-urlencoded")}>
                         <LinkIcon class="w-3.5 h-3.5" /> Form URL Encoded

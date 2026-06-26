@@ -7,11 +7,12 @@
     interface Props {
         entries: HistoryEntrySummary[];
         onSelect: (entry: HistoryEntrySummary) => void;
+        onDblClick: (entry: HistoryEntrySummary) => void;
         onClearAll: () => void;
         onDelete: (id: number) => void;
     }
 
-    let { entries, onSelect, onClearAll, onDelete }: Props = $props();
+    let { entries, onSelect, onDblClick, onClearAll, onDelete }: Props = $props();
 
     let listEl = $state<HTMLUListElement>();
 
@@ -58,6 +59,7 @@
                     <button
                         class="text-xs py-2 w-full"
                         onclick={() => onSelect(entry)}
+                        ondblclick={() => onDblClick(entry)}
                     >
                         <span class="flex items-center gap-1.5 min-w-0">
                             <MethodBadge method={entry.method as import("$lib/types").HttpMethod} />

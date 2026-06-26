@@ -239,6 +239,12 @@ impl HttpClient {
     }
 
     fn build_url(&self, request: &HttpRequest) -> String {
+        // Strip any existing query from URL. Query_params are the authoritative source.
+        let base_url = match request.url.find('?') {
+            Some(q) => &request.url[..q],
+            None => &request.url,
+        };
+
         let mut params: Vec<String> = request
             .query_params
             .iter()
@@ -254,9 +260,9 @@ impl HttpClient {
         }
 
         if params.is_empty() {
-            request.url.clone()
+            base_url.to_string()
         } else {
-            format!("{}?{}", request.url, params.join("&"))
+            format!("{}?{}", base_url, params.join("&"))
         }
     }
 }

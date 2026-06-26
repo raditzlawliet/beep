@@ -28,7 +28,9 @@ export const monokaiTheme = EditorView.theme(
       // backgroundColor: "#272822",
       // color: "#F8F8F2",
       fontSize: "0.75rem",
-      lineHeight: "1rem",
+    },
+    ".cm-line": {
+      lineHeight: "1.125rem",
     },
     // ".cm-content": {
     //     caretColor: "#F8F8F0",
@@ -36,13 +38,13 @@ export const monokaiTheme = EditorView.theme(
     // "&.cm-focused .cm-cursor": {
     //     borderLeftColor: "#F8F8F0",
     // },
-    // "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection":
-    //     {
-    //         backgroundColor: "#49483E",
-    //     },
-    // ".cm-activeLine": {
-    //     backgroundColor: "#3E3D32",
-    // },
+    "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection":
+      {
+        backgroundColor: "#49483E",
+      },
+    ".cm-activeLine": {
+      backgroundColor: "#3E3D32",
+    },
     ".cm-gutters": {
       // backgroundColor: "#272822",
       // color: "#75715E",
@@ -50,6 +52,10 @@ export const monokaiTheme = EditorView.theme(
       backgroundColor: "var(--color-base-200)",
       borderRight:
         "1px solid color-mix(in srgb, var(--color-base-content) 10%, transparent)",
+    },
+    ".cm-gutterElement": {
+      paddingLeft: "8px !important",
+      paddingRight: "8px !important",
     },
     ".cm-activeLineGutter": {
       backgroundColor: "#3E3D32",

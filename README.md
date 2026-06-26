@@ -13,18 +13,44 @@
 
 ## Features
 
+### Project Panel
+
+Beep supports project folder panels to organize and manage your HTTP requests.
+
+- Support Beep HTTP request files with `.http` or `.rest` extensions (See [Spec](./SPEC.md))
+  - See [Development](./DEVELOPMENT.md) Section Spec Implementation for details
+- Code <-> Form mode - Switch between code and form editor with surgical sync
+- Multi-request .http files with request selector dropdown
+- File-level variables (@key = value)
+- File overview panel (requests list + variables editor)
+
 ### HTTP Request
 
 Compose and send HTTP requests.
 
 - **HTTP Methods** - All standard HTTP methods (GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS)
-- **Authentication** - No Auth, Basic Auth & Bearer tokens
-- **Headers & Query Params** - Full control over every request
+- **HTTP Version** - HTTP/1.1 and HTTP/2
+- **Query Parameters** - Fully control Query Parameters
+- **Authentication** - No Auth, Basic Auth, Bearer tokens
+- **Headers** - Fully control Headers
 - **Request Body Editor** - Edit request body with syntax highlighting
-- **Request History** - [GUI] Automatically temporary history request
+- **Form Data Editor** - Edit form data tables
+- **Disable/Enable** - Toggle headers, query params, and form fields individually and preserve state
+- **Request History** - Click-to-load history entries into form.
 - **Response Viewer** - View response headers and body
 
 ### Coming soon
+
+- Multipart Form Data editor
+- Cookies
+- cURL import
+- Environment
+- Persistent Variables
+- Persistent History
+- Prompt Variables
+- GraphQL Request
+- WebSocket Request
+- gRPC Request
 
 ## Binary Releases
 
@@ -67,6 +93,8 @@ TODO
 ## Download
 
 > Pre-built binaries coming soon.
+
+> Stable version? When When...
 
 ## Contributing
 
