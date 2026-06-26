@@ -136,7 +136,7 @@ TODO
 
 ## Spec Implementation
 
-Currently, beep implements the [HTTP/REST file format](./SPEC.md). Below is the checkist spec already implement in the parser/serializer, sender/executor and GUI related.
+Beep currently implements the features defined in the [HTTP/REST file format](./SPEC.md). The checklist below summarizes the parts that have already been implemented across the parser/serializer, sender/executor, and GUI.
 
 | #   | Feature                                              | Parser | Executor | GUI  |
 | --- | ---------------------------------------------------- | ------ | -------- | ---- |
