@@ -138,28 +138,28 @@ TODO
 
 Beep currently implements the features defined in the [HTTP/REST file format](./SPEC.md). The checklist below summarizes the parts that have already been implemented across the parser/serializer, sender/executor, and GUI.
 
-| #   | Feature                                              | Parser | Executor | GUI  |
-| --- | ---------------------------------------------------- | ------ | -------- | ---- |
-| 2   | Comments `//` / `//-` disabled items preserved       | ✅     | -        | -    |
-| 3   | Request Separator `###` + optional title             | ✅     | -        | -    |
-| 4   | Request Line `METHOD URL [HTTP/Version]`             | ✅     | ✅       | ✅   |
-| 5   | Headers `Key: Value`                                 | ✅     | ✅       | ✅   |
-| 5.1 | Disabling Headers `//-`, excluded from sent request  | ✅     | ✅       | ✅   |
-| 6.1 | JSON body                                            | ✅     | ✅       | ✅   |
-| 6.2 | XML body                                             | ✅     | ✅       | ✅   |
-| 6.3 | Form URL Encoded (single/multiline, disabled fields) | ✅     | ✅       | ✅   |
-| 6.4 | Multipart Form Data (with disabled fields)           | ✅     | ✅       | ✅   |
-| 6.5 | Plain Text / Raw body                                | ✅     | ✅       | ✅   |
-| 6.6 | No Body                                              | ✅     | ✅       | ✅   |
-| 6.7 | Body from External File `< ./path`                   | TODO   | TODO     | TODO |
-| 7.1 | Query String Inline                                  | ✅     | ✅       | ✅   |
-| 7.2 | Query String Multiline                               | ✅     | ✅       | ✅   |
-| 7.3 | Disabling Query Params `//-`                         | ✅     | ✅       | ✅   |
-| 8.4 | `@var` File-Level Scope                              | ✅     | TODO     | ✅   |
-| 8.5 | `.beep/vars.json` Folder cascade                     | TODO   | TODO     | TODO |
-| 8.7 | Variable Interpolation `{{var}}`                     | -      | TODO     | TODO |
-| 8.8 | Dynamic Variables `{{$guid}}` etc.                   | -      | TODO     | TODO |
-| 9.1 | Pre-Request Script (`< {%` inline / `< ./file.js`)   | ✅     | TODO     | TODO |
-| 9.2 | Post-Request Script (`> {%` inline / `> ./file.js`)  | ✅     | TODO     | TODO |
-| 9.3 | Script Globals (`client`, `request`, `response`)     | -      | TODO     | TODO |
-| 10  | Response Redirect `>>` / `>>!`                       | TODO   | TODO     | TODO |
+| #   | Feature                                              | Parser  | Executor | GUI           |
+| --- | ---------------------------------------------------- | ------- | -------- | ------------- |
+| 2   | Comments `//` / `//-` disabled items preserved       | ✅      | -        | -             |
+| 3   | Request Separator `###` + optional title             | ✅      | -        | -             |
+| 4   | Request Line `METHOD URL [HTTP/Version]`             | ✅      | ✅       | ✅            |
+| 5   | Headers `Key: Value`                                 | ✅      | ✅       | ✅            |
+| 5.1 | Disabling Headers `//-`, excluded from sent request  | ✅      | ✅       | ✅            |
+| 6.1 | JSON body                                            | ✅      | ✅       | ✅            |
+| 6.2 | XML body                                             | ✅      | ✅       | ✅            |
+| 6.3 | Form URL Encoded (single/multiline, disabled fields) | ✅      | ✅       | ✅            |
+| 6.4 | Multipart Form Data (with disabled fields)           | PROBLEM | ✅       | TEMP DISABLED |
+| 6.5 | Plain Text / Raw body                                | ✅      | ✅       | ✅            |
+| 6.6 | No Body                                              | ✅      | ✅       | ✅            |
+| 6.7 | Body from External File `< ./path`                   | TODO    | TODO     | TODO          |
+| 7.1 | Query String Inline                                  | ✅      | ✅       | ✅            |
+| 7.2 | Query String Multiline                               | ✅      | ✅       | ✅            |
+| 7.3 | Disabling Query Params `//-`                         | ✅      | ✅       | ✅            |
+| 8.4 | `@var` File-Level Scope                              | ✅      | TODO     | ✅            |
+| 8.5 | `.beep/vars.json` Folder cascade                     | TODO    | TODO     | TODO          |
+| 8.7 | Variable Interpolation `{{var}}`                     | -       | TODO     | TODO          |
+| 8.8 | Dynamic Variables `{{$guid}}` etc.                   | -       | TODO     | TODO          |
+| 9.1 | Pre-Request Script (`< {%` inline / `< ./file.js`)   | ✅      | TODO     | TODO          |
+| 9.2 | Post-Request Script (`> {%` inline / `> ./file.js`)  | ✅      | TODO     | TODO          |
+| 9.3 | Script Globals (`client`, `request`, `response`)     | -       | TODO     | TODO          |
+| 10  | Response Redirect `>>` / `>>!`                       | TODO    | TODO     | TODO          |
