@@ -44,14 +44,12 @@
 
     const httpVersion = $derived(request.http_version ?? "Auto");
 
-    // Sync rawBodyContent from request on mount / history load.
-    let _rawSnap: string | null | undefined = $state(undefined);
+    // Sync rawBodyContent from request on mount / request switch.
     $effect(() => {
         const rb = request.raw_body;
         bodyMode = (request.body_mode as BodyMode) ||
             (request.raw_body ? "raw/text" : "none");
-        if (rb === _rawSnap) return;
-        _rawSnap = rb;
+        if (rb === rawBodyContent) return;
         rawBodyContent = rb ?? "";
     });
 
@@ -228,8 +226,8 @@
                 <RequestParamsTab
                     initialValue={request.query_params}
                     url={request.url}
-                    onchange={(params, newUrl) => {
-                        emitUpdate({ query_params: params, url: newUrl });
+                    onchange={(params, displayUrl) => {
+                        emitUpdate({ query_params: params, url: displayUrl });
                     }}
                 />
             {:else if activeTab === "headers"}

@@ -21,6 +21,7 @@ export interface FormField {
   enabled: boolean;
   field_type: string;
   content_type: string;
+  is_inline?: boolean;
 }
 
 export interface HeaderField {
@@ -34,6 +35,7 @@ export interface QueryField {
   key: string;
   value: string;
   enabled: boolean;
+  is_inline?: boolean;
 }
 
 export interface HttpRequest {
@@ -117,6 +119,7 @@ export interface ParsedQueryField {
   key: string;
   value: string;
   enabled: boolean;
+  is_inline: boolean;
 }
 
 export interface ParsedFormField {
@@ -125,6 +128,12 @@ export interface ParsedFormField {
   enabled: boolean;
   field_type: string;
   content_type: string;
+  is_inline: boolean;
+}
+
+export interface ParsedRegion {
+  start: number;
+  end: number;
 }
 
 export interface ParsedRequest {
@@ -137,8 +146,12 @@ export interface ParsedRequest {
   body_mode: string | null;
   form_urlencoded: ParsedFormField[];
   form_multipart: ParsedFormField[];
-  offset_start: number;
-  offset_end: number;
+  //
+  block_region: ParsedRegion;
+  request_line_region: ParsedRegion;
+  query_region: ParsedRegion;
+  headers_region: ParsedRegion;
+  body_region: ParsedRegion;
   pre_script: string | null;
   post_script: string | null;
   http_version: string | null;
@@ -196,8 +209,12 @@ export function emptyParsedRequest(): ParsedRequest {
     body_mode: "none",
     form_urlencoded: [],
     form_multipart: [],
-    offset_start: 0,
-    offset_end: 0,
+    //
+    block_region: { start: 0, end: 0 },
+    request_line_region: { start: 0, end: 0 },
+    query_region: { start: 0, end: 0 },
+    headers_region: { start: 0, end: 0 },
+    body_region: { start: 0, end: 0 },
     pre_script: null,
     post_script: null,
     http_version: null,

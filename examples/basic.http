@@ -1,0 +1,53 @@
+### GET Request
+GET https://httpbingo.org/get HTTP/1.1
+
+### GET with Query Parameters
+GET https://httpbingo.org/get?foo=bar&baz=qux HTTP/1.1
+
+### GET with Query Parameters Multiline & Disabled
+GET https://httpbingo.org/get HTTP/1.1
+    ?foo=bar
+//- &baz=qux
+
+### GET Request With Header
+GET https://httpbingo.org/get HTTP/1.1
+User-Agent: Beep
+Some: Header
+
+### GET Request With Header & Disabled
+GET https://httpbingo.org/get HTTP/1.1
+User-Agent: Beep
+//- Some: Header
+
+### GET with Query Parameters + Header
+GET https://httpbingo.org/get HTTP/1.1
+    ?foo=bar
+//- &baz=qux
+User-Agent: Beep
+//- Some: Header
+
+### POST JSON
+POST https://httpbingo.org/post HTTP/1.1
+Content-Type: application/json
+
+{
+    "name": "John",
+    "email": "email@example.com"
+}
+
+### POST XML
+POST https://httpbingo.org/post HTTP/1.1
+Content-Type: application/xml
+
+<user>
+    <name>John</name>
+    <email>email@example.com</email>
+</user>
+
+### POST Form + Disabled + HTTP/2
+POST https://httpbingo.org/post HTTP/2
+Content-Type: application/x-www-form-urlencoded
+
+name=John
+&email=email@example.com
+//- &phone=08123123

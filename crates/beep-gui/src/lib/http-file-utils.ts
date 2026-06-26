@@ -47,6 +47,7 @@ export function parsedToHttpRequest(
       key: q.key,
       value: q.value,
       enabled: q.enabled !== false,
+      is_inline: q.is_inline,
     })),
     body: pr.body,
     auth: { type: "None" as const } as Auth,
@@ -59,6 +60,7 @@ export function parsedToHttpRequest(
       enabled: f.enabled !== false,
       field_type: f.field_type ?? "text",
       content_type: f.content_type ?? "",
+      is_inline: f.is_inline,
     })),
     form_multipart: (pr.form_multipart ?? []).map((f) => ({
       key: f.key,
@@ -66,6 +68,7 @@ export function parsedToHttpRequest(
       enabled: f.enabled !== false,
       field_type: f.field_type ?? "text",
       content_type: f.content_type ?? "",
+      is_inline: f.is_inline,
     })),
   };
 }
@@ -78,17 +81,32 @@ export function httpRequestToParsed(
   return {
     ...base,
     method: form.method,
-    url: form.url,
+    url: (() => {
+      // Strip query string. RequestParamsTab may have merged params into the URL. 
+      // Rust's parser does its own split_url_query.
+      const q = form.url.indexOf("?");
+      return q >= 0 ? form.url.slice(0, q) : form.url;
+    })(),
     headers: form.headers
-      .filter((h) => h.enabled && !h.auto)
+      .filter((h) => !h.auto)
       .map((h) => ({ key: h.key, value: h.value, enabled: h.enabled })),
     query_params: (form.query_params ?? [])
       .filter((q) => q.key)
-      .map((q) => ({
-        key: q.key,
-        value: q.value,
-        enabled: q.enabled !== false,
-      })),
+      .map((q) => {
+        const baseQ = base.query_params?.find((bq) => bq.key === q.key);
+        return {
+          key: q.key,
+          value: q.value,
+          enabled: q.enabled !== false,
+          // Preserve base is_inline. Disabled params force multiline.
+          // Once is_inline is false, it never goes back to true.
+          is_inline: baseQ
+            ? q.enabled === false
+              ? false
+              : baseQ.is_inline
+            : true,
+        };
+      }),
     body: form.raw_body ?? form.body,
     body_mode: form.body_mode ?? "none",
     http_version:
@@ -97,22 +115,38 @@ export function httpRequestToParsed(
         : `HTTP/${form.http_version === "Http1" ? "1.1" : "2"}`,
     form_urlencoded: (form.form_urlencoded ?? [])
       .filter((f) => f.key)
-      .map((f) => ({
-        key: f.key,
-        value: f.value,
-        enabled: f.enabled !== false,
-        field_type: f.field_type ?? "text",
-        content_type: f.content_type ?? "",
-      })),
+      .map((f) => {
+        const baseF = base.form_urlencoded?.find((bf) => bf.key === f.key);
+        return {
+          key: f.key,
+          value: f.value,
+          enabled: f.enabled !== false,
+          field_type: f.field_type ?? "text",
+          content_type: f.content_type ?? "",
+          is_inline: baseF
+            ? f.enabled === false
+              ? false
+              : baseF.is_inline
+            : true,
+        };
+      }),
     form_multipart: (form.form_multipart ?? [])
       .filter((f) => f.key)
-      .map((f) => ({
-        key: f.key,
-        value: f.value,
-        enabled: f.enabled !== false,
-        field_type: f.field_type ?? "text",
-        content_type: f.content_type ?? "",
-      })),
+      .map((f) => {
+        const baseF = base.form_multipart?.find((bf) => bf.key === f.key);
+        return {
+          key: f.key,
+          value: f.value,
+          enabled: f.enabled !== false,
+          field_type: f.field_type ?? "text",
+          content_type: f.content_type ?? "",
+          is_inline: baseF
+            ? f.enabled === false
+              ? false
+              : baseF.is_inline
+            : true,
+        };
+      }),
   };
 }
 

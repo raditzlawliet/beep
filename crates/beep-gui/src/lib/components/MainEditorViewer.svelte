@@ -48,6 +48,10 @@
     let requestFormTab = $state<string>("params");
     let fileOverviewTab = $state<string>("requests");
 
+    // Parse generation counter to discard stale async results.
+    let _parseGen = $state(0);
+    let _lastParsedContent = $state("");
+
     function saveTabState(state: Partial<Tab>) {
         onTabStateChange(state);
     }
@@ -70,6 +74,11 @@
     // Parse content when it changes
     $effect(() => {
         const content = tab.content;
+
+        // Skip if content hasn't actually changed since last parse.
+        if (content === _lastParsedContent) return;
+        _lastParsedContent = content ?? "";
+
         if (!content && parsedRequests.length === 0) {
             viewMode = "request";
             activeRequestIdx = 0;
@@ -81,7 +90,10 @@
         }
         if (!content) return;
 
+        const gen = ++_parseGen;
         httpFile.parse(content).then((result) => {
+            // Discard stale results from a previous parse.
+            if (gen !== _parseGen) return;
             parsedRequests = result.requests;
             fileVariables = result.variables;
             if (parsedRequests.length === 0) {
@@ -90,6 +102,8 @@
             } else if (activeRequestIdx >= parsedRequests.length) {
                 activeRequestIdx = Math.max(0, parsedRequests.length - 1);
             }
+
+            // Populate form from fresh parse.
             if (viewMode === "request") {
                 formRequest = parsedToHttpRequest(parsedRequests[activeRequestIdx]);
             }
@@ -108,12 +122,12 @@
         if (!content) return;
         let found = -1;
         for (let i = 0; i < parsedRequests.length; i++) {
-            if (pos >= parsedRequests[i].offset_start && pos <= parsedRequests[i].offset_end + 1) {
+            if (pos >= parsedRequests[i].block_region.start && pos <= parsedRequests[i].block_region.end + 1) {
                 found = i; break;
             }
         }
         if (found === -1 && parsedRequests.length > 0) {
-            found = pos < (parsedRequests[0]?.offset_start ?? 0) ? 0 : parsedRequests.length - 1;
+            found = pos < (parsedRequests[0]?.block_region.start ?? 0) ? 0 : parsedRequests.length - 1;
         }
         if (found !== -1 && found !== activeRequestIdx) {
             activeRequestIdx = found;
@@ -125,7 +139,11 @@
     function handleSelectRequest(idx: number) {
         activeRequestIdx = idx;
         saveTabState({ activeRequestIdx: idx });
-        if (viewMode === "request") formRequest = parsedToHttpRequest(parsedRequests[idx]);
+        if (viewMode === "request") {
+            if (idx < parsedRequests.length) {
+                formRequest = parsedToHttpRequest(parsedRequests[idx]);
+            }
+        }
     }
 
     function handleSetMode(mode: ViewMode) {
@@ -170,12 +188,17 @@ async function handleVariablesUpdate(vars: ParsedFileVariable[]) {
     }
 
     async function syncFormToContent() {
-        const updated = httpRequestToParsed(formRequest, parsedRequests[activeRequestIdx]);
+        const base = parsedRequests[activeRequestIdx];
+        if (!base) return;
+        const updated = httpRequestToParsed(formRequest, base);
         parsedRequests[activeRequestIdx] = updated;
         saveTabState({ parsedRequests });
         try {
             const newContent = await httpFile.updateRequest(tab.content, activeRequestIdx, updated);
-            onContentChange(newContent);
+            // Avoid re-triggering parse/loop when content hasn't actually changed.
+            if (newContent !== tab.content) {
+                onContentChange(newContent);
+            }
         } catch (e) {
             console.error("Failed to sync form to content:", e);
         }
@@ -183,7 +206,9 @@ async function handleVariablesUpdate(vars: ParsedFileVariable[]) {
 
     function handleFormUpdate(req: HttpRequest) {
         formRequest = req;
-        const updated = httpRequestToParsed(req, parsedRequests[activeRequestIdx]);
+        const base = parsedRequests[activeRequestIdx];
+        if (!base) return;
+        const updated = httpRequestToParsed(req, base);
         parsedRequests[activeRequestIdx] = updated;
         saveTabState({ parsedRequests });
     }
