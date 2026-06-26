@@ -7,6 +7,26 @@ use super::serialize::{
 };
 use super::types::*;
 
+// --- Newline helpers
+
+/// Detect the line-ending convention used in the file content.
+fn detect_newline(content: &str) -> &'static str {
+    if content.contains("\r\n") {
+        "\r\n"
+    } else {
+        "\n"
+    }
+}
+
+/// Convert any LF characters in `s` to the requested `target` style.
+fn normalize_newlines(s: &str, target: &str) -> String {
+    if target == "\n" {
+        s.to_string()
+    } else {
+        s.replace('\n', target)
+    }
+}
+
 // --- Change detection
 
 #[derive(Default)]
@@ -49,11 +69,14 @@ fn detect_changed_sections(old: &ParsedRequest, new: &ParsedRequest) -> ChangedS
 
 /// Replace file-level @var declarations while preserving all other content.
 pub fn apply_variable_update(content: &str, variables: &[FileVariable]) -> String {
-    // Split at the first request block — same logic as parse_http_file preamble.
+    // Split at the first request block.
+    let nl = detect_newline(content);
+
+    // Split at the first request delimiter respecting the detected line ending.
     let first_delim = if content.starts_with("###") {
         0 // no preamble, variables go before the first request
     } else {
-        content.find("\n###").unwrap_or(content.len())
+        content.find(&format!("{nl}###")).unwrap_or(content.len())
     };
 
     let prefix = &content[..first_delim];
@@ -70,23 +93,23 @@ pub fn apply_variable_update(content: &str, variables: &[FileVariable]) -> Strin
     let mut result = String::new();
     for (i, line) in prelude_lines.iter().enumerate() {
         if i > 0 {
-            result.push('\n');
+            result.push_str(nl);
         }
         result.push_str(line);
     }
 
-    let var_text = serialize_file_variables(variables);
+    let var_text = normalize_newlines(&serialize_file_variables(variables), nl);
     if !var_text.is_empty() {
         if !result.is_empty() {
-            result.push('\n');
+            result.push_str(nl);
         }
         result.push_str(&var_text);
         // Separate variables from first request with blank line.
-        // suffix may start with "\n###" (had preamble) or "###".
-        if !suffix.starts_with('\n') {
-            result.push('\n');
+        // suffix may start with "<nl>###" (had preamble) or "###".
+        if !suffix.starts_with(nl) {
+            result.push_str(nl);
         }
-        result.push('\n');
+        result.push_str(nl);
     }
 
     result.push_str(suffix);
@@ -109,10 +132,11 @@ pub fn apply_request_update(content: &str, request_idx: usize, updated: &ParsedR
 
     let old_req = &parse_result.requests[request_idx];
     let changed = detect_changed_sections(old_req, updated);
+    let nl = detect_newline(content);
 
     // Full-block fallback for title/pre-script changes
     if changed.pre_or_title {
-        let new_text = serialize_request_block(updated);
+        let new_text = normalize_newlines(&serialize_request_block(updated), nl);
         let mut result = String::with_capacity(content.len());
         result.push_str(&content[..old_req.block_region.start]);
         result.push_str(&new_text);
@@ -137,33 +161,42 @@ pub fn apply_request_update(content: &str, request_idx: usize, updated: &ParsedR
 
     // 2. Request line
     if changed.request_line {
-        out.push_str(&serialize_request_line(updated));
+        out.push_str(&normalize_newlines(&serialize_request_line(updated), nl));
     } else {
         out.push_str(&content[old_req.request_line_region.start..old_req.request_line_region.end]);
     }
 
     // 3. Query region (multiline params only)
     if changed.query_region {
-        out.push_str(&serialize_query_section(&updated.query_params));
+        out.push_str(&normalize_newlines(
+            &serialize_query_section(&updated.query_params),
+            nl,
+        ));
     } else {
         out.push_str(&content[old_req.query_region.start..old_req.query_region.end]);
     }
 
     // 4. Headers
     if changed.headers {
-        out.push_str(&serialize_headers_section(&updated.headers));
+        out.push_str(&normalize_newlines(
+            &serialize_headers_section(&updated.headers),
+            nl,
+        ));
     } else {
         out.push_str(&content[old_req.headers_region.start..old_req.headers_region.end]);
     }
 
     // 5. Body region (blank separator + body + post-script)
     if changed.body {
-        out.push_str(&serialize_body_section(
-            updated.body_mode.as_deref(),
-            updated.body.as_deref(),
-            &updated.form_urlencoded,
-            &updated.form_multipart,
-            updated.post_script.as_deref(),
+        out.push_str(&normalize_newlines(
+            &serialize_body_section(
+                updated.body_mode.as_deref(),
+                updated.body.as_deref(),
+                &updated.form_urlencoded,
+                &updated.form_multipart,
+                updated.post_script.as_deref(),
+            ),
+            nl,
         ));
     } else {
         out.push_str(&content[old_req.body_region.start..old_req.body_region.end]);
@@ -184,17 +217,18 @@ pub fn apply_request_update(content: &str, request_idx: usize, updated: &ParsedR
 
 /// Append a new request block to an .http file.
 pub fn append_request_block(content: &str, new_request: &ParsedRequest) -> String {
-    let block_text = serialize_request_block(new_request);
+    let nl = detect_newline(content);
+    let block_text = normalize_newlines(&serialize_request_block(new_request), nl);
     let trimmed = content.trim_end();
 
     if trimmed.is_empty() {
         return block_text;
     }
 
-    let separator = if content.ends_with('\n') {
-        "\n"
+    let separator = if content.ends_with(nl) {
+        nl.to_string()
     } else {
-        "\n\n"
+        format!("{nl}{nl}")
     };
     format!("{}{}{}", trimmed, separator, block_text)
 }
