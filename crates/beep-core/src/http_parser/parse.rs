@@ -24,7 +24,9 @@ pub fn parse_http_file(content: &str) -> ParseHttpFileResult {
             if let Some(eq_pos) = rest.find('=') {
                 let key = rest[..eq_pos].trim().to_string();
                 let value_raw = rest[eq_pos + 1..].trim();
-                let value = if let Some(comment_pos) = value_raw.find("//") {
+                // Strip trailing inline comment, but only // preceded by
+                // whitespace (avoids false match inside https:// or similar).
+                let value = if let Some(comment_pos) = value_raw.find(" //") {
                     value_raw[..comment_pos].trim().to_string()
                 } else {
                     value_raw.to_string()
