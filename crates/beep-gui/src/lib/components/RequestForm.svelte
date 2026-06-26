@@ -46,11 +46,16 @@
     const httpVersion = $derived(request.http_version ?? "Auto");
 
     // Sync rawBodyContent from request on mount / request switch.
+    let _lastSyncedRawBody: string | null | undefined = $state(undefined);
     $effect(() => {
         const rb = request.raw_body;
         bodyMode = (request.body_mode as BodyMode) ||
             (request.raw_body ? "raw/text" : "none");
-        if (rb === rawBodyContent) return;
+
+        // TODO not tested yet, since this review suggestion and the edge-case.
+        // Editing raw body, then something triggers a re-parse that restores a slightly different version.
+        if (rb === _lastSyncedRawBody) return;
+        _lastSyncedRawBody = rb;
         rawBodyContent = rb ?? "";
     });
 
