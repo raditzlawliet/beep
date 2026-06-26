@@ -49,7 +49,13 @@ fn detect_changed_sections(old: &ParsedRequest, new: &ParsedRequest) -> ChangedS
 
 /// Replace file-level @var declarations while preserving all other content.
 pub fn apply_variable_update(content: &str, variables: &[FileVariable]) -> String {
-    let first_delim = content.find("\n###").unwrap_or(content.len());
+    // Split at the first request block — same logic as parse_http_file preamble.
+    let first_delim = if content.starts_with("###") {
+        0 // no preamble, variables go before the first request
+    } else {
+        content.find("\n###").unwrap_or(content.len())
+    };
+
     let prefix = &content[..first_delim];
     let suffix = &content[first_delim..];
 
@@ -75,6 +81,12 @@ pub fn apply_variable_update(content: &str, variables: &[FileVariable]) -> Strin
             result.push('\n');
         }
         result.push_str(&var_text);
+        // Separate variables from first request with blank line.
+        // suffix may start with "\n###" (had preamble) or "###".
+        if !suffix.starts_with('\n') {
+            result.push('\n');
+        }
+        result.push('\n');
     }
 
     result.push_str(suffix);
