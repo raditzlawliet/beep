@@ -609,6 +609,7 @@ pub fn detect_body_mode(headers: &[HttpHeaderField], body: Option<&str>) -> Opti
     }
 }
 
+// TODO script is only parsed, need implementation executor or validator
 fn extract_script_block(lines: &[&str], idx: &mut usize, first_line: &str) -> Option<String> {
     let first = first_line.trim();
     let after_lt = &first[1..].trim();

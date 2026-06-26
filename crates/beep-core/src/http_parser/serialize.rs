@@ -105,9 +105,21 @@ pub fn serialize_body_section(
 
     match body_mode {
         Some("form-urlencoded") if !form_urlencoded.is_empty() => {
-            for f in form_urlencoded {
-                let prefix = if f.enabled { "" } else { "//- " };
-                out.push_str(&format!("{}&{}={}\n", prefix, f.key, f.value));
+            // Mixing inline & multiline causing too much chaos... need to consider for later
+            let all_inline = form_urlencoded.iter().all(|f| f.is_inline && f.enabled);
+            if all_inline {
+                // Single-line: key1=val1&key2=val2
+                let qs: Vec<String> = form_urlencoded
+                    .iter()
+                    .map(|f| format!("{}={}", f.key, f.value))
+                    .collect();
+                out.push_str(&format!("{}\n", qs.join("&")));
+            } else {
+                // Multiline: one &key=value per line, disabled get //- &
+                for f in form_urlencoded {
+                    let prefix = if f.enabled { "" } else { "//- " };
+                    out.push_str(&format!("{}&{}={}\n", prefix, f.key, f.value));
+                }
             }
         }
         Some("form-multipart") if !form_multipart.is_empty() => {
