@@ -82,7 +82,7 @@ export function httpRequestToParsed(
     ...base,
     method: form.method,
     url: (() => {
-      // Strip query string. RequestParamsTab may have merged params into the URL. 
+      // Strip query string. RequestParamsTab may have merged params into the URL.
       // Rust's parser does its own split_url_query.
       const q = form.url.indexOf("?");
       return q >= 0 ? form.url.slice(0, q) : form.url;
@@ -151,15 +151,39 @@ export function httpRequestToParsed(
 }
 
 // httpRequestToContent serialize an HttpRequest into .http file text.
+// Used for standalone requests (non-file tabs).
 export function httpRequestToContent(req: HttpRequest): string {
-  const lines = [`### ${req.method} ${req.url}`];
-  lines.push(`${req.method} ${req.url}`);
-  for (const h of req.headers) {
-    if (h.enabled && !h.auto) lines.push(`${h.key}: ${h.value}`);
+  const lines: string[] = [];
+
+  // Title
+  lines.push(`### ${req.method} ${req.url}`);
+
+  // Request line with inline enabled params
+  const enabledParams = (req.query_params ?? []).filter(
+    (q) => q.enabled && q.key,
+  );
+  const urlWithQuery =
+    enabledParams.length > 0
+      ? `${req.url}?${enabledParams.map((q) => `${encodeURIComponent(q.key)}=${encodeURIComponent(q.value)}`).join("&")}`
+      : req.url;
+  lines.push(`${req.method} ${urlWithQuery}`);
+
+  // Disabled params as multiline
+  for (const q of (req.query_params ?? []).filter((q) => !q.enabled && q.key)) {
+    lines.push(`    //- &${q.key}=${q.value}`);
   }
+
+  // Headers (enabled and disabled)
+  for (const h of req.headers) {
+    if (h.auto) continue;
+    lines.push(h.enabled ? `${h.key}: ${h.value}` : `//- ${h.key}: ${h.value}`);
+  }
+
+  // Body
   if (req.raw_body || req.body) {
     lines.push("");
     lines.push(req.raw_body || req.body || "");
   }
+
   return lines.join("\n") + "\n";
 }
