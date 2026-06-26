@@ -168,8 +168,12 @@ pub fn apply_request_update(content: &str, request_idx: usize, updated: &ParsedR
 
     // 3. Query region (multiline params only)
     if changed.query_region {
+        let has_inline = updated
+            .query_params
+            .iter()
+            .any(|q| q.is_inline && q.enabled);
         out.push_str(&normalize_newlines(
-            &serialize_query_section(&updated.query_params),
+            &serialize_query_section(&updated.query_params, has_inline),
             nl,
         ));
     } else {

@@ -44,10 +44,9 @@ pub fn serialize_request_line(req: &ParsedRequest) -> String {
 }
 
 /// Serialize multiline query param lines.
-/// Includes disabled params (`//- &...`) and enabled-but-not-inline params.
-/// First enabled multiline param uses `?`, rest use `&`.
-/// Returns empty string if no multiline params.
-pub fn serialize_query_section(params: &[QueryField]) -> String {
+/// `has_inline`, when true (URL already has `?inline`), all multiline
+/// params use `&`. When false, first enabled multiline uses `?`.
+pub fn serialize_query_section(params: &[QueryField], has_inline: bool) -> String {
     let multiline: Vec<_> = params.iter().filter(|q| !q.is_inline).collect();
     if multiline.is_empty() {
         return String::new();
@@ -58,11 +57,11 @@ pub fn serialize_query_section(params: &[QueryField]) -> String {
     for q in &multiline {
         let prefix = if q.enabled { "" } else { "//- " };
         let sep = if q.enabled {
-            if first_enabled {
+            if has_inline || !first_enabled {
+                "&"
+            } else {
                 first_enabled = false;
                 "?"
-            } else {
-                "&"
             }
         } else {
             "&"
@@ -207,7 +206,8 @@ pub fn serialize_request_block(req: &ParsedRequest) -> String {
     // Multiline query params
     let multiline: Vec<_> = req.query_params.iter().filter(|q| !q.is_inline).collect();
     if !multiline.is_empty() {
-        out.push_str(&serialize_query_section(&req.query_params));
+        let has_inline = req.query_params.iter().any(|q| q.is_inline && q.enabled);
+        out.push_str(&serialize_query_section(&req.query_params, has_inline));
     }
 
     // Headers

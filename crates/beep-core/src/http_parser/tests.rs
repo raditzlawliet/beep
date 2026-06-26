@@ -728,8 +728,9 @@ GET https://api.example.com/search?q=test&page=1 HTTP/1.1
             // is_inline stays false
         }
         let result2 = apply_request_update(&result, 0, &updated);
-        // page stays multiline (is_inline: false), first enabled multiline param uses '?'
-        assert!(result2.contains("?page=1"));
+        // page stays multiline (is_inline: false), but since q=test is inline,
+        // all multiline params use & prefix (only one ? total).
+        assert!(result2.contains("&page=1"));
         // q=test is still inline in URL
         assert!(result2.contains("?q=test"));
     }
