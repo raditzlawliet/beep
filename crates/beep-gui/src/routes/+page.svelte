@@ -438,6 +438,9 @@
         reqError = null;
         try {
             await request.send(req);
+            // Save response to the active tab so each tab has its own response.
+            const tab = findTab(activeTabId);
+            if (tab) tab.lastResponse = request.response;
         } catch (e) {
             reqError = typeof e === "string" ? e : (e as Error)?.message ?? String(e);
             history.refresh().catch(() => {});
@@ -500,6 +503,7 @@
                 content, originalContent: content, persistent, diskChanged: false,
                 viewMode: "request", activeRequestIdx: 0,
                 parsedRequests: [], fileVariables: [],
+                lastResponse: request.response,
             });
             activeTabId = id;
         } catch (e) {
@@ -639,7 +643,7 @@
                     tab={activeTab}
                     {sending}
                     {reqError}
-                    response={request.response}
+                    response={activeTab?.lastResponse ?? null}
                     onContentChange={handleContentChange}
                     onTabStateChange={handleTabStateChange}
                     onSend={handleSend}

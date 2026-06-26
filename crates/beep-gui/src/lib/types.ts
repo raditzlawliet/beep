@@ -180,6 +180,7 @@ export interface Tab {
   // sub-tab state preservation
   requestFormTab?: string;
   fileOverviewTab?: string;
+  lastResponse?: HttpResponse | null;
 }
 
 export function defaultRequest(): HttpRequest {
