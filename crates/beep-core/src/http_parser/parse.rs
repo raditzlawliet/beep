@@ -65,7 +65,7 @@ pub fn parse_http_file(content: &str) -> ParseHttpFileResult {
 
 // --- Internal: delimiter & offset helpers
 
-/// Find the next `###` at the start of a line.
+/// Find the next `###` at the start of a line (supports both \n and \r\n).
 fn find_delim(bytes: &[u8], start: usize) -> Option<usize> {
     if start >= bytes.len() {
         return None;
@@ -73,23 +73,30 @@ fn find_delim(bytes: &[u8], start: usize) -> Option<usize> {
     if start + 3 <= bytes.len() && &bytes[start..start + 3] == b"###" {
         return Some(start);
     }
+    // Try \n### first
     let pattern = b"\n###";
+    if let Some(p) = bytes[start..].windows(4).position(|w| w == pattern) {
+        return Some(start + p + 1);
+    }
+    // Try \r\n### (CRLF)
+    let pattern_crlf = b"\r\n###";
     bytes[start..]
-        .windows(4)
-        .position(|w| w == pattern)
-        .map(|p| start + p + 1)
+        .windows(5)
+        .position(|w| w == pattern_crlf)
+        .map(|p| start + p + 2)
 }
 
 /// Compute the absolute byte offset of line `line_idx` within a block,
 /// given the block's base offset and its lines.
 fn line_start_offset(base: usize, block: &str, line_idx: usize) -> usize {
     let block_len = block.len();
+    let nl_len = if block.contains("\r\n") { 2 } else { 1 };
     let mut pos = 0;
     for (i, line) in block.lines().enumerate() {
         if i == line_idx {
             return base + pos.min(block_len);
         }
-        pos += line.len() + 1; // +1 for '\n'
+        pos += line.len() + nl_len;
         if pos >= block_len {
             break;
         }
@@ -98,11 +105,12 @@ fn line_start_offset(base: usize, block: &str, line_idx: usize) -> usize {
 }
 
 /// Compute the absolute byte offset of the end of line `line_idx`
-/// (i.e. one past the `\n`).
+/// (i.e. one past the line ending).
 fn line_end_offset(base: usize, block: &str, line_idx: usize) -> usize {
     let start = line_start_offset(base, block, line_idx);
     let line = block.lines().nth(line_idx).unwrap_or("");
-    (start + line.len() + 1).min(base + block.len())
+    let nl_len = if block.contains("\r\n") { 2 } else { 1 };
+    (start + line.len() + nl_len).min(base + block.len())
 }
 
 // --- Request block parser
