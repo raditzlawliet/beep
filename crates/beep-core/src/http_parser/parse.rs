@@ -292,7 +292,7 @@ fn parse_request_block(block: &str, base: usize) -> ParsedRequest {
                 j += 1;
                 continue;
             }
-            if trimmed.starts_with("> {") || trimmed.starts_with("> ./") {
+            if trimmed.starts_with("> {") || trimmed.starts_with("> .") {
                 let script_content = extract_script_block(&lines, &mut j, trimmed);
                 post_script = script_content;
                 j += 1;
