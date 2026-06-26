@@ -105,7 +105,14 @@
 
             // Populate form from fresh parse.
             if (viewMode === "request") {
-                formRequest = parsedToHttpRequest(parsedRequests[activeRequestIdx]);
+                const parsed = parsedToHttpRequest(parsedRequests[activeRequestIdx]);
+                // Restore display URL: inline params must show in the URL field.
+                const inline = (parsed.query_params ?? []).filter((q) => q.is_inline && q.enabled && q.key);
+                if (inline.length > 0) {
+                    const qs = inline.map((q) => `${encodeURIComponent(q.key)}=${encodeURIComponent(q.value)}`).join("&");
+                    parsed.url = `${parsed.url}?${qs}`;
+                }
+                formRequest = parsed;
             }
             saveTabState({ parsedRequests, fileVariables, activeRequestIdx });
         }).catch((e) => console.error("Failed to parse http file:", e));
@@ -218,6 +225,42 @@ async function handleVariablesUpdate(vars: ParsedFileVariable[]) {
         onSend(req);
     }
 
+    function handleUrlBlur() {
+        const url = formRequest.url;
+        const qIdx = url.indexOf('?');
+
+        // Parse URL query into key-value pairs
+        const urlParams: { key: string; value: string }[] = [];
+        if (qIdx >= 0) {
+            for (const part of url.slice(qIdx + 1).split('&')) {
+                const eq = part.indexOf('=');
+                if (eq >= 0) {
+                    urlParams.push({ key: safeDecodeURI(part.slice(0, eq)), value: safeDecodeURI(part.slice(eq + 1)) });
+                } else if (part.trim()) {
+                    urlParams.push({ key: safeDecodeURI(part), value: '' });
+                }
+            }
+        }
+
+        // Merge: keep multiline params, replace inline with URL query
+        const merged = formRequest.query_params
+            .filter((q) => !q.is_inline && q.key) // keep multiline
+            .map((q) => ({ ...q }));
+        const urlKeys = new Set(urlParams.map((p) => p.key));
+        for (const p of urlParams) {
+            if (p.key) merged.push({ key: p.key, value: p.value, enabled: true, is_inline: true });
+        }
+
+        // Clean URL: strip query
+        const cleanUrl = qIdx >= 0 ? url.slice(0, qIdx) : url;
+        formRequest = { ...formRequest, url: cleanUrl, query_params: merged };
+        syncFormToContent().catch(console.error);
+    }
+
+    function safeDecodeURI(s: string): string {
+        try { return decodeURIComponent(s); } catch { return s; }
+    }
+
     let fileName = $derived(
         tab.filePath && project.path && tab.filePath.startsWith(project.path)
             ? tab.filePath.slice(project.path.length).replace(/^[/\\]/, "")
@@ -269,6 +312,7 @@ async function handleVariablesUpdate(vars: ParsedFileVariable[]) {
                 defaultHeaders={app.defaultHeaders}
                 initialTab={requestFormTab}
                 onTabChange={handleRequestFormTabChange}
+                onUrlBlur={handleUrlBlur}
             />
         </div>
         <div role="presentation"

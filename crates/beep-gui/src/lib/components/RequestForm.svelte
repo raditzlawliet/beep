@@ -20,9 +20,10 @@
         defaultHeaders: [string, string][];
         initialTab?: string;
         onTabChange?: (tab: string) => void;
+        onUrlBlur?: () => void;
     }
 
-    let { request, loading, onSend, onUpdate, defaultHeaders, initialTab = "params", onTabChange }: Props = $props();
+    let { request, loading, onSend, onUpdate, defaultHeaders, initialTab = "params", onTabChange, onUrlBlur }: Props = $props();
 
     type Tab = "params" | "headers" | "auth" | "body" | "settings";
     let activeTab = $state<Tab>("params");
@@ -163,6 +164,7 @@
                 oninput={(e) => {
                     emitUpdate({ url: (e.target as HTMLInputElement).value });
                 }}
+                onblur={() => onUrlBlur?.()}
                 onkeydown={(e) => {
                     if (e.key === "Enter" && !loading && request.url.trim())
                         handleSend();
