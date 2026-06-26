@@ -122,12 +122,14 @@
     $effect(() => {
         const existing = new Set(request.headers.map((h) => h.key.toLowerCase()));
         const merged: HeaderField[] = [...request.headers];
+        let changed = false;
         for (const [k, v] of defaultHeaders) {
-            if (!existing.has(k.toLowerCase())) {
+            if (!request.headers.some((h) => h.auto && h.key.toLowerCase() === k.toLowerCase())) {
                 merged.push({ key: k, value: v, enabled: true, auto: true });
+                changed = true;
             }
         }
-        if (merged.length !== request.headers.length) {
+        if (changed) {
             onUpdate({ ...request, headers: merged });
         }
     });
