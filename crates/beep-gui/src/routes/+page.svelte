@@ -723,12 +723,12 @@
                                 <button class="btn btn-xs btn-ghost justify-start gap-2 w-full h-8" onclick={handleNewRequest}>
                                     <PlusIcon class="w-3.5 h-3.5 text-neutral-content" />
                                     <span class="flex-1 text-start font-normal">New Request</span>
-                                    <span class="text-neutral-content font-normal text-xs opacity-50 ">Ctrl+N</span>
+                                    <span class="text-neutral-content font-normal text-xs opacity-50 ">{app.modKey}+N</span>
                                 </button>
                                 <button class="btn btn-xs btn-ghost justify-start gap-2 w-full h-8" onclick={handleOpenProject}>
                                     <FolderOpenIcon class="w-3.5 h-3.5 text-neutral-content" />
                                     <span class="flex-1 text-start font-normal">Open Project</span>
-                                    <span class="text-neutral-content font-normal text-xs opacity-50">Ctrl+O</span>
+                                    <span class="text-neutral-content font-normal text-xs opacity-50">{app.modKey}+O</span>
                                 </button>
                             </div>
                         </div>

@@ -255,4 +255,10 @@ export const app = {
   get defaultHeaders(): [string, string][] {
     return _constants?.default_headers ?? [];
   },
+
+  // Platform-aware modifier label: "⌘" on macOS, "Ctrl" otherwise.
+  // TODO real test on Mac... I don't have one.
+  get modKey(): string {
+    return _constants?.platform === "macos" ? "⌘" : "Ctrl";
+  },
 };

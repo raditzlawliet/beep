@@ -5,6 +5,7 @@
   import AboutDialog from "$lib/components/modals/AboutDialog.svelte";
   import NewRequestPopup from "$lib/components/NewRequestPopup.svelte";
   import { setNewPopupHandler } from "$lib/hotkeys.svelte";
+  import { app } from "$lib/app-state.svelte";
 
   interface Props {
     activeFileName: string | null;
@@ -192,7 +193,7 @@
           <li></li>
           <li><button onclick={quit}>
             <span>Quit</span>
-            <span class="text-xs opacity-50 ml-auto">Ctrl+Q</span>
+            <span class="text-xs opacity-50 ml-auto">{app.modKey}+Q</span>
           </button></li>
         </ul>
       </div>
@@ -214,40 +215,43 @@
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <button onclick={openNewRequestPopup}>
               <span>New</span>
-              <span class="text-xs opacity-50 ml-auto">Ctrl+N</span>
+              <span class="text-xs opacity-50 ml-auto">{app.modKey}+N</span>
             </button>
           </li>
           <li>
             <button onclick={handleNewRequest}>
               <span>New Request</span>
-              <span class="text-xs opacity-50 ml-auto">Ctrl+Shift+N</span>
+              <span class="text-xs opacity-50 ml-auto">{app.modKey}+Shift+N</span>
             </button>
           </li>
           <li></li>
           <li>
             <button onclick={handleOpenProject}>
                 <span>Open Project...</span>
-                <span class="text-xs opacity-50 ml-auto">Ctrl+O</span>
+                <span class="text-xs opacity-50 ml-auto">{app.modKey}+O</span>
             </button>
           </li>
           <li></li>
           <li>
             <button onclick={handleSave} disabled={!hasActiveTab}>
               <span>Save</span>
-              <span class="text-xs opacity-50 ml-auto">Ctrl+S</span>
+              <span class="text-xs opacity-50 ml-auto">{app.modKey}+S</span>
             </button>
           </li>
           <li>
             <button onclick={handleSaveAll} disabled={!hasUnsavedTabs}>
                 <span>Save All</span>
-                <span class="text-xs opacity-50 ml-auto">Ctrl+K S</span>
+                <span class="text-xs opacity-50 ml-auto flex gap-2">
+                    <span>{app.modKey}+K</span>
+                    <span>S</span>
+                </span>
             </button>
           </li>
           <li></li>
           <li>
             <button onclick={handleCloseTab} disabled={!hasActiveTab}>
               <span>Close Tab</span>
-              <span class="text-xs opacity-50 ml-auto">Ctrl+W</span>
+              <span class="text-xs opacity-50 ml-auto">{app.modKey}+W</span>
             </button>
           </li>
           <li>
