@@ -16,6 +16,8 @@
     import { PlusIcon, FolderOpenIcon } from "@lucide/svelte";
     import MainEditorViewer from "$lib/components/MainEditorViewer.svelte";
     import MainEditorToolbar from "$lib/components/MainEditorToolbar.svelte";
+    import TabSwitcherPopup from "$lib/components/TabSwitcherPopup.svelte";
+    import { registerHotkeys, setTabSwitcherToggle } from "$lib/hotkeys.svelte";
 
     // local UI state
     let sidebarOpen = $state(false);
@@ -27,6 +29,7 @@
     let historyTabCounter = $state(0);
     let tabs = $state<Tab[]>([]);
     let activeTabId = $state<string>("");
+    let tabSwitcherOpen = $state(false);
 
     // Tab helpers
 
@@ -51,6 +54,7 @@
             activeRequestIdx: 0,
             parsedRequests: [emptyParsedRequest()],
             fileVariables: [],
+            lastActiveAt: Date.now(),
         };
     }
 
@@ -80,6 +84,7 @@
                 filePath: node.path,
                 content: "",
                 persistent: true,
+                lastActiveAt: Date.now(),
             };
         tabs.push(tab);
         activeTabId = node.path;
@@ -103,6 +108,7 @@
                 filePath: node.path,
                 content: "",
                 persistent: false,
+                lastActiveAt: Date.now(),
             };
         if (tempIdx !== -1) {
             tabs[tempIdx] = tab;
@@ -231,6 +237,10 @@
     }
 
     function selectTab(id: string) {
+        if (activeTabId !== id) {
+            const tab = findTab(id);
+            if (tab) tab.lastActiveAt = Date.now();
+        }
         activeTabId = id;
     }
 
@@ -504,6 +514,7 @@
                 viewMode: "request", activeRequestIdx: 0,
                 parsedRequests: [], fileVariables: [],
                 lastResponse: request.response,
+                lastActiveAt: Date.now(),
             });
             activeTabId = id;
         } catch (e) {
@@ -569,6 +580,22 @@
                 parent = next;
             }
         }
+    });
+
+    // -- Global hotkeys
+    registerHotkeys({
+        onSave: handleSave,
+        onSaveAll: handleSaveAll,
+        onNewRequest: handleNewRequest,
+        onOpenProject: handleOpenProject,
+        onCloseTab: handleCloseTab,
+        onToggleProject: switchToProject,
+        onToggleHistory: switchToHistory,
+    });
+
+    // Tab switcher toggle, open-only, suppressed when no tabs are open
+    setTabSwitcherToggle(() => {
+        if (!tabSwitcherOpen && tabs.length > 0) tabSwitcherOpen = true;
     });
 </script>
 
@@ -696,12 +723,12 @@
                                 <button class="btn btn-xs btn-ghost justify-start gap-2 w-full h-8" onclick={handleNewRequest}>
                                     <PlusIcon class="w-3.5 h-3.5 text-neutral-content" />
                                     <span class="flex-1 text-start font-normal">New Request</span>
-                                    <span class="text-neutral-content text-xs hidden">Ctrl N</span>
+                                    <span class="text-neutral-content font-normal text-xs opacity-50 ">{app.modKey}+N</span>
                                 </button>
                                 <button class="btn btn-xs btn-ghost justify-start gap-2 w-full h-8" onclick={handleOpenProject}>
                                     <FolderOpenIcon class="w-3.5 h-3.5 text-neutral-content" />
                                     <span class="flex-1 text-start font-normal">Open Project</span>
-                                    <span class="text-neutral-content text-xs hidden">Ctrl O</span>
+                                    <span class="text-neutral-content font-normal text-xs opacity-50">{app.modKey}+O</span>
                                 </button>
                             </div>
                         </div>
@@ -720,6 +747,14 @@
         response={request.response}
         loading={sending}
         error={reqError}
+    />
+
+    <TabSwitcherPopup
+        open={tabSwitcherOpen}
+        {tabs}
+        {activeTabId}
+        onSelect={(id) => { selectTab(id); tabSwitcherOpen = false; }}
+        onClose={() => { tabSwitcherOpen = false; }}
     />
 </div>
 

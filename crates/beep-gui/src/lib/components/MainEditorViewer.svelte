@@ -14,6 +14,7 @@
     import RequestForm from "$lib/components/RequestForm.svelte";
     import ResponseView from "$lib/components/ResponseView.svelte";
     import FileOverview from "$lib/components/FileOverview.svelte";
+    import { setSendHandler, setModeHandler } from "$lib/hotkeys.svelte";
 
     interface Props {
         tab: Tab;
@@ -266,6 +267,16 @@ async function handleVariablesUpdate(vars: ParsedFileVariable[]) {
             ? tab.filePath.slice(project.path.length).replace(/^[/\\]/, "")
             : tab.label
     );
+
+    // Register Ctrl+Enter send handler and Ctrl+1/2/3 mode handler with the hotkey system
+    $effect(() => {
+        setSendHandler(() => handleSend(formRequest));
+        setModeHandler((mode: string) => handleSetMode(mode as ViewMode));
+        return () => {
+            setSendHandler(null);
+            setModeHandler(null);
+        };
+    });
 </script>
 
 <div class="flex flex-col h-full min-h-0">
