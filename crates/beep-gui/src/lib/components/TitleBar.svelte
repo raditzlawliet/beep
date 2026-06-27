@@ -4,6 +4,7 @@
   import Unmaximize from "$lib/components/icons/Unmaximize.svelte";
   import AboutDialog from "$lib/components/modals/AboutDialog.svelte";
   import NewRequestPopup from "$lib/components/NewRequestPopup.svelte";
+  import { setNewPopupHandler } from "$lib/hotkeys.svelte";
 
   interface Props {
     activeFileName: string | null;
@@ -150,6 +151,15 @@
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   });
+
+  // Register Ctrl+N open NewRequestPopup
+  $effect(() => {
+    setNewPopupHandler(() => {
+      closeAll();
+      newPopupOpen = true;
+    });
+    return () => setNewPopupHandler(null);
+  });
 </script>
 
 <svelte:window onkeydown={handleKeydown} onclick={handleWindowClick} />
@@ -180,7 +190,10 @@
         >
           <li><button onclick={handleAbout}>About Beep</button></li>
           <li></li>
-          <li><button onclick={quit}>Quit</button></li>
+          <li><button onclick={quit}>
+            <span>Quit</span>
+            <span class="text-xs opacity-50 ml-auto">Ctrl+Q</span>
+          </button></li>
         </ul>
       </div>
 
@@ -201,34 +214,40 @@
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <button onclick={openNewRequestPopup}>
               <span>New</span>
+              <span class="text-xs opacity-50 ml-auto">Ctrl+N</span>
             </button>
           </li>
           <li>
             <button onclick={handleNewRequest}>
               <span>New Request</span>
+              <span class="text-xs opacity-50 ml-auto">Ctrl+Shift+N</span>
             </button>
           </li>
           <li></li>
           <li>
             <button onclick={handleOpenProject}>
                 <span>Open Project...</span>
+                <span class="text-xs opacity-50 ml-auto">Ctrl+O</span>
             </button>
           </li>
           <li></li>
           <li>
             <button onclick={handleSave} disabled={!hasActiveTab}>
               <span>Save</span>
+              <span class="text-xs opacity-50 ml-auto">Ctrl+S</span>
             </button>
           </li>
           <li>
             <button onclick={handleSaveAll} disabled={!hasUnsavedTabs}>
                 <span>Save All</span>
+                <span class="text-xs opacity-50 ml-auto">Ctrl+K S</span>
             </button>
           </li>
           <li></li>
           <li>
             <button onclick={handleCloseTab} disabled={!hasActiveTab}>
               <span>Close Tab</span>
+              <span class="text-xs opacity-50 ml-auto">Ctrl+W</span>
             </button>
           </li>
           <li>

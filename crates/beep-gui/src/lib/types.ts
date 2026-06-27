@@ -181,6 +181,8 @@ export interface Tab {
   requestFormTab?: string;
   fileOverviewTab?: string;
   lastResponse?: HttpResponse | null;
+  // Timestamp of last activation (for MRU tab switcher ordering)
+  lastActiveAt?: number;
 }
 
 export function defaultRequest(): HttpRequest {
