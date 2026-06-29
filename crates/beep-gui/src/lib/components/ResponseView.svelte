@@ -1,20 +1,24 @@
 <script lang="ts">
-    import type { HttpResponse } from "$lib/types";
+    import type { RequestResult } from "$lib/types";
     import StatusBadge from "$lib/components/StatusBadge.svelte";
     import ResponseBodyTab from "$lib/components/tabs/ResponseBodyTab.svelte";
     import ResponseHeadersTab from "$lib/components/tabs/ResponseHeadersTab.svelte";
+    import ResponseRequestTab from "$lib/components/tabs/ResponseRequestTab.svelte";
     import { UnplugIcon } from "@lucide/svelte";
 
     interface Props {
-        response: HttpResponse | null;
+        result: RequestResult | null;
         loading: boolean;
         error: string | null;
     }
 
-    let { response, loading, error }: Props = $props();
+    let { result, loading, error }: Props = $props();
 
-    type Tab = "body" | "headers";
+    type Tab = "body" | "headers" | "request";
     let activeTab = $state<Tab>("body");
+
+    let response = $derived(result?.response ?? null);
+    let sentRequest = $derived(result?.request ?? null);
 
     function formatSize(bytes: number): string {
         if (bytes === 0) return "0 B";
@@ -44,6 +48,16 @@
                         <button
                             role="tab"
                             class="tab"
+                            class:tab-active={activeTab === "request"}
+                            onclick={() => (activeTab = "request")}
+                        >
+                            Request
+                        </button>
+                    {/if}
+                    {#if response}
+                        <button
+                            role="tab"
+                            class="tab"
                             class:tab-active={activeTab === "body"}
                             onclick={() => (activeTab = "body")}
                         >
@@ -60,7 +74,7 @@
                                 >({Object.keys(response.headers).length})</span
                             >
                         </button>
-                    {:else}
+                    {:else if !response}
                         <span class="tab tab-active">Response</span>
                     {/if}
                 </div>
@@ -78,8 +92,8 @@
                                 class="text-xs opacity-70 cursor-default hover:opacity-100 transition-opacity"
                             >
                                 {formatSize(
-                                    response.size.response_body +
-                                        response.size.response_headers,
+                                    response.size.body +
+                                        response.size.headers,
                                 )}
                             </span>
                             <div
@@ -92,19 +106,10 @@
                                 </div>
                                 <div class="flex flex-col gap-1">
                                     <div class="flex justify-between text-xs">
-                                        <span class="opacity-60">Total</span>
-                                        <span class="font-mono"
-                                            >{formatSize(
-                                                response.size.response_headers +
-                                                    response.size.response_body,
-                                            )}</span
-                                        >
-                                    </div>
-                                    <div class="flex justify-between text-xs">
                                         <span class="opacity-60">Header</span>
                                         <span class="font-mono"
                                             >{formatSize(
-                                                response.size.response_headers,
+                                                response.size.headers,
                                             )}</span
                                         >
                                     </div>
@@ -112,11 +117,29 @@
                                         <span class="opacity-60">Body</span>
                                         <span class="font-mono"
                                             >{formatSize(
-                                                response.size.response_body,
+                                                response.size.body,
                                             )}</span
                                         >
                                     </div>
                                 </div>
+                                {#if sentRequest?.size}
+                                    <div class="border-t border-base-content/10 my-2"></div>
+                                    <div
+                                        class="text-xs font-semibold opacity-60 mb-2 uppercase tracking-wide"
+                                    >
+                                        Request Size
+                                    </div>
+                                    <div class="flex flex-col gap-1">
+                                        <div class="flex justify-between text-xs">
+                                            <span class="opacity-60">Header</span>
+                                            <span class="font-mono">{formatSize(sentRequest.size.headers)}</span>
+                                        </div>
+                                        <div class="flex justify-between text-xs">
+                                            <span class="opacity-60">Body</span>
+                                            <span class="font-mono">{formatSize(sentRequest.size.body)}</span>
+                                        </div>
+                                    </div>
+                                {/if}
                             </div>
                         </div>
                     </div>
@@ -124,7 +147,9 @@
             </div>
             <!-- Content -->
             <div class="flex-1 min-h-0 overflow-auto">
-                {#if response}
+                {#if activeTab === "request" && sentRequest}
+                    <ResponseRequestTab request={sentRequest} response={response} />
+                {:else if response}
                     {#if activeTab === "body"}
                         <ResponseBodyTab {response} />
                     {:else}

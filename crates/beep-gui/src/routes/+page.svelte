@@ -50,7 +50,7 @@
             filePath,
             content: "",
             persistent,
-            viewMode: "request",
+            viewMode: "code",
             activeRequestIdx: 0,
             parsedRequests: [emptyParsedRequest()],
             fileVariables: [],
@@ -450,7 +450,7 @@
             await request.send(req);
             // Save response to the active tab so each tab has its own response.
             const tab = findTab(activeTabId);
-            if (tab) tab.lastResponse = request.response;
+            if (tab) tab.lastResult = request.result;
         } catch (e) {
             reqError = typeof e === "string" ? e : (e as Error)?.message ?? String(e);
             history.refresh().catch(() => {});
@@ -513,7 +513,7 @@
                 content, originalContent: content, persistent, diskChanged: false,
                 viewMode: "request", activeRequestIdx: 0,
                 parsedRequests: [], fileVariables: [],
-                lastResponse: request.response,
+                lastResult: request.result,
                 lastActiveAt: Date.now(),
             });
             activeTabId = id;
@@ -670,7 +670,7 @@
                     tab={activeTab}
                     {sending}
                     {reqError}
-                    response={activeTab?.lastResponse ?? null}
+                    result={activeTab?.lastResult ?? null}
                     onContentChange={handleContentChange}
                     onTabStateChange={handleTabStateChange}
                     onSend={handleSend}

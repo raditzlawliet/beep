@@ -52,9 +52,9 @@ export interface HttpRequest {
   http_version?: HttpVersion;
 }
 
-export interface ResponseSize {
-  response_body: number;
-  response_headers: number;
+export interface Size {
+  headers: number;
+  body: number;
 }
 
 export interface AppConstants {
@@ -63,13 +63,27 @@ export interface AppConstants {
   default_headers: [string, string][];
 }
 
+export interface SentRequest {
+  url: string;
+  method: string;
+  headers: [string, string][];
+  body: string | null;
+  http_version: string;
+  size: Size | null;
+}
+
 export interface HttpResponse {
   status: number;
   headers: Record<string, string>;
   body: string;
   elapsed_ms: number;
-  size: ResponseSize;
+  size: Size;
   body_encoding?: "utf8" | "base64";
+}
+
+export interface RequestResult {
+  request: SentRequest;
+  response: HttpResponse;
 }
 
 export interface HistoryEntrySummary {
@@ -77,7 +91,7 @@ export interface HistoryEntrySummary {
   method: string;
   url: string;
   status: number | null;
-  size: ResponseSize | null;
+  size: Size | null;
   error: string | null;
   timestamp: string;
   label: string | null;
@@ -86,7 +100,7 @@ export interface HistoryEntrySummary {
 export interface HistoryEntry {
   id: number;
   request: HttpRequest;
-  response: HttpResponse | null;
+  result: RequestResult | null;
   error: string | null;
   timestamp: string;
   label: string | null;
@@ -180,7 +194,7 @@ export interface Tab {
   // sub-tab state preservation
   requestFormTab?: string;
   fileOverviewTab?: string;
-  lastResponse?: HttpResponse | null;
+  lastResult?: RequestResult | null;
   // Timestamp of last activation (for MRU tab switcher ordering)
   lastActiveAt?: number;
 }
@@ -253,7 +267,8 @@ export function methodTextColor(method: HttpMethod): string {
 }
 
 // text-color classes for status codes
-export function statusTextColor(status: number): string {
+export function statusTextColor(status: number | null): string {
+  if (status === null) return "text-base-content/50";
   if (status < 200) return "text-base-content/50";
   if (status < 300) return "text-success";
   if (status < 400) return "text-info";
@@ -262,7 +277,8 @@ export function statusTextColor(status: number): string {
 }
 
 // text version of status code
-export function statusText(status: number): string {
+export function statusText(status: number | null): string {
+  if (status === null) return "";
   const map: Record<number, string> = {
     200: "OK",
     201: "Created",

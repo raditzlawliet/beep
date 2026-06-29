@@ -2,7 +2,7 @@
     import { statusTextColor, statusText } from "$lib/types";
 
     interface Props {
-        status: number;
+        status: number | null;
         showLabel?: boolean;
     }
 

@@ -3,8 +3,12 @@ use std::time::{Duration, Instant};
 
 use http::{HeaderName, HeaderValue};
 use reqwest::Client;
+use reqwest_middleware::ClientWithMiddleware;
 
-use crate::models::{Auth, BodyEncoding, HeaderField, HttpRequest, HttpResponse, ResponseSize};
+use crate::inspector::{BeepInspector, CapturedRequest};
+use crate::models::{
+    Auth, BodyEncoding, HeaderField, HttpRequest, HttpResponse, RequestResult, SentRequest, Size,
+};
 
 /// Default header values used by HttpClient::new().
 pub const DEFAULT_ACCEPT: &str = "*/*";
@@ -25,9 +29,9 @@ pub fn default_headers() -> Vec<(&'static str, &'static str)> {
 
 #[derive(Clone)]
 pub struct HttpClient {
-    client: Client, // Auto
-    client_http1: Client,
-    client_http2: Client,
+    client: ClientWithMiddleware, // Auto
+    client_http1: ClientWithMiddleware,
+    client_http2: ClientWithMiddleware,
 }
 
 impl HttpClient {
@@ -52,42 +56,41 @@ impl HttpClient {
             .zstd(true)
     }
 
+    fn build_client(builder: reqwest::ClientBuilder) -> ClientWithMiddleware {
+        reqwest_middleware::ClientBuilder::new(
+            builder.build().expect("Failed to build reqwest client"),
+        )
+        .with(BeepInspector)
+        .build()
+    }
+
     pub fn new() -> Self {
         Self {
-            client: Self::base_builder()
-                .build()
-                .expect("Failed to build reqwest client"),
-            client_http1: Self::base_builder()
-                .http1_only()
-                .build()
-                .expect("Failed to build reqwest http1 client"),
-            client_http2: Self::base_builder()
-                .http2_prior_knowledge()
-                .build()
-                .expect("Failed to build reqwest http2 client"),
+            client: Self::build_client(Self::base_builder()),
+            client_http1: Self::build_client(Self::base_builder().http1_only()),
+            client_http2: Self::build_client(Self::base_builder().http2_prior_knowledge()),
         }
     }
 
     pub fn with_timeout(timeout_secs: u64) -> Self {
         Self {
-            client: Self::base_builder()
-                .timeout(Duration::from_secs(timeout_secs))
-                .build()
-                .expect("Failed to build reqwest client"),
-            client_http1: Self::base_builder()
-                .timeout(Duration::from_secs(timeout_secs))
-                .http1_only()
-                .build()
-                .expect("Failed to build reqwest http1 client"),
-            client_http2: Self::base_builder()
-                .timeout(Duration::from_secs(timeout_secs))
-                .http2_prior_knowledge()
-                .build()
-                .expect("Failed to build reqwest http2 client"),
+            client: Self::build_client(
+                Self::base_builder().timeout(Duration::from_secs(timeout_secs)),
+            ),
+            client_http1: Self::build_client(
+                Self::base_builder()
+                    .timeout(Duration::from_secs(timeout_secs))
+                    .http1_only(),
+            ),
+            client_http2: Self::build_client(
+                Self::base_builder()
+                    .timeout(Duration::from_secs(timeout_secs))
+                    .http2_prior_knowledge(),
+            ),
         }
     }
 
-    pub async fn execute(&self, request: &HttpRequest) -> Result<HttpResponse, String> {
+    pub async fn execute(&self, request: &HttpRequest) -> Result<RequestResult, String> {
         let url = self.build_url(request);
         let method = request.method;
         let headers = request.headers.clone();
@@ -96,7 +99,6 @@ impl HttpClient {
         let start = Instant::now();
 
         // Infer body_mode if not explicitly set (CLI may not set it).
-        // body_mode encodes both mode and type: "raw/json", "form-urlencoded", etc.
         let body_mode = request.body_mode.as_deref().unwrap_or_else(|| {
             if !request.form_multipart.is_empty() {
                 "form-multipart"
@@ -156,9 +158,14 @@ impl HttpClient {
         }
 
         // Body
+        // Also track the body text + length for the response request snapshot.
+        let request_body_str: Option<String>;
+        let request_body_len: usize;
         match body_mode {
             "form-urlencoded" => {
                 let encoded = build_url_encoded_body(&request.form_urlencoded);
+                request_body_len = encoded.len();
+                request_body_str = Some(encoded.clone());
                 req_builder = req_builder
                     .header("content-type", "application/x-www-form-urlencoded")
                     .body(encoded);
@@ -172,6 +179,8 @@ impl HttpClient {
                         req_builder = req_builder.header("content-type", v);
                     }
                 }
+                request_body_len = mp_body.len();
+                request_body_str = String::from_utf8(mp_body.clone()).ok();
                 req_builder = req_builder.body(mp_body);
             }
             _ => {
@@ -188,7 +197,12 @@ impl HttpClient {
                     if let Some(ct) = content_type {
                         req_builder = req_builder.header("content-type", ct);
                     }
+                    request_body_len = b.len();
+                    request_body_str = Some(b.to_string());
                     req_builder = req_builder.body(b.to_string());
+                } else {
+                    request_body_len = 0;
+                    request_body_str = None;
                 }
             }
         }
@@ -197,6 +211,14 @@ impl HttpClient {
             .send()
             .await
             .map_err(|e| format!("Request failed: {}", e))?;
+
+        // Extract the exact request snapshot captured by the middleware
+        let mut captured = resp.extensions().get::<CapturedRequest>().cloned();
+        // Patch in body data captured in execute() (middleware can't read it from reqwest).
+        if let Some(ref mut cap) = captured {
+            cap.body_bytes = request_body_len;
+            cap.body_text = request_body_str;
+        }
 
         let status = resp.status().as_u16();
         let resp_headers = extract_headers(resp.headers());
@@ -216,7 +238,7 @@ impl HttpClient {
             Err(_) => (base64_encode(&raw_body), BodyEncoding::Base64),
         };
 
-        // Compute sizes
+        // Compute response sizes
         let response_headers_size: u64 = resp_headers
             .iter()
             .map(|(k, v)| (k.len() + v.len() + 4) as u64)
@@ -225,16 +247,44 @@ impl HttpClient {
 
         let elapsed_ms = start.elapsed().as_millis() as u64;
 
-        Ok(HttpResponse {
+        let response = HttpResponse {
             status,
             headers: resp_headers,
             body: resp_body,
             body_encoding,
             elapsed_ms,
-            size: ResponseSize {
-                response_body: response_body_size,
-                response_headers: response_headers_size,
+            size: Size {
+                body: response_body_size,
+                headers: response_headers_size,
             },
+        };
+
+        let request_echo = if let Some(cap) = captured {
+            SentRequest {
+                url: cap.url,
+                method: cap.method,
+                headers: cap.headers,
+                body: cap.body_text,
+                http_version: cap.http_version,
+                size: Some(Size {
+                    headers: cap.header_bytes as u64,
+                    body: cap.body_bytes as u64,
+                }),
+            }
+        } else {
+            SentRequest {
+                url: String::new(),
+                method: String::new(),
+                headers: Vec::new(),
+                body: None,
+                http_version: String::new(),
+                size: None,
+            }
+        };
+
+        Ok(RequestResult {
+            request: request_echo,
+            response,
         })
     }
 

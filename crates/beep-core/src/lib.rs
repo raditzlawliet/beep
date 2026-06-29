@@ -6,6 +6,7 @@
 pub mod client;
 pub mod history;
 pub mod http_parser;
+pub mod inspector;
 pub mod models;
 
 // Re-exports
@@ -16,4 +17,4 @@ pub use http_parser::{
     Region, append_request_block, apply_request_update, apply_variable_update, parse_http_file,
     serialize_file_variables, serialize_request_block,
 };
-pub use models::{HttpMethod, HttpRequest, HttpResponse, ResponseSize};
+pub use models::{HttpMethod, HttpRequest, HttpResponse, RequestResult, SentRequest, Size};

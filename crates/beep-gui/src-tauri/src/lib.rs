@@ -9,7 +9,7 @@ use notify::{Event, EventKind, RecursiveMode, Watcher};
 use tauri::Emitter;
 
 use beep_core::client::default_headers;
-use beep_core::{HistoryEntrySummary, HttpClient, HttpRequest, HttpResponse, RequestHistory};
+use beep_core::{HistoryEntrySummary, HttpClient, HttpRequest, RequestHistory, RequestResult};
 
 use models::{AppConstants, AppState, FsChangePayload, FsContentChangePayload, ProjectNode};
 
@@ -83,15 +83,15 @@ fn read_dir_path_children(dir: &Path) -> Vec<ProjectNode> {
 async fn execute_request(
     state: tauri::State<'_, AppState>,
     payload: HttpRequest,
-) -> Result<HttpResponse, String> {
+) -> Result<RequestResult, String> {
     match state.client.execute(&payload).await {
-        Ok(response) => {
+        Ok(result) => {
             state
                 .history
                 .lock()
                 .map_err(|e| format!("failed to lock request history: {e}"))?
-                .add(payload, Some(response.clone()), None, None);
-            Ok(response)
+                .add(payload, Some(result.clone()), None, None);
+            Ok(result)
         }
         Err(err) => {
             state
