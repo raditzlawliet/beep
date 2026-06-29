@@ -157,6 +157,10 @@ impl HttpClient {
             Auth::None => {}
         }
 
+        let has_user_content_type = merged
+            .iter()
+            .any(|h| h.key.eq_ignore_ascii_case("content-type"));
+
         // Body
         // Also track the body text + length for the response request snapshot.
         let request_body_str: Option<String>;
@@ -166,17 +170,21 @@ impl HttpClient {
                 let encoded = build_url_encoded_body(&request.form_urlencoded);
                 request_body_len = encoded.len();
                 request_body_str = Some(encoded.clone());
-                req_builder = req_builder
-                    .header("content-type", "application/x-www-form-urlencoded")
-                    .body(encoded);
+                if !has_user_content_type {
+                    req_builder =
+                        req_builder.header("content-type", "application/x-www-form-urlencoded");
+                }
+                req_builder = req_builder.body(encoded);
             }
             "form-multipart" => {
                 let (mp_req, mp_body) = build_multipart_body(&request.form_multipart)
                     .await
                     .map_err(|e| format!("Multipart build failed: {}", e))?;
-                if let Some(ct) = mp_req.headers().get("content-type") {
-                    if let Ok(v) = ct.to_str() {
-                        req_builder = req_builder.header("content-type", v);
+                if !has_user_content_type {
+                    if let Some(ct) = mp_req.headers().get("content-type") {
+                        if let Ok(v) = ct.to_str() {
+                            req_builder = req_builder.header("content-type", v);
+                        }
                     }
                 }
                 request_body_len = mp_body.len();
@@ -195,7 +203,9 @@ impl HttpClient {
                 let raw = request.raw_body.as_ref().or(request.body.as_ref());
                 if let Some(ref b) = raw {
                     if let Some(ct) = content_type {
-                        req_builder = req_builder.header("content-type", ct);
+                        if !has_user_content_type {
+                            req_builder = req_builder.header("content-type", ct);
+                        }
                     }
                     request_body_len = b.len();
                     request_body_str = Some(b.to_string());
