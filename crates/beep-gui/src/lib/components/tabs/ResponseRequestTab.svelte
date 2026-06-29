@@ -43,27 +43,23 @@
     let requestBodyText = $derived(request.body ?? "");
     let protocol = $derived(request.http_version ?? "");
 
-    // Parse query params from the captured URL.
-    function parseQueryParams(url: string): { key: string; value: string }[] {
+    function rawQueryString(url: string): string {
         const q = url.indexOf("?");
-        if (q < 0) return [];
-        return url.slice(q + 1).split("&").map((pair) => {
-            const eq = pair.indexOf("=");
-            const key = eq >= 0 ? decode(pair.slice(0, eq)) : decode(pair);
-            const value = eq >= 0 ? decode(pair.slice(eq + 1)) : "";
-            return { key, value };
-        }).filter((p) => p.key);
+        return q < 0 ? "" : url.slice(q + 1);
     }
 
-    function decode(s: string): string {
-        try { return decodeURIComponent(s); } catch { return s; }
+    function parseQueryParams(url: string): { key: string; value: string }[] {
+        const raw = rawQueryString(url);
+        return raw
+            ? [...new URLSearchParams(raw).entries()].map(([key, value]) => ({ key, value }))
+            : [];
     }
 
     let queryParams = $derived(parseQueryParams(request.url ?? ""));
 
     function queryStringText(): string {
-        if (queryParams.length === 0) return "";
-        return "?" + queryParams.map((p) => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value)}`).join("&");
+        const raw = rawQueryString(request.url ?? "");
+        return raw ? `?${raw}` : "";
     }
 </script>
 
