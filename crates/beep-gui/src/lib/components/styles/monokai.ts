@@ -40,7 +40,8 @@ export const monokaiTheme = EditorView.theme(
     // },
     "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection":
       {
-        backgroundColor: "#49483E",
+        backgroundColor:
+          "color-mix(in srgb, var(--color-primary) 50%, transparent)",
       },
     ".cm-activeLine": {
       backgroundColor: "#3E3D32",
