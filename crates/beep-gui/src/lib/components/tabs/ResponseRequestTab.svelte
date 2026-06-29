@@ -208,7 +208,7 @@
     {/if}
 
     <!-- Request Payload -->
-    {#if requestBodyText}
+    {#if requestBodySize > 0}
         <div class="border-b border-b-base-content/10">
             <button
                 class="flex items-center gap-1 w-full px-1 py-1 text-xs font-semibold hover:bg-base-200 transition-colors cursor-pointer"
@@ -222,7 +222,11 @@
             </button>
             {#if openSections.has("payload")}
                 <div class="pb-2">
-                    <pre class="text-xs font-mono px-2 py-1 bg-base-200 rounded whitespace-pre-wrap break-all select-text">{requestBodyText}</pre>
+                    {#if requestBodyText}
+                        <pre class="text-xs font-mono px-2 py-1 bg-base-200 rounded whitespace-pre-wrap break-all select-text">{requestBodyText}</pre>
+                    {:else}
+                        <div class="px-2 py-1 text-xs opacity-50 italic">Binary body (non-UTF-8, not renderable)</div>
+                    {/if}
                 </div>
             {/if}
         </div>
