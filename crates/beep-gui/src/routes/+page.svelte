@@ -326,21 +326,28 @@
     let mainPanelEl = $state<HTMLDivElement | null>(null);
     let requestHeight = $state(300);
     let isDragging = $state(false);
+    let _dragStartY = 0;
+    let _dragStartHeight = 0;
+    let _dragMaxH = 0;
 
     const MIN_REQUEST = 250;
     const MIN_RESPONSE = 200;
 
     function splitterStart(e: MouseEvent) {
         isDragging = true;
+        _dragStartY = e.clientY;
+        _dragStartHeight = requestHeight;
+        if (mainPanelEl) {
+            _dragMaxH = mainPanelEl.getBoundingClientRect().height - MIN_RESPONSE;
+        }
         e.preventDefault();
     }
 
     function splitterMove(e: MouseEvent) {
-        if (!isDragging || !mainPanelEl) return;
-        const rect = mainPanelEl.getBoundingClientRect();
-        let h = e.clientY - rect.top;
-        const maxH = rect.height - MIN_RESPONSE;
-        h = Math.max(MIN_REQUEST, Math.min(maxH, h));
+        if (!isDragging) return;
+        const dy = e.clientY - _dragStartY;
+        let h = _dragStartHeight + dy;
+        h = Math.max(MIN_REQUEST, Math.min(_dragMaxH, h));
         requestHeight = h;
     }
 

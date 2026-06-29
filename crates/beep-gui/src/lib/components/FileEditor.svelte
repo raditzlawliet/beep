@@ -41,6 +41,7 @@
 
     let container: HTMLDivElement;
     let view: EditorView | undefined;
+    let _skipCursorSync = false;
 
     function createEditor(
         initialValue: string,
@@ -63,6 +64,7 @@
                 }
                 // Track cursor position changes
                 if (update.selectionSet && oncursorchange) {
+                    _skipCursorSync = true;
                     const pos = update.state.selection.main.head;
                     oncursorchange(pos);
                 }
@@ -125,16 +127,14 @@
         }
 
         // Cursor position
-        if (pos !== undefined) {
+        if (pos !== undefined && !_skipCursorSync) {
             const clampedPos = pos < 0 ? 0 : Math.min(pos, view.state.doc.length);
             view.dispatch({
                 selection: { anchor: clampedPos, head: clampedPos },
                 scrollIntoView: true,
             });
         }
-
-        // Auto focus
-        view.focus();
+        _skipCursorSync = false;
     });
 </script>
 
