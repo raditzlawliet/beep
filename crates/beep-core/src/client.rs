@@ -188,7 +188,7 @@ impl HttpClient {
                     }
                 }
                 request_body_len = mp_body.len();
-                request_body_str = String::from_utf8(mp_body.clone()).ok();
+                request_body_str = std::str::from_utf8(&mp_body).ok().map(|s| s.to_owned());
                 req_builder = req_builder.body(mp_body);
             }
             _ => {

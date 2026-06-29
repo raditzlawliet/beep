@@ -6,7 +6,7 @@
 pub mod client;
 pub mod history;
 pub mod http_parser;
-pub mod inspector;
+pub(crate) mod inspector;
 pub mod models;
 
 // Re-exports
