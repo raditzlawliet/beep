@@ -22,6 +22,9 @@
     onCloseTab: () => void;
     onSave: () => void;
     onSaveAll: () => void;
+    // View menu
+    onToggleProjectFocus: () => void;
+    onToggleHistoryFocus: () => void;
   }
 
   let {
@@ -39,6 +42,8 @@
     onCloseTab,
     onSave,
     onSaveAll,
+    onToggleProjectFocus,
+    onToggleHistoryFocus,
   }: Props = $props();
 
   let aboutDialog = $state<HTMLDialogElement | null>(null);
@@ -84,6 +89,16 @@
 
   function handleCloseProject() {
     onCloseProject();
+    closeAll();
+  }
+
+  function handleToggleProjectFocus() {
+    onToggleProjectFocus();
+    closeAll();
+  }
+
+  function handleToggleHistoryFocus() {
+    onToggleHistoryFocus();
     closeAll();
   }
 
@@ -257,6 +272,34 @@
           <li>
             <button onclick={handleCloseProject}>
               <span>Close Project</span>
+            </button>
+          </li>
+        </ul>
+      </div>
+
+      <!-- View Dropdown -->
+      <div class="dropdown dropdown-hover dropdown-start h-full">
+        <button
+          class="btn btn-ghost btn-xs rounded-none h-full text-xs font-medium"
+          role="menu"
+          tabindex="0"
+        >
+          View
+        </button>
+        <ul
+          class="dropdown-content menu menu-sm bg-base-200 rounded-box z-1 shadow-sm border border-base-content/10 w-52 p-1"
+          tabindex="-1"
+        >
+          <li>
+            <button onclick={handleToggleProjectFocus}>
+              <span>Project Panel</span>
+              <span class="text-xs opacity-50 ml-auto">{app.modKey}+Shift+E</span>
+            </button>
+          </li>
+          <li>
+            <button onclick={handleToggleHistoryFocus}>
+              <span>History Panel</span>
+              <span class="text-xs opacity-50 ml-auto">{app.modKey}+Shift+H</span>
             </button>
           </li>
         </ul>

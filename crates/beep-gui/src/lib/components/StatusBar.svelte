@@ -3,10 +3,11 @@
     import { HistoryIcon, FolderTree } from "@lucide/svelte";
     import StatusBadge from "$lib/components/StatusBadge.svelte";
     import HorizontalDivider from "./uis/HorizontalDivider.svelte";
+    import { app } from "$lib/app-state.svelte";
 
     interface Props {
-        onSwitchToHistory: () => void;
-        onSwitchToProject: () => void;
+        onToggleHistoryFocus: () => void;
+        onToggleProjectFocus: () => void;
         activePanel: "history" | "project";
         sidebarOpen: boolean;
         hasProject: boolean;
@@ -16,8 +17,8 @@
     }
 
     let {
-        onSwitchToHistory,
-        onSwitchToProject,
+        onToggleHistoryFocus,
+        onToggleProjectFocus,
         activePanel,
         sidebarOpen,
         hasProject,
@@ -30,26 +31,36 @@
 <div
     class="flex items-center h-8 mx-1 border-t border-t-base-content/10 gap-1 text-xs"
 >
-    <button
-        class="btn btn-ghost btn-xs btn-square"
-        onclick={onSwitchToHistory}
-        aria-label="History panel"
-        title="History"
-    >
-        <span class:text-primary={sidebarOpen && activePanel === "history"}>
-            <HistoryIcon class="h-3 w-3" />
-        </span>
-    </button>
-    <button
-        class="btn btn-ghost btn-xs btn-square"
-        onclick={onSwitchToProject}
-        aria-label="Project panel"
-        title="Project"
-    >
-        <span class:text-primary={sidebarOpen && activePanel === "project"}>
-            <FolderTree class="h-3 w-3" />
-        </span>
-    </button>
+    <div class="tooltip tooltip-start">
+        <button
+            class="btn btn-ghost btn-xs btn-square"
+            onclick={onToggleHistoryFocus}
+            aria-label="Toggle History Panel"
+        >
+            <span class:text-primary={sidebarOpen && activePanel === "history"}>
+                <HistoryIcon class="h-3 w-3" />
+            </span>
+        </button>
+        <div class="tooltip-content text-xs">
+            <span>History Panel</span>
+            <span class="opacity-50 ml-4">{app.modKey}+Shift+H</span>
+        </div>
+    </div>
+    <div class="tooltip tooltip-start">
+        <button
+            class="btn btn-ghost btn-xs btn-square"
+            onclick={onToggleProjectFocus}
+            aria-label="Toggle Project Panel"
+        >
+            <span class:text-primary={sidebarOpen && activePanel === "project"}>
+                <FolderTree class="h-3 w-3" />
+            </span>
+        </button>
+        <div class="tooltip-content text-xs">
+            <span>Project Panel</span>
+            <span class="opacity-50 ml-4">{app.modKey}+Shift+E</span>
+        </div>
+    </div>
     <div class="divider divider-horizontal w-1 m-0"></div>
 
     {#if loading}

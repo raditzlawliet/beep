@@ -45,10 +45,12 @@ export interface HotkeyHandlers {
   onOpenProject: () => void;
   // Ctrl+W - close current tab
   onCloseTab: () => void;
-  // Ctrl+Shift+E - toggle project sidebar
-  onToggleProject: () => void;
-  // Ctrl+H - toggle history sidebar
-  onToggleHistory: () => void;
+  // Ctrl+Shift+E - toggle project panel focus
+  onToggleProjectFocus: () => void;
+  // Ctrl+Shift+H - toggle history panel focus
+  onToggleHistoryFocus: () => void;
+  // Ctrl+B - toggle sidebar open/close (keep active panel)
+  onToggleSidebar: () => void;
 }
 
 /**
@@ -109,12 +111,17 @@ export function registerHotkeys(handlers: HotkeyHandlers) {
   // --- Sidebar toggles
   createHotkey("Mod+Shift+E", (e) => {
     e.preventDefault();
-    handlers.onToggleProject();
+    handlers.onToggleProjectFocus();
   });
 
-  createHotkey("Mod+H", (e) => {
+  createHotkey("Mod+Shift+H", (e) => {
     e.preventDefault();
-    handlers.onToggleHistory();
+    handlers.onToggleHistoryFocus();
+  });
+
+  createHotkey("Mod+B", (e) => {
+    e.preventDefault();
+    handlers.onToggleSidebar();
   });
 
   // --- Quit

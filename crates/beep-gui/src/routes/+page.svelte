@@ -383,22 +383,45 @@
         sidebarOpen = !sidebarOpen;
     }
 
-    function switchToHistory() {
-        if (activePanel === "history" && sidebarOpen) {
-            sidebarOpen = false;
-        } else {
-            activePanel = "history";
-            sidebarOpen = true;
+    function handleToggleSidebarHotkey() {
+        sidebarOpen = !sidebarOpen;
+        // When opening, focus the tree for keyboard navigation
+        if (sidebarOpen) {
+            requestAnimationFrame(() => {
+                const tree = document.querySelector('[role="tree"]') as HTMLElement | null;
+                tree?.focus();
+            });
         }
     }
 
-    function switchToProject() {
-        if (activePanel === "project" && sidebarOpen) {
-            sidebarOpen = false;
-        } else {
-            activePanel = "project";
+    function togglePanelFocus(panel: "history" | "project") {
+        if (!sidebarOpen || activePanel !== panel) {
+            activePanel = panel;
             sidebarOpen = true;
+            requestAnimationFrame(() => {
+                const panelEl = document.querySelector(`[data-panel="${panel}"]`) as HTMLElement | null;
+                panelEl?.focus();
+            });
+        } else {
+            // Panel is open, toggle focus between panel and editor
+            const panelEl = document.querySelector(`[data-panel="${panel}"]`) as HTMLElement | null;
+            const panelFocused = panelEl?.contains(document.activeElement);
+            if (panelFocused) {
+                const cm = document.querySelector('.cm-content') as HTMLElement | null;
+                cm?.focus();
+                if (!cm) mainPanelEl?.focus();
+            } else {
+                panelEl?.focus();
+            }
         }
+    }
+
+    function toggleProjectFocus() {
+        togglePanelFocus("project");
+    }
+
+    function toggleHistoryFocus() {
+        togglePanelFocus("history");
     }
 
     // -- Project
@@ -538,6 +561,11 @@
     function handleFileDblClick(node: ProjectNode) {
         activeFilePath = node.path;
         openFileTabPersistent(node);
+        // Focus the code editor after render
+        requestAnimationFrame(() => {
+            const cm = document.querySelector('.cm-content') as HTMLElement | null;
+            cm?.focus();
+        });
     }
 
     // -- Initialise
@@ -597,8 +625,9 @@
         onNewRequest: handleNewRequest,
         onOpenProject: handleOpenProject,
         onCloseTab: handleCloseTab,
-        onToggleProject: switchToProject,
-        onToggleHistory: switchToHistory,
+        onToggleProjectFocus: toggleProjectFocus,
+        onToggleHistoryFocus: toggleHistoryFocus,
+        onToggleSidebar: handleToggleSidebarHotkey,
     });
 
     // Tab switcher toggle, open-only, suppressed when no tabs are open
@@ -622,6 +651,8 @@
         onCloseTab={handleCloseTab}
         onSave={handleSave}
         onSaveAll={handleSaveAll}
+        onToggleProjectFocus={toggleProjectFocus}
+        onToggleHistoryFocus={toggleHistoryFocus}
     />
 
     <div class="flex flex-1 overflow-hidden">
@@ -661,6 +692,7 @@
         <div
             class="flex flex-col flex-1 overflow-hidden"
             bind:this={mainPanelEl}
+            tabindex="-1"
             class:select-none={isDragging || isDraggingSidebar}
         >
             {#if tabs.length > 0}
@@ -747,8 +779,8 @@
     </div>
 
     <StatusBar
-        onSwitchToHistory={switchToHistory}
-        onSwitchToProject={switchToProject}
+        onToggleHistoryFocus={toggleHistoryFocus}
+        onToggleProjectFocus={toggleProjectFocus}
         {activePanel}
         {sidebarOpen}
         hasProject={project.path !== null}
