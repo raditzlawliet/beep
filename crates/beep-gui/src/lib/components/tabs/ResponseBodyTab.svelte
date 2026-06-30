@@ -138,7 +138,7 @@
             <div class="dropdown">
                 <button
                     role="tab"
-                    class="tab gap-1 text-xs"
+                    class="tab gap-1 text-xs inline-flex items-center h-6"
                     class:tab-active={activeTab === "body"}
                     onclick={handleBodyTabClick}
                 >

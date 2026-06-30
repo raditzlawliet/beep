@@ -2,6 +2,7 @@
     import type { ParsedRequest, ViewMode, HttpMethod, TabType } from "$lib/types";
     import MethodBadge from "$lib/components/MethodBadge.svelte";
     import { ChevronDownIcon, CodeIcon, FileText, LayoutList } from "@lucide/svelte";
+    import { app } from "$lib/app-state.svelte";
 
     interface Props {
         fileName: string;
@@ -120,27 +121,41 @@
     <!-- Mode tabs -->
     <div class="divider divider-horizontal w-1 m-0"></div>
     <div class="tabs tabs-bordered tabs-xs">
+        <!-- TODO Wrapping button with div for tooltip causing layout broken on tabs,
+        Now we use div under button (but this not the recommended approach) until best solution is found -->
         <button
-            class="tab gap-1 {viewMode === 'code' ? 'tab-active text-primary' : ''}"
+            class="tab gap-1 {viewMode === 'code' ? 'tab-active text-primary' : ''} tooltip tooltip-end"
             onclick={() => onSetMode('code')}
-            title="Code"
+            title={`Code View    ${app.modKey}+1`}
         >
             <CodeIcon class="h-3.5 w-3.5" />
+            <div class="tooltip-content text-xs">
+                <span>Code View</span>
+                <span class="opacity-50 ml-4">{app.modKey}+1</span>
+            </div>
         </button>
         {#if tabType === 'http-file'}
             <button
-                class="tab gap-1 {viewMode === 'file' ? 'tab-active text-primary' : ''}"
+                class="tab gap-1 {viewMode === 'file' ? 'tab-active text-primary' : ''} tooltip tooltip-end"
                 onclick={() => onSetMode('file')}
-                title="File"
+                title={`File View    ${app.modKey}+2`}
             >
                 <LayoutList class="h-3.5 w-3.5" />
+                <div class="tooltip-content text-xs">
+                    <span>File View</span>
+                    <span class="opacity-50 ml-4">{app.modKey}+2</span>
+                </div>
             </button>
             <button
-                class="tab gap-1 {viewMode === 'request' ? 'tab-active text-primary' : ''}"
+                class="tab gap-1 {viewMode === 'request' ? 'tab-active text-primary' : ''} tooltip tooltip-end"
                 onclick={() => onSetMode('request')}
-                title="Request"
+                title={`Request View    ${app.modKey}+3`}
             >
                 <FileText class="h-3.5 w-3.5" />
+                <div class="tooltip-content text-xs">
+                    <span>Request View</span>
+                    <span class="opacity-50 ml-4">{app.modKey}+3</span>
+                </div>
             </button>
         {/if}
     </div>

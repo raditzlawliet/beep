@@ -30,7 +30,7 @@
     });
 </script>
 
-<div class="flex flex-col h-full border-r border-base-300 w-full">
+<div class="flex flex-col h-full border-r border-base-300 w-full" data-panel="history" tabindex="-1">
     <div
         class="py-2 text-xs font-semibold opacity-70 uppercase tracking-wide select-none border-b border-b-base-content/10 flex items-center justify-between h-10"
     >
