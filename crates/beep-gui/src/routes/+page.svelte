@@ -453,10 +453,11 @@
     async function handleSend(req: HttpRequest) {
         sending = true;
         reqError = null;
+        const sendTabId = activeTabId;
         try {
             await request.send(req);
             // Save response to the active tab so each tab has its own response.
-            const tab = findTab(activeTabId);
+            const tab = findTab(sendTabId);
             if (tab) tab.lastResult = request.result;
         } catch (e) {
             reqError = typeof e === "string" ? e : (e as Error)?.message ?? String(e);
@@ -751,7 +752,7 @@
         {activePanel}
         {sidebarOpen}
         hasProject={project.path !== null}
-        response={request.response}
+        response={activeTab?.lastResult?.response ?? request.response}
         loading={sending}
         error={reqError}
     />
