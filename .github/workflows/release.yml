@@ -10,16 +10,34 @@ on:
         required: true
         type: string
 
+permissions:
+  contents: read
+
 jobs:
   # -- Version & tag
 
   prepare:
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
       git_sha: ${{ steps.version.outputs.git_sha }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Validate version format
+        env:
+          RAW: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+        run: |
+          V="${RAW#v}"
+          if ! echo "$V" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
+            echo "::error::Invalid version '$V'. Expected semver (e.g. 0.2.0 or 0.2.0-alpha.1)"
+            exit 1
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "git_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+        id: version
 
       - name: Create tag (manual trigger only)
         if: github.event_name == 'workflow_dispatch'
@@ -28,20 +46,8 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag "v${{ inputs.version }}"
-          git push origin "v${{ inputs.version }}"
-
-      - id: version
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            V="${{ inputs.version }}"
-          else
-            V="${{ github.ref_name }}"
-            V="${V#v}"
-          fi
-          SHA=$(git rev-parse HEAD)
-          echo "version=$V" >> "$GITHUB_OUTPUT"
-          echo "git_sha=$SHA" >> "$GITHUB_OUTPUT"
+          git tag "v${{ steps.version.outputs.version }}"
+          git push origin "v${{ steps.version.outputs.version }}"
 
   # -- CLI
   #
@@ -295,6 +301,8 @@ jobs:
   # -- Create GitHub Release
 
   create-release:
+    permissions:
+      contents: write
     needs:
       - prepare
       # - build-cli-windows

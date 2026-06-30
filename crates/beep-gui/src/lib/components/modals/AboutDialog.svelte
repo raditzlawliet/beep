@@ -18,7 +18,7 @@
         </div>
         <div class="text-xs opacity-50 mt-1">Intuitive API Client</div>
         <div class="text-[10px] opacity-50 mt-5 font-mono">sha</div>
-        <div class="text-xs mt-1 font-mono">{gitSha}</div>
+        <div class="text-xs mt-1 font-mono break-all">{gitSha}</div>
     </div>
     <form method="dialog" class="modal-backdrop">
         <button>Ok</button>
