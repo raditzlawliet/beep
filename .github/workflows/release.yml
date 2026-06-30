@@ -1,0 +1,336 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version (e.g. 0.2.0, without v prefix)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  # -- Version & tag
+
+  prepare:
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      git_sha: ${{ steps.version.outputs.git_sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate version format
+        env:
+          RAW: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+        run: |
+          V="${RAW#v}"
+          if ! echo "$V" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
+            echo "::error::Invalid version '$V'. Expected semver (e.g. 0.2.0 or 0.2.0-alpha.1)"
+            exit 1
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "git_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+        id: version
+
+      - name: Create tag (manual trigger only)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "v${{ steps.version.outputs.version }}"
+          git push origin "v${{ steps.version.outputs.version }}"
+
+  # -- CLI
+  #
+  # build-cli-windows:
+  #   needs: prepare
+  #   runs-on: windows-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Inject version
+  #       shell: bash
+  #       run: sed -i "s/^version = \".*\"/version = \"${{ needs.prepare.outputs.version }}\"/" Cargo.toml
+  #     - uses: dtolnay/rust-toolchain@stable
+  #       with:
+  #         targets: x86_64-pc-windows-msvc
+  #     - name: Build
+  #       run: cargo build --release -p beep --target x86_64-pc-windows-msvc
+  #     - name: Upload
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: beep-cli-windows-x64
+  #         path: target/x86_64-pc-windows-msvc/release/beep.exe
+  #
+  # build-cli-linux:
+  #   needs: prepare
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Inject version
+  #       run: sed -i "s/^version = \".*\"/version = \"${{ needs.prepare.outputs.version }}\"/" Cargo.toml
+  #     - uses: dtolnay/rust-toolchain@stable
+  #       with:
+  #         targets: x86_64-unknown-linux-gnu
+  #     - name: Build
+  #       run: cargo build --release -p beep --target x86_64-unknown-linux-gnu
+  #     - name: Upload
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: beep-cli-linux-x64
+  #         path: target/x86_64-unknown-linux-gnu/release/beep
+  #
+  # build-cli-macos:
+  #   needs: prepare
+  #   runs-on: macos-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Inject version
+  #       run: sed -i "" "s/^version = \".*\"/version = \"${{ needs.prepare.outputs.version }}\"/" Cargo.toml
+  #     - uses: dtolnay/rust-toolchain@stable
+  #       with:
+  #         targets: aarch64-apple-darwin
+  #     - name: Build
+  #       run: cargo build --release -p beep --target aarch64-apple-darwin
+  #     - name: Upload
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: beep-cli-macos-arm64
+  #         path: target/aarch64-apple-darwin/release/beep
+
+  # -- TUI
+  #
+  # build-tui-windows:
+  #   needs: prepare
+  #   runs-on: windows-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Inject version
+  #       shell: bash
+  #       run: sed -i "s/^version = \".*\"/version = \"${{ needs.prepare.outputs.version }}\"/" Cargo.toml
+  #     - uses: dtolnay/rust-toolchain@stable
+  #       with:
+  #         targets: x86_64-pc-windows-msvc
+  #     - name: Build
+  #       run: cargo build --release -p beep-tui --target x86_64-pc-windows-msvc
+  #     - name: Upload
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: beep-tui-windows-x64
+  #         path: target/x86_64-pc-windows-msvc/release/beep-tui.exe
+  #
+  # build-tui-linux:
+  #   needs: prepare
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Inject version
+  #       run: sed -i "s/^version = \".*\"/version = \"${{ needs.prepare.outputs.version }}\"/" Cargo.toml
+  #     - uses: dtolnay/rust-toolchain@stable
+  #       with:
+  #         targets: x86_64-unknown-linux-gnu
+  #     - name: Build
+  #       run: cargo build --release -p beep-tui --target x86_64-unknown-linux-gnu
+  #     - name: Upload
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: beep-tui-linux-x64
+  #         path: target/x86_64-unknown-linux-gnu/release/beep-tui
+  #
+  # build-tui-macos:
+  #   needs: prepare
+  #   runs-on: macos-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Inject version
+  #       run: sed -i "" "s/^version = \".*\"/version = \"${{ needs.prepare.outputs.version }}\"/" Cargo.toml
+  #     - uses: dtolnay/rust-toolchain@stable
+  #       with:
+  #         targets: aarch64-apple-darwin
+  #     - name: Build
+  #       run: cargo build --release -p beep-tui --target aarch64-apple-darwin
+  #     - name: Upload
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: beep-tui-macos-arm64
+  #         path: target/aarch64-apple-darwin/release/beep-tui
+
+  # -- GUI - Windows
+
+  build-gui-windows:
+    needs: prepare
+    runs-on: windows-latest
+    env:
+      VITE_BEEP_VERSION: ${{ needs.prepare.outputs.version }}
+      VITE_GIT_SHA: ${{ needs.prepare.outputs.git_sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Inject version into manifests
+        shell: bash
+        run: |
+          V="${{ needs.prepare.outputs.version }}"
+          sed -i "s/^version = \".*\"/version = \"$V\"/" Cargo.toml
+          sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$V\"/" crates/beep-gui/package.json
+          sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$V\"/" crates/beep-gui/src-tauri/tauri.conf.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install frontend deps
+        run: npm install
+        working-directory: crates/beep-gui
+
+      - name: Build Tauri
+        run: npx tauri build --target x86_64-pc-windows-msvc
+        working-directory: crates/beep-gui
+
+      - name: Upload bundles
+        uses: actions/upload-artifact@v4
+        with:
+          name: beep-gui-windows-x64
+          path: |
+            target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
+            target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+          if-no-files-found: error
+
+  # -- GUI - Linux
+
+  build-gui-linux:
+    needs: prepare
+    runs-on: ubuntu-latest
+    env:
+      VITE_BEEP_VERSION: ${{ needs.prepare.outputs.version }}
+      VITE_GIT_SHA: ${{ needs.prepare.outputs.git_sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential \
+            libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+
+      - name: Inject version into manifests
+        run: |
+          V="${{ needs.prepare.outputs.version }}"
+          sed -i "s/^version = \".*\"/version = \"$V\"/" Cargo.toml
+          sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$V\"/" crates/beep-gui/package.json
+          sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$V\"/" crates/beep-gui/src-tauri/tauri.conf.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install frontend deps
+        run: npm install
+        working-directory: crates/beep-gui
+
+      - name: Build Tauri
+        run: npx tauri build --target x86_64-unknown-linux-gnu
+        working-directory: crates/beep-gui
+
+      - name: Upload bundles
+        uses: actions/upload-artifact@v4
+        with:
+          name: beep-gui-linux-x64
+          path: |
+            target/x86_64-unknown-linux-gnu/release/bundle/deb/*.deb
+            target/x86_64-unknown-linux-gnu/release/bundle/appimage/*.AppImage
+          if-no-files-found: error
+
+  # -- GUI - macOS
+
+  build-gui-macos:
+    needs: prepare
+    runs-on: macos-latest
+    env:
+      VITE_BEEP_VERSION: ${{ needs.prepare.outputs.version }}
+      VITE_GIT_SHA: ${{ needs.prepare.outputs.git_sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Inject version into manifests
+        run: |
+          V="${{ needs.prepare.outputs.version }}"
+          sed -i "" "s/^version = \".*\"/version = \"$V\"/" Cargo.toml
+          sed -i "" "s/\"version\": \"[^\"]*\"/\"version\": \"$V\"/" crates/beep-gui/package.json
+          sed -i "" "s/\"version\": \"[^\"]*\"/\"version\": \"$V\"/" crates/beep-gui/src-tauri/tauri.conf.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install frontend deps
+        run: npm install
+        working-directory: crates/beep-gui
+
+      - name: Build Tauri
+        run: npx tauri build --target aarch64-apple-darwin
+        working-directory: crates/beep-gui
+
+      - name: Upload bundles
+        uses: actions/upload-artifact@v4
+        with:
+          name: beep-gui-macos-arm64
+          path: |
+            target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+
+  # -- Create GitHub Release
+
+  create-release:
+    permissions:
+      contents: write
+    needs:
+      - prepare
+      # - build-cli-windows
+      # - build-cli-linux
+      # - build-cli-macos
+      # - build-tui-windows
+      # - build-tui-linux
+      # - build-tui-macos
+      - build-gui-windows
+      - build-gui-linux
+      - build-gui-macos
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.prepare.outputs.version }}
+          name: v${{ needs.prepare.outputs.version }}
+          body: |
+            _Add release notes before publishing_
+          draft: true
+          prerelease: false
+          files: artifacts/*
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
