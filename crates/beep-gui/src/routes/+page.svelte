@@ -50,7 +50,7 @@
             filePath,
             content: "",
             persistent,
-            viewMode: "request",
+            viewMode: "code",
             activeRequestIdx: 0,
             parsedRequests: [emptyParsedRequest()],
             fileVariables: [],
@@ -326,21 +326,28 @@
     let mainPanelEl = $state<HTMLDivElement | null>(null);
     let requestHeight = $state(300);
     let isDragging = $state(false);
+    let _dragStartY = 0;
+    let _dragStartHeight = 0;
+    let _dragMaxH = 0;
 
     const MIN_REQUEST = 250;
     const MIN_RESPONSE = 200;
 
     function splitterStart(e: MouseEvent) {
         isDragging = true;
+        _dragStartY = e.clientY;
+        _dragStartHeight = requestHeight;
+        if (mainPanelEl) {
+            _dragMaxH = mainPanelEl.getBoundingClientRect().height - MIN_RESPONSE;
+        }
         e.preventDefault();
     }
 
     function splitterMove(e: MouseEvent) {
-        if (!isDragging || !mainPanelEl) return;
-        const rect = mainPanelEl.getBoundingClientRect();
-        let h = e.clientY - rect.top;
-        const maxH = rect.height - MIN_RESPONSE;
-        h = Math.max(MIN_REQUEST, Math.min(maxH, h));
+        if (!isDragging) return;
+        const dy = e.clientY - _dragStartY;
+        let h = _dragStartHeight + dy;
+        h = Math.max(MIN_REQUEST, Math.min(_dragMaxH, h));
         requestHeight = h;
     }
 
@@ -446,11 +453,12 @@
     async function handleSend(req: HttpRequest) {
         sending = true;
         reqError = null;
+        const sendTabId = activeTabId;
         try {
             await request.send(req);
             // Save response to the active tab so each tab has its own response.
-            const tab = findTab(activeTabId);
-            if (tab) tab.lastResponse = request.response;
+            const tab = findTab(sendTabId);
+            if (tab) tab.lastResult = request.result;
         } catch (e) {
             reqError = typeof e === "string" ? e : (e as Error)?.message ?? String(e);
             history.refresh().catch(() => {});
@@ -513,7 +521,7 @@
                 content, originalContent: content, persistent, diskChanged: false,
                 viewMode: "request", activeRequestIdx: 0,
                 parsedRequests: [], fileVariables: [],
-                lastResponse: request.response,
+                lastResult: request.result,
                 lastActiveAt: Date.now(),
             });
             activeTabId = id;
@@ -670,7 +678,7 @@
                     tab={activeTab}
                     {sending}
                     {reqError}
-                    response={activeTab?.lastResponse ?? null}
+                    result={activeTab?.lastResult ?? null}
                     onContentChange={handleContentChange}
                     onTabStateChange={handleTabStateChange}
                     onSend={handleSend}
@@ -744,7 +752,7 @@
         {activePanel}
         {sidebarOpen}
         hasProject={project.path !== null}
-        response={request.response}
+        response={activeTab?.lastResult?.response ?? request.response}
         loading={sending}
         error={reqError}
     />

@@ -5,6 +5,7 @@
         ParsedRequest,
         ParsedFileVariable,
         ViewMode,
+        RequestResult,
     } from "$lib/types";
     import { emptyParsedRequest } from "$lib/types";
     import { app, httpFile, project } from "$lib/app-state.svelte";
@@ -20,7 +21,7 @@
         tab: Tab;
         sending: boolean;
         reqError: string | null;
-        response: import("$lib/types").HttpResponse | null;
+        result: RequestResult | null;
         onContentChange: (newContent: string) => void;
         onTabStateChange: (state: Partial<Tab>) => void;
         onSend: (req: HttpRequest) => void;
@@ -32,7 +33,7 @@
         tab,
         sending,
         reqError,
-        response,
+        result,
         onContentChange,
         onTabStateChange,
         onSend,
@@ -331,7 +332,7 @@ async function handleVariablesUpdate(vars: ParsedFileVariable[]) {
             onmousedown={onSplitterStart}
         ></div>
         <div class="flex-1 overflow-hidden">
-            <ResponseView {response} loading={sending} error={reqError} />
+            <ResponseView {result} loading={sending} error={reqError} />
         </div>
     {/if}
 </div>

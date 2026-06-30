@@ -1,6 +1,6 @@
 //! Request history management
 
-use crate::models::{HttpRequest, HttpResponse};
+use crate::models::{HttpRequest, RequestResult};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 
@@ -11,18 +11,18 @@ pub struct HistoryEntrySummary {
     pub method: String,
     pub url: String,
     pub status: Option<u16>,
-    pub size: Option<crate::models::ResponseSize>,
+    pub size: Option<crate::models::Size>,
     pub error: Option<String>,
     pub timestamp: String,
     pub label: Option<String>,
 }
 
-/// A stored request in history with metadata and the latest response
+/// A stored request in history with metadata and the latest result.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HistoryEntry {
     pub id: u64,
     pub request: HttpRequest,
-    pub response: Option<HttpResponse>,
+    pub result: Option<RequestResult>,
     pub error: Option<String>,
     pub timestamp: String,
     pub label: Option<String>,
@@ -50,18 +50,18 @@ impl RequestHistory {
         }
     }
 
-    /// Adds a request to history, optionally with its response and error.
+    /// Adds a request to history, optionally with its result and error.
     pub fn add(
         &mut self,
         request: HttpRequest,
-        response: Option<HttpResponse>,
+        result: Option<RequestResult>,
         error: Option<String>,
         label: Option<String>,
     ) {
         let entry = HistoryEntry {
             id: self.next_id,
             request,
-            response,
+            result,
             error,
             timestamp: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
             label,
@@ -99,8 +99,8 @@ impl RequestHistory {
                 id: e.id,
                 method: e.request.method.to_string(),
                 url: e.request.url.clone(),
-                status: e.response.as_ref().map(|r| r.status),
-                size: e.response.as_ref().map(|r| r.size),
+                status: e.result.as_ref().map(|r| r.response.status),
+                size: e.result.as_ref().map(|r| r.response.size),
                 error: e.error.clone(),
                 timestamp: e.timestamp.clone(),
                 label: e.label.clone(),

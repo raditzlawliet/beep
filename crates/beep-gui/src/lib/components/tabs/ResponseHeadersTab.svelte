@@ -28,7 +28,7 @@
 <table class="table table-xs table-pin-rows table-pin-cols w-full table-fixed">
     <thead>
         <tr>
-            <th class="text-xs w-1/4">Key</th>
+            <th class="text-xs w-72">Key</th>
             <th class="text-xs">Value</th>
         </tr>
     </thead>

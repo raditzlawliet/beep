@@ -217,20 +217,11 @@ impl HttpRequest {
     }
 }
 
-/// Size breakdown for the response
+/// Size breakdown for a request/response.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct ResponseSize {
-    /// Size of the response body in bytes
-    pub response_body: u64,
-    /// Size of the response headers in bytes
-    pub response_headers: u64,
-}
-
-impl ResponseSize {
-    /// Total response size (headers + body)
-    pub fn response_total(&self) -> u64 {
-        self.response_headers + self.response_body
-    }
+pub struct Size {
+    pub headers: u64,
+    pub body: u64,
 }
 
 /// How the response body bytes are encoded for string transport.
@@ -242,6 +233,25 @@ pub enum BodyEncoding {
     Base64,
 }
 
+/// The actual request as sent on the wire, captured by middleware + execute().
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SentRequest {
+    pub url: String,
+    pub method: String,
+    /// Final headers including auto-generated, auth, content-type, etc.
+    #[serde(default)]
+    pub headers: Vec<(String, String)>,
+    /// Body text (UTF-8 when decodable).
+    #[serde(default)]
+    pub body: Option<String>,
+    /// Actual negotiated HTTP version.
+    #[serde(default)]
+    pub http_version: String,
+    /// On-the-wire sizes.
+    #[serde(default)]
+    pub size: Option<Size>,
+}
+
 /// HTTP Response structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HttpResponse {
@@ -249,9 +259,16 @@ pub struct HttpResponse {
     pub headers: HashMap<String, String>,
     pub body: String,
     pub elapsed_ms: u64,
-    pub size: ResponseSize,
+    pub size: Size,
     #[serde(default)]
     pub body_encoding: BodyEncoding,
+}
+
+/// Result of executing a request: the captured sent request + the response.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RequestResult {
+    pub request: SentRequest,
+    pub response: HttpResponse,
 }
 
 #[cfg(test)]

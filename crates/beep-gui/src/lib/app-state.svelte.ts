@@ -2,13 +2,13 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   AppConstants,
   HttpRequest,
-  HttpResponse,
   HistoryEntry,
   HistoryEntrySummary,
   ParsedRequest,
   ParsedFileVariable,
   ParsedHttpFileResult,
   ProjectNode,
+  RequestResult,
 } from "./types";
 import { defaultRequest } from "./types";
 
@@ -51,7 +51,7 @@ function mergeChildren(
 
 // Internal state
 let _request = $state<HttpRequest>(defaultRequest());
-let _response = $state<HttpResponse | null>(null);
+let _result = $state<RequestResult | null>(null);
 let _history = $state<HistoryEntrySummary[]>([]);
 let _constants = $state<AppConstants | null>(null);
 let _projectPath = $state<string | null>(null);
@@ -70,22 +70,26 @@ export const request = {
     return _request;
   },
 
-  // last response
-  get response() {
-    return _response;
+  // Full result (request echo + response), null before first send.
+  get result() {
+    return _result;
   },
 
-  // execute an HTTP request via the Tauri
-  async send(req: HttpRequest): Promise<HttpResponse> {
+  // Convenience: just the response part, for code that only needs response data.
+  get response() {
+    return _result?.response ?? null;
+  },
+
+  async send(req: HttpRequest): Promise<RequestResult> {
     try {
-      const res = await invoke<HttpResponse>("execute_request", {
+      const res = await invoke<RequestResult>("execute_request", {
         payload: req,
       });
-      _response = res;
+      _result = res;
       history.refresh().catch(() => {});
       return res;
     } catch (e) {
-      _response = null;
+      _result = null;
       throw e;
     }
   },
@@ -98,7 +102,7 @@ export const request = {
   // Reset the form to a blank request.
   reset() {
     _request = defaultRequest();
-    _response = null;
+    _result = null;
   },
 
   // Populate the form from a history entry.
@@ -108,7 +112,7 @@ export const request = {
         id: summary.id,
       });
       _request = { ...entry.request };
-      _response = entry.response ? { ...entry.response } : null;
+      _result = entry.result ? { ...entry.result } : null;
     } catch (e) {
       throw e;
     }

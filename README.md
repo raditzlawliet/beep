@@ -104,4 +104,4 @@ For build instructions, architecture details, and local development, see [DEVELO
 
 ## License
 
-AGPL-3.0
+Apache-2.0

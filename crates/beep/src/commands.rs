@@ -35,20 +35,23 @@ pub async fn request(
     }
 
     let client = HttpClient::new();
-    let response = client.execute(&req).await?;
+    let result = client.execute(&req).await?;
 
-    println!("Status: {} ({}ms)", response.status, response.elapsed_ms);
+    println!(
+        "Status: {} ({}ms)",
+        result.response.status, result.response.elapsed_ms
+    );
 
-    if !response.headers.is_empty() {
+    if !result.response.headers.is_empty() {
         println!("\nResponse Headers:");
-        for (key, value) in &response.headers {
+        for (key, value) in &result.response.headers {
             println!("  {}: {}", key, value);
         }
     }
 
-    if !response.body.is_empty() {
+    if !result.response.body.is_empty() {
         println!("\nResponse Body:");
-        println!("{}", response.body);
+        println!("{}", result.response.body);
     }
 
     Ok(())
