@@ -281,7 +281,7 @@
       <div class="dropdown dropdown-hover dropdown-start h-full">
         <button
           class="btn btn-ghost btn-xs rounded-none h-full text-xs font-medium"
-          role="menu"
+          aria-haspopup="menu"
           tabindex="0"
         >
           View

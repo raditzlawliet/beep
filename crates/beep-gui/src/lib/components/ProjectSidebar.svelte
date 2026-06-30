@@ -118,6 +118,7 @@
         const idx = flatNodes.findIndex(fn => fn.node.path === focusedPath);
 
         if (idx === -1) {
+            e.preventDefault();
             focusFirstVisible();
             return;
         }
@@ -257,6 +258,10 @@
             {@render GuideLines(depth)}
         <button
             data-path={node.path}
+            role="treeitem"
+            aria-level={depth + 1}
+            aria-expanded={isOpen}
+            aria-selected={false}
             class="flex items-center w-full text-left text-xs py-1 hover:bg-base-200/50 {isFocused ? 'ring-1 ring-inset ring-primary/50' : ''}"
             style="padding-left: {padLeft}px"
             onclick={() => handleDirClick(node)}
@@ -284,6 +289,9 @@
             {@render GuideLines(depth)}
         <button
             data-path={node.path}
+            role="treeitem"
+            aria-level={depth + 1}
+            aria-selected={isActive}
             class="flex items-center w-full text-left text-xs py-1 hover:bg-base-200/50 {isActive ? 'bg-base-200' : ''} {isFocused ? 'ring-1 ring-inset ring-primary/50' : ''}"
             style="padding-left: {padLeft}px"
             onclick={() => handleFileClick(node)}

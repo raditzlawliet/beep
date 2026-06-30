@@ -384,12 +384,18 @@
     }
 
     function handleToggleSidebarHotkey() {
-        sidebarOpen = !sidebarOpen;
-        // When opening, focus the tree for keyboard navigation
         if (sidebarOpen) {
+            // Closing: focus editor before sidebar unmounts
+            const cm = document.querySelector('.cm-content') as HTMLElement | null;
+            if (cm) cm.focus();
+            else mainPanelEl?.focus();
+            sidebarOpen = false;
+        } else {
+            // Opening: focus the currently active panel
+            sidebarOpen = true;
             requestAnimationFrame(() => {
-                const tree = document.querySelector('[role="tree"]') as HTMLElement | null;
-                tree?.focus();
+                const panelEl = document.querySelector(`[data-panel="${activePanel}"]`) as HTMLElement | null;
+                panelEl?.focus();
             });
         }
     }

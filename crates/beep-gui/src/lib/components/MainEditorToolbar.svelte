@@ -121,6 +121,8 @@
     <!-- Mode tabs -->
     <div class="divider divider-horizontal w-1 m-0"></div>
     <div class="tabs tabs-bordered tabs-xs">
+        <!-- TODO Wrapping button with div for tooltip causing layout broken on tabs,
+        Now we use div under button (but this not the recommended approach) until best solution is found -->
         <button
             class="tab gap-1 {viewMode === 'code' ? 'tab-active text-primary' : ''} tooltip tooltip-end"
             onclick={() => onSetMode('code')}
