@@ -195,7 +195,7 @@ jobs:
         working-directory: crates/beep-gui
 
       - name: Build Tauri (exe only, no installer)
-        run: npx tauri build --target x86_64-pc-windows-msvc --bundles ""
+        run: npx tauri build --target x86_64-pc-windows-msvc --no-bundle
         working-directory: crates/beep-gui
 
       # - name: Build Tauri (with MSI/NSIS installers)
