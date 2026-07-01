@@ -41,66 +41,82 @@ Compose and send HTTP requests.
 
 ### Coming soon
 
-- Multipart Form Data editor
-- Cookies
-- cURL import
-- Environment
-- Persistent Variables
-- Persistent History
-- Prompt Variables
+Features:
+
+- Request: Multipart Form Data editor
+- Request: Cookies
+- Request: Follow Redirects
+- Request: Test Scripts
+- Project: Environment
+- Project|Request: Variables & Prompt Variables
+- Project: Save Response
+- Project: Persistent History (saved per project)
+- Project|Request: Individual History or Timeline by Request
+- Git Integration
+- Built-in AI Chat
+- Built-in MCP Server
+- Debugging Tools
+- Secrets Management
+
+File Supports:
+
+- `.http` - Http Standard + Beep Extension
+  - Syntax Highlighter
+- `.yml` - Run/Edit Open Collection Spec
+- Run/Convert cURL to Request (directly on `.http`)
+- Run directly from Code (using |> play button)
+- ...
+
+Request Supports:
+
 - GraphQL Request
 - WebSocket Request
 - gRPC Request
-
-## Binary Releases
-
-- **Desktop GUI** - Desktop app interface
-- **TUI** - (TODO) Terminal interface
-- **CLI** - Pipe-friendly, scriptable & direct
-- **Cross-Platform** - Windows, (TODO) Linux, (TODO) macOS
+- ...
 
 ## Usage
 
 ### Desktop GUI
 
-Just run the desktop GUI based on your platform and start making requests.
+Run the desktop GUI based on your platform and start making requests.
+
+#### Requirements
+
+Desktop builds on top of Tauri, so same as Tauri requirements.
+
+- **WebView2**
 
 ### CLI
 
-```bash
-# Single URL defaults to GET
-beep https://httpbingo.org/get
-
-# Explicit method with URL
-beep POST https://httpbingo.org/post -b '{"title":"Post"}'
-
-# Headers and body can be placed anywhere
-beep https://httpbingo.org/anything -H "Authorization: Bearer token"
-beep PUT https://httpbingo.org/put -H "Content-Type: application/json" -b '{"key":"value"}'
-```
-
-| Argument       | Description                                       |
-| -------------- | ------------------------------------------------- |
-| `[METHOD]`     | HTTP method, Omit for GET                         |
-| `<URL>`        | Request URL (required)                            |
-| `-H, --header` | Request header in `key:value` format (repeatable) |
-| `-b, --body`   | Request body                                      |
+Coming soon
 
 ### TUI
 
-TODO
+Coming soon
 
 ## Download
 
-> Pre-built binaries coming soon.
+You can try latest pre-built binaries from the [releases page](https://github.com/raditzlawliet/beep/releases).
 
-> Stable version? When When...
+> v1 Stable version? When When...
 
-## Contributing
+## Specification
+
+Beep use file based `.http` standard HTTP request syntax with Beep extensions. You can read the [specification](SPEC.md) for more details.
+
+> Possible in future to read `.yaml`/`.yml`/`.json` OpenAPI specs, `.bru` Bruno specs and others related API Client specs.
+
+## Contributors
 
 Contributions are welcome! Check the [Issues](https://github.com/raditzlawliet/beep/issues) page or open a Pull Request.
 
 For build instructions, architecture details, and local development, see [DEVELOPMENT.md](DEVELOPMENT.md).
+
+<div align="center">
+    <a href="https://github.com/raditzlawliet/beep/graphs/contributors">
+        <img src="https://contrib.rocks/image?repo=raditzlawliet/beep" />
+    </a>
+</div>
 
 ## License
 
