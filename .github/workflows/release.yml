@@ -194,17 +194,23 @@ jobs:
         run: npm install
         working-directory: crates/beep-gui
 
-      - name: Build Tauri
-        run: npx tauri build --target x86_64-pc-windows-msvc
+      - name: Build Tauri (exe only, no installer)
+        run: npx tauri build --target x86_64-pc-windows-msvc --bundles ""
         working-directory: crates/beep-gui
+
+      # - name: Build Tauri (with MSI/NSIS installers)
+      #   run: npx tauri build --target x86_64-pc-windows-msvc
+      #   working-directory: crates/beep-gui
 
       - name: Upload bundles
         uses: actions/upload-artifact@v4
         with:
           name: beep-gui-windows-x64
           path: |
-            target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
-            target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+            target/x86_64-pc-windows-msvc/release/beep-gui.exe
+          # path: |
+          #   target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
+          #   target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
           if-no-files-found: error
 
   # -- GUI - Linux
@@ -331,6 +337,6 @@ jobs:
             _Add release notes before publishing_
           draft: true
           prerelease: false
-          files: artifacts/*
+          files: artifacts/**/*
         env:
           GITHUB_TOKEN: ${{ github.token }}
