@@ -164,6 +164,18 @@
         viewMode = mode;
         if (mode === "request") {
             formRequest = parsedToHttpRequest(parsedRequests[activeRequestIdx]);
+        } else if (mode === "code") {
+            // Reposition cursor to active request's start if cursor is outside its scope
+            const req = parsedRequests[activeRequestIdx];
+            if (req) {
+                const within = cursorPos !== undefined
+                    && cursorPos >= req.block_region.start
+                    && cursorPos <= req.block_region.end + 1;
+                if (!within) {
+                    cursorPos = req.block_region.start;
+                    saveTabState({ cursorPos });
+                }
+            }
         }
         saveTabState({ viewMode });
     }
