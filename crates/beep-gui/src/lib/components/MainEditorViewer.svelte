@@ -153,6 +153,20 @@
                 formRequest = parsedToHttpRequest(parsedRequests[idx]);
             }
         }
+
+        // Reposition cursor to selected request's start and focus editor in code mode
+        if (idx >= 0 && idx < parsedRequests.length) {
+            cursorPos = parsedRequests[idx].block_region.start;
+            saveTabState({ cursorPos });
+
+            // set focus code editor if in code mode
+            if (viewMode === "code") {
+                requestAnimationFrame(() => {
+                    const cm = document.querySelector('.cm-content') as HTMLElement | null;
+                    cm?.focus();
+                });
+            }
+        }
     }
 
     function handleSetMode(mode: ViewMode) {
