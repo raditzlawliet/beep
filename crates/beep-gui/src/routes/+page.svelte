@@ -20,8 +20,8 @@
     import { registerHotkeys, setTabSwitcherToggle } from "$lib/hotkeys.svelte";
 
     // local UI state
-    let sidebarOpen = $state(false);
-    let activePanel = $state<"history" | "project">("history");
+    let sidebarOpen = $state(true);
+    let activePanel = $state<"history" | "project">("project");
     let activeFilePath = $state<string | null>(null);
     let expandedProject = new SvelteSet<string>();
 
@@ -50,7 +50,7 @@
             filePath,
             content: "",
             persistent,
-            viewMode: "code",
+            viewMode: "request",
             activeRequestIdx: 0,
             parsedRequests: [emptyParsedRequest()],
             fileVariables: [],
@@ -460,10 +460,11 @@
         // Keep only untitled tabs (no filePath)
         tabs = tabs.filter((t) => !t.filePath);
         if (!findTab(activeTabId)) activeTabId = tabs[0]?.id ?? "";
-        if (activePanel === "project") {
-            activePanel = "history";
-            if (history.entries.length === 0) sidebarOpen = false;
-        }
+        // Close Project now keep sidebar open
+        // if (activePanel === "project") {
+        //     activePanel = "history";
+        //     if (history.entries.length === 0) sidebarOpen = false;
+        // }
     }
 
     async function toggleProjectDir(path: string) {
@@ -575,6 +576,14 @@
     }
 
     // -- Initialise
+
+    let _appInitialized = false;
+    $effect(() => {
+        if (_appInitialized) return;
+        _appInitialized = true;
+        // Default: empty request tab + project sidebar open
+        handleNewUntitled();
+    });
 
     $effect(() => {
         histLoading = true;
