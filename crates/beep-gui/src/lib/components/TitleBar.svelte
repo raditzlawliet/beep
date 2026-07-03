@@ -187,14 +187,14 @@
   <!-- left: hamburger / menu bar -->
   {#if menuOpen}
     <div
-      class="flex items-center h-full ms-1 relative z-30"
+      class="flex items-center h-full relative z-30"
       role="menubar"
       tabindex="-1"
     >
       <!-- Beep Dropdown -->
       <div class="dropdown dropdown-hover dropdown-start h-full">
         <button
-          class="btn btn-ghost btn-xs rounded-none h-full text-xs font-medium"
+          class="btn btn-ghost btn-xs rounded-none h-full text-xs font-normal"
           role="menu"
           tabindex="0"
         >
@@ -216,7 +216,7 @@
       <!-- File Dropdown -->
       <div class="dropdown dropdown-hover dropdown-start h-full">
         <button
-          class="btn btn-ghost btn-xs rounded-none h-full text-xs font-medium"
+          class="btn btn-ghost btn-xs rounded-none h-full text-xs font-normal"
           role="menu"
           tabindex="0"
         >
@@ -280,7 +280,7 @@
       <!-- View Dropdown -->
       <div class="dropdown dropdown-hover dropdown-start h-full">
         <button
-          class="btn btn-ghost btn-xs rounded-none h-full text-xs font-medium"
+          class="btn btn-ghost btn-xs rounded-none h-full text-xs font-normal"
           aria-haspopup="menu"
           tabindex="0"
         >
@@ -306,9 +306,9 @@
       </div>
     </div>
   {:else}
-    <div class="flex items-center h-full ms-1">
+    <div class="flex items-center h-full">
       <button
-        class="btn btn-ghost btn-xs btn-square"
+        class="btn btn-ghost btn-xs h-full btn-square rounded-none w-8"
         onclick={toggleMenu}
         aria-label="Menu"
       >
@@ -316,6 +316,11 @@
       </button>
       {#if projectName}
         <span class="text-xs ms-1">{projectName}</span>
+      {:else}
+        <button
+            class="btn btn-ghost btn-xs rounded-none h-full text-xs font-normal"
+            aria-label="Minimize"
+            onclick={onOpenProject}>Open Project</button>
       {/if}
     </div>
   {/if}
@@ -338,7 +343,7 @@
       <Minus class="h-4 w-4" />
     </button>
     <button
-      class="btn btn-ghost btn-xs btn-square h-full rounded-none"
+      class="btn btn-ghost btn-xs btn-square h-full rounded-none w-8"
       onclick={toggleMaximize}
       aria-label="Maximize"
     >
