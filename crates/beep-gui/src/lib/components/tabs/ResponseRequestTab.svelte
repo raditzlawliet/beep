@@ -230,9 +230,5 @@
                 </div>
             {/if}
         </div>
-    {:else if queryParams.length === 0}
-        <div class="border-b border-b-base-content/10">
-            <div class="px-2 py-1 text-xs opacity-50 italic">No request payload</div>
-        </div>
     {/if}
 </div>
