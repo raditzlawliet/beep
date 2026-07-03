@@ -50,6 +50,10 @@
     let requestFormTab = $state<string>("params");
     let fileOverviewTab = $state<string>("requests");
 
+    // Run gutter dropdown
+    let runDropdown = $state<{ requestIdx: number; x: number; y: number } | null>(null);
+    let runMarkers = $derived(parsedRequests.map((r) => r.block_region.start));
+
     // Parse generation counter to discard stale async results.
     let _parseGen = $state(0);
     let _lastParsedContent = $state("");
@@ -141,16 +145,28 @@
         if (found !== -1 && found !== activeRequestIdx) {
             activeRequestIdx = found;
             saveTabState({ activeRequestIdx: found });
-            if (viewMode === "request") formRequest = parsedToHttpRequest(parsedRequests[found]);
+            formRequest = parsedToHttpRequest(parsedRequests[found]);
         }
     }
 
     function handleSelectRequest(idx: number) {
         activeRequestIdx = idx;
         saveTabState({ activeRequestIdx: idx });
-        if (viewMode === "request") {
-            if (idx < parsedRequests.length) {
-                formRequest = parsedToHttpRequest(parsedRequests[idx]);
+        if (idx >= 0 && idx < parsedRequests.length) {
+            formRequest = parsedToHttpRequest(parsedRequests[idx]);
+        }
+
+        // Reposition cursor to selected request's start and focus editor in code mode
+        if (idx >= 0 && idx < parsedRequests.length) {
+            cursorPos = parsedRequests[idx].block_region.start;
+            saveTabState({ cursorPos });
+
+            // set focus code editor if in code mode
+            if (viewMode === "code") {
+                requestAnimationFrame(() => {
+                    const cm = document.querySelector('.cm-content') as HTMLElement | null;
+                    cm?.focus();
+                });
             }
         }
     }
@@ -164,6 +180,18 @@
         viewMode = mode;
         if (mode === "request") {
             formRequest = parsedToHttpRequest(parsedRequests[activeRequestIdx]);
+        } else if (mode === "code") {
+            // Reposition cursor to active request's start if cursor is outside its scope
+            const req = parsedRequests[activeRequestIdx];
+            if (req) {
+                const within = cursorPos !== undefined
+                    && cursorPos >= req.block_region.start
+                    && cursorPos <= req.block_region.end + 1;
+                if (!within) {
+                    cursorPos = req.block_region.start;
+                    saveTabState({ cursorPos });
+                }
+            }
         }
         saveTabState({ viewMode });
     }
@@ -223,8 +251,44 @@ async function handleVariablesUpdate(vars: ParsedFileVariable[]) {
     }
 
     function handleSend(req: HttpRequest) {
-        syncFormToContent();
+        // Only sync form to content when in request mode (form may have been edited).
+        // In code/file mode, formRequest already reflects the active parsed request.
+        if (viewMode === "request") {
+            syncFormToContent();
+        }
+
+        // Switch to request mode to show result when sent from code/file mode
+        if (viewMode !== "request") {
+            viewMode = "request";
+            formRequest = parsedToHttpRequest(parsedRequests[activeRequestIdx]);
+            saveTabState({ viewMode });
+        }
         onSend(req);
+    }
+
+    // --- Run gutter ---
+
+    function handleRunMarkerClick(pos: number, event: MouseEvent) {
+        const idx = parsedRequests.findIndex((r) => r.block_region.start === pos);
+        if (idx === -1) return;
+        runDropdown = { requestIdx: idx, x: event.clientX, y: event.clientY };
+    }
+
+    function sendRunRequest(idx: number) {
+        handleSelectRequest(idx);
+        runDropdown = null;
+        // Switch to request mode to show result
+        if (viewMode !== "request") {
+            viewMode = "request";
+            saveTabState({ viewMode });
+        }
+        if (idx >= 0 && idx < parsedRequests.length) {
+            onSend(parsedToHttpRequest(parsedRequests[idx]));
+        }
+    }
+
+    function closeRunDropdown() {
+        runDropdown = null;
     }
 
     function handleUrlBlur() {
@@ -301,9 +365,33 @@ async function handleVariablesUpdate(vars: ParsedFileVariable[]) {
                 onchange={handleCodeChange}
                 initialCursorPos={cursorPos}
                 oncursorchange={handleCursorChange}
+                runMarkers={runMarkers}
+                onRunMarkerClick={handleRunMarkerClick}
                 class="h-full"
             />
         </div>
+
+        <!-- Run dropdown -->
+        {#if runDropdown}
+            {@const idx = runDropdown.requestIdx}
+            {@const req = parsedRequests[idx]}
+            <button class="fixed inset-0 z-40 cursor-default" onclick={closeRunDropdown} aria-label="Close dropdown"></button>
+            <ul
+                class="fixed z-50
+                    menu menu-sm bg-base-200
+                    rounded-box shadow-sm border border-base-content/10
+                    w-80 p-1"
+                style="left: {runDropdown.x}px; top: {runDropdown.y}px;"
+                role="menu"
+            >
+                <li>
+                    <button onclick={() => sendRunRequest(idx)}>
+                        <span class="truncate">Send {req?.title || `${req?.method ?? ''} ${req?.url ?? ''}`.trim() || 'Request'}</span>
+                        <span class="text-xs opacity-50 ml-auto">{app.modKey}+Enter</span>
+                    </button>
+                </li>
+            </ul>
+        {/if}
     {:else if viewMode === "file"}
         <FileOverview
             requests={parsedRequests}

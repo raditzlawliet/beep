@@ -1,13 +1,15 @@
 <script lang="ts">
-    import { untrack } from "svelte";
+    import { untrack, mount } from "svelte";
     import {
         EditorView,
         keymap,
         lineNumbers,
         highlightActiveLine,
         highlightActiveLineGutter,
+        GutterMarker,
+        gutter,
     } from "@codemirror/view";
-    import { EditorState } from "@codemirror/state";
+    import { EditorState, Prec, StateEffect, StateField } from "@codemirror/state";
     import {
         defaultKeymap,
         history,
@@ -18,6 +20,39 @@
     import { xml } from "@codemirror/lang-xml";
     import { syntaxHighlighting, bracketMatching } from "@codemirror/language";
     import { monokaiHighlight, monokaiTheme } from "./styles/monokai";
+    import RunGutterButton from "./RunGutterButton.svelte";
+
+    // --- Run gutter ---
+
+    const setRunMarkers = StateEffect.define<number[]>();
+    const runMarkerField = StateField.define<Set<number>>({
+        create() { return new Set(); },
+        update(set, tr) {
+            for (const e of tr.effects) {
+                if (e.is(setRunMarkers)) return new Set(e.value);
+            }
+            return set;
+        },
+    });
+
+    class RunGutterMarker extends GutterMarker {
+        private _pos: number;
+        private _onClick: (pos: number, e: MouseEvent) => void;
+        constructor(pos: number, onClick: (pos: number, e: MouseEvent) => void) {
+            super();
+            this._pos = pos;
+            this._onClick = onClick;
+        }
+        toDOM() {
+            const span = document.createElement("span");
+            mount(RunGutterButton, {
+                target: span,
+                props: { pos: this._pos, onClick: this._onClick },
+            });
+            return span;
+        }
+        eq(other: RunGutterMarker) { return this._pos === other._pos; }
+    }
 
     interface Props {
         value: string;
@@ -27,6 +62,8 @@
         initialCursorPos?: number;
         class?: string;
         wrapLines?: boolean;
+        runMarkers?: number[];
+        onRunMarkerClick?: (pos: number, event: MouseEvent) => void;
     }
 
     let {
@@ -37,6 +74,8 @@
         initialCursorPos,
         class: className = "",
         wrapLines = true,
+        runMarkers,
+        onRunMarkerClick,
     }: Props = $props();
 
     let container: HTMLDivElement;
@@ -48,7 +87,25 @@
         lang: "text" | "json" | "html" | "xml",
         wrap: boolean,
     ) {
+        const runGutter = gutter({
+            class: "cm-run-gutter",
+            lineMarker(view, line) {
+                const positions = view.state.field(runMarkerField, false);
+                if (!positions || positions.size === 0) return null;
+                const lineFrom = line.from;
+                for (const pos of positions) {
+                    if (pos >= lineFrom && pos < lineFrom + line.length) {
+                        return new RunGutterMarker(pos, (p, e) => onRunMarkerClick?.(p, e));
+                    }
+                }
+                return null;
+            },
+            initialSpacer: null,
+        });
+
         const extensions = [
+            runMarkerField,
+            runGutter,
             lineNumbers(),
             highlightActiveLine(),
             highlightActiveLineGutter(),
@@ -58,6 +115,7 @@
             syntaxHighlighting(monokaiHighlight),
             monokaiTheme,
             keymap.of([...defaultKeymap, ...historyKeymap]),
+            Prec.highest(keymap.of([{ key: "Mod-Enter", run: () => true }])),
             EditorView.updateListener.of((update) => {
                 if (update.docChanged && onchange) {
                     onchange(update.state.doc.toString());
@@ -72,6 +130,7 @@
             EditorView.theme({
                 "&": { height: "100%" },
                 ".cm-scroller": { overflow: "auto" },
+                ".cm-run-gutter": { width: "16px", textAlign: "center" },
             }),
         ];
 
@@ -135,6 +194,16 @@
             });
         }
         _skipCursorSync = false;
+    });
+
+    // Sync runMarkers to CodeMirror state field
+    $effect(() => {
+        const markers = runMarkers;
+        const editor = view;
+        if (!editor) return;
+        editor.dispatch({
+            effects: setRunMarkers.of(markers ?? []),
+        });
     });
 </script>
 

@@ -1,7 +1,7 @@
 <script lang="ts">
     import type { ParsedRequest, ViewMode, HttpMethod, TabType } from "$lib/types";
     import MethodBadge from "$lib/components/MethodBadge.svelte";
-    import { ChevronDownIcon, CodeIcon, FileText, LayoutList } from "@lucide/svelte";
+    import { ChevronDownIcon, CodeIcon, FileText, LayoutList, CheckIcon } from "@lucide/svelte";
     import { app } from "$lib/app-state.svelte";
 
     interface Props {
@@ -80,37 +80,30 @@
             </button>
             {#if requestDropdownOpen}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <div
-                    class="dropdown-content bg-base-200
+                <ul
+                    class="dropdown-content menu menu-sm bg-base-200
                         rounded-box z-50 shadow-sm border border-base-content/10
                         w-full max-h-60 overflow-y-auto overflow-x-hidden p-1 mt-0.5"
                     onkeydown={handleDropdownKeydown}
+                    role="listbox"
                 >
                     {#each requests as req, i}
-                        <!-- svelte-ignore a11y_no_static_element_interactions -->
-                        <div
-                            class="flex items-center rounded cursor-pointer
-                                px-2 py-1 text-xs gap-1
-                                hover:bg-base-300 {i === activeRequestIdx ? 'bg-base-300' : ''}"
-                            onclick={() => selectRequest(i)}
-                            onkeydown={(e: KeyboardEvent) => {
-                                if (e.key === "Enter" || e.key === " ") {
-                                    e.preventDefault();
-                                    selectRequest(i);
-                                }
-                            }}
-                            role="option"
-                            tabindex="0"
-                            aria-selected={i === activeRequestIdx}
-                        >
-                            <MethodBadge method={req.method as HttpMethod} />
-                            <span class="truncate"
-                                class:italic={!req.title}
-                                class:opacity-80={!req.title}
-                            >{req.title || "Untitled Request"}</span>
-                        </div>
+                        <li>
+                            <button
+                                onclick={() => selectRequest(i)}
+                                role="option"
+                                aria-selected={i === activeRequestIdx}
+                            >
+                                <MethodBadge method={req.method as HttpMethod} />
+                                <span class="truncate"
+                                    class:italic={!req.title}
+                                    class:opacity-80={!req.title}
+                                >{req.title || "Untitled Request"}</span>
+                                <CheckIcon class="w-3 h-3 ml-auto {i === activeRequestIdx ? '' : 'invisible'}" />
+                            </button>
+                        </li>
                     {/each}
-                </div>
+                </ul>
             {/if}
         </div>
     {:else}
