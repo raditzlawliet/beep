@@ -319,7 +319,7 @@
       {:else}
         <button
             class="btn btn-ghost btn-xs rounded-none h-full text-xs font-normal"
-            aria-label="Minimize"
+            aria-label="Open Project"
             onclick={onOpenProject}>Open Project</button>
       {/if}
     </div>
