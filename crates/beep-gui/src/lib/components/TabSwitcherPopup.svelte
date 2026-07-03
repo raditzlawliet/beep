@@ -5,6 +5,7 @@
         open: boolean;
         tabs: Tab[];
         activeTabId: string;
+        reverse: boolean;
         onSelect: (id: string) => void;
         onClose: () => void;
     }
@@ -13,6 +14,7 @@
         open,
         tabs,
         activeTabId,
+        reverse,
         onSelect,
         onClose,
     }: Props = $props();
@@ -29,10 +31,13 @@
         return others;
     });
 
-    // Reset selection when popup opens. index 0 = previous active tab
+    // Reset selection when popup opens.
+    // Forward: index 0 = previous active tab (most recent)
+    // Reverse: last index before current = least recent
     $effect(() => {
         if (open) {
-            selectedIdx = 0;
+            const last = orderedTabs.length - 1;
+            selectedIdx = reverse && last > 0 ? last - 1 : 0;
         }
     });
 

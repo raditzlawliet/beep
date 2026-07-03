@@ -17,11 +17,11 @@ export function setModeHandler(fn: ((mode: string) => void) | null) {
   _modeHandler = fn;
 }
 
-// --- Tab switcher toggle ref (for Ctrl+Tab)
+// --- Tab switcher toggle ref (for Ctrl+Tab / Ctrl+Shift+Tab)
 // +page.svelte sets this to toggle the tab switcher popup.
-let _tabSwitcherToggle: (() => void) | null = $state(null);
+let _tabSwitcherToggle: ((reverse?: boolean) => void) | null = $state(null);
 
-export function setTabSwitcherToggle(fn: (() => void) | null) {
+export function setTabSwitcherToggle(fn: ((reverse?: boolean) => void) | null) {
   _tabSwitcherToggle = fn;
 }
 
@@ -160,9 +160,14 @@ export function registerHotkeys(handlers: HotkeyHandlers) {
     }
   });
 
-  // --- Tab switcher (Ctrl+Tab)
-  createHotkey("Control+Tab", (e) => {
+  // --- Tab switcher (Ctrl+Tab / Ctrl+Shift+Tab)
+  createHotkey("Mod+Tab", (e) => {
     e.preventDefault();
-    _tabSwitcherToggle?.();
+    _tabSwitcherToggle?.(false);
+  });
+
+  createHotkey("Mod+Shift+Tab", (e) => {
+    e.preventDefault();
+    _tabSwitcherToggle?.(true);
   });
 }

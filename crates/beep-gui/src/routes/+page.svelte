@@ -30,6 +30,7 @@
     let tabs = $state<Tab[]>([]);
     let activeTabId = $state<string>("");
     let tabSwitcherOpen = $state(false);
+    let tabSwitcherReverse = $state(false);
 
     // Tab helpers
 
@@ -646,8 +647,11 @@
     });
 
     // Tab switcher toggle, open-only, suppressed when no tabs are open
-    setTabSwitcherToggle(() => {
-        if (!tabSwitcherOpen && tabs.length > 0) tabSwitcherOpen = true;
+    setTabSwitcherToggle((reverse?: boolean) => {
+        if (!tabSwitcherOpen && tabs.length > 0) {
+            tabSwitcherReverse = reverse ?? false;
+            tabSwitcherOpen = true;
+        }
     });
 </script>
 
@@ -808,6 +812,7 @@
         open={tabSwitcherOpen}
         {tabs}
         {activeTabId}
+        reverse={tabSwitcherReverse}
         onSelect={(id) => { selectTab(id); tabSwitcherOpen = false; }}
         onClose={() => { tabSwitcherOpen = false; }}
     />
