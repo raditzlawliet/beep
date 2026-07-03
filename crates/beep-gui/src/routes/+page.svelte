@@ -4,8 +4,10 @@
     import { request, history, app, project, httpFile } from "$lib/app-state.svelte";
     import { httpRequestToContent } from "$lib/http-file-utils";
     import { invoke } from "@tauri-apps/api/core";
-    import { open, save } from "@tauri-apps/plugin-dialog";
+    import { open, save, message } from "@tauri-apps/plugin-dialog";
+    import { getCurrentWindow } from "@tauri-apps/api/window";
     import { listen } from "@tauri-apps/api/event";
+    import { confirmUnsavedClose, confirmExternalOverwrite } from "$lib/dialog";
     import { SvelteSet } from "svelte/reactivity";
     import TitleBar from "$lib/components/TitleBar.svelte";
     import StatusBar from "$lib/components/StatusBar.svelte";
@@ -13,8 +15,8 @@
     import ProjectSidebar from "$lib/components/ProjectSidebar.svelte";
     import TabBar from "$lib/components/TabBar.svelte";
     import FileViewer from "$lib/components/FileViewer.svelte";
-    import { PlusIcon, FolderOpenIcon } from "@lucide/svelte";
     import MainEditorViewer from "$lib/components/MainEditorViewer.svelte";
+    import WelcomeScreen from "$lib/components/WelcomeScreen.svelte";
     import MainEditorToolbar from "$lib/components/MainEditorToolbar.svelte";
     import TabSwitcherPopup from "$lib/components/TabSwitcherPopup.svelte";
     import { registerHotkeys, setTabSwitcherToggle } from "$lib/hotkeys.svelte";
@@ -64,6 +66,7 @@
         untitledCounter++;
         const tab = createHttpTab(id, `Untitled-${untitledCounter - 1}.http`, undefined, true);
         tab.content = "### New Request\nGET https://example.com\n";
+        tab.originalContent = tab.content; // Purpose: untitled tab can be treat as unchanged save
         return tab;
     }
 
@@ -167,27 +170,56 @@
             return;
         }
 
-        await doSave(tab);
+        // Warn if file changed on disk since we started editing
+        if (tab.diskChanged) {
+            const choice = await confirmExternalOverwrite(tab.label);
+            if (choice === "cancel") return;
+            if (choice === "discard") {
+                // Reload from disk, discard local edits
+                try {
+                    const diskContent = await invoke<string>("read_file_content", { path: tab.filePath });
+                    tab.content = diskContent;
+                    tab.originalContent = diskContent;
+                    tab.diskChanged = false;
+                } catch (e) {
+                    console.error(`Failed to reload ${tab.filePath}:`, e);
+                    await message(
+                        `Failed to reload "${tab.label}".`,
+                        { title: "Error", kind: "error" }
+                    );
+                }
+                return;
+            }
+            // choice === "overwrite"; proceed
+        }
+
+        const err = await doSave(tab);
+        if (err) {
+            await message(err, { title: "Save Error", kind: "error" });
+        }
     }
 
-    async function doSave(tab: Tab) {
-        if (!tab.filePath || tab.content === undefined) return;
+    async function doSave(tab: Tab): Promise<string | null> {
+        if (!tab.filePath || tab.content === undefined) return null; // nothing to save
         try {
             await invoke("save_file_content", { path: tab.filePath, content: tab.content });
             tab.originalContent = tab.content;
             tab.diskChanged = false;
+            return null;
         } catch (e) {
-            console.error(`Failed to save ${tab.filePath}:`, e);
+            const errMsg = `Failed to save "${tab.filePath}": ${typeof e === "string" ? e : (e as Error)?.message ?? String(e)}`;
+            console.error(errMsg, e);
+            return errMsg;
         }
     }
 
-    async function handleSaveAs(tab: Tab) {
+    async function handleSaveAs(tab: Tab): Promise<boolean> {
         const ext = tab.type === "http-file" ? "http" : "json";
         const selected = await save({
             filters: [{ name: ext.toUpperCase(), extensions: [ext] }],
             defaultPath: tab.label,
         });
-        if (!selected || typeof selected !== "string") return;
+        if (!selected || typeof selected !== "string") return false;
 
         // Rename the tab
         const oldId = tab.id;
@@ -198,14 +230,44 @@
         // Update tabs array references
         if (activeTabId === oldId) activeTabId = selected;
 
-        await doSave(tab);
+        const err = await doSave(tab);
+        if (err) {
+            await message(err, { title: "Save Error", kind: "error" });
+            return false;
+        }
+        return true;
     }
 
     async function handleSaveAll() {
+        const failed: string[] = [];
         for (const tab of tabs) {
             if (!tab.filePath || tab.content === undefined) continue;
             if (tab.content === tab.originalContent && !tab.diskChanged) continue;
-            await doSave(tab);
+            if (tab.diskChanged) {
+                const choice = await confirmExternalOverwrite(tab.label);
+                if (choice === "cancel") continue;
+                if (choice === "discard") {
+                    try {
+                        const diskContent = await invoke<string>("read_file_content", { path: tab.filePath });
+                        tab.content = diskContent;
+                        tab.originalContent = diskContent;
+                        tab.diskChanged = false;
+                    } catch (e) {
+                        console.error(`Failed to reload ${tab.filePath}:`, e);
+                        failed.push(tab.label);
+                    }
+                    continue;
+                }
+            }
+            const err = await doSave(tab);
+            if (err) failed.push(tab.label);
+        }
+        if (failed.length > 0) {
+            const names = failed.map((n) => `"${n}"`).join(", ");
+            await message(
+                `Failed to save: ${names}.`,
+                { title: "Save Error", kind: "error" }
+            );
         }
     }
 
@@ -217,10 +279,31 @@
 
     // -- Close tab
 
-    function closeTab(id: string) {
+    async function closeTab(id: string) {
         const idx = tabs.findIndex((t) => t.id === id);
         if (idx === -1) return;
-        // TODO: dirty confirmation dialog
+
+        const tab = tabs[idx];
+        // dirty confirmation dialog
+        const isDirty = tab.originalContent !== undefined && tab.content !== tab.originalContent;
+        if (isDirty) {
+            const choice = await confirmUnsavedClose(tab.label);
+            if (choice === "cancel") return;
+            if (choice === "save") {
+                if (tab.filePath) {
+                    const err = await doSave(tab);
+                    if (err) {
+                        await message(err, { title: "Save Error", kind: "error" });
+                        return;
+                    }
+                } else {
+                    // Untitled tab; prompt Save As; bail if cancelled
+                    const saved = await handleSaveAs(tab);
+                    if (!saved) return;
+                }
+            }
+        }
+
         tabs.splice(idx, 1);
         if (activeTabId === id) {
             if (tabs.length === 0) {
@@ -454,13 +537,37 @@
         }
     }
 
-    function handleCloseProject() {
+    async function handleCloseProject() {
+        // Confirm if any file-backed tabs have unsaved changes
+        const dirtyTabs = tabs.filter((t) =>
+            t.filePath && t.originalContent !== undefined && t.content !== t.originalContent
+        );
+
+        if (dirtyTabs.length > 0) {
+            const label = dirtyTabs.length === 1
+                ? dirtyTabs[0].label
+                : `${dirtyTabs.length} files`;
+            const choice = await confirmUnsavedClose(label);
+            if (choice === "cancel") return;
+            if (choice === "save") {
+                for (const tab of dirtyTabs) {
+                    const err = await doSave(tab);
+                    if (err) {
+                        await message(err, { title: "Save Error", kind: "error" });
+                        return;
+                    }
+                }
+            }
+        }
+
         project.close();
         expandedProject.clear();
         activeFilePath = null;
+
         // Keep only untitled tabs (no filePath)
         tabs = tabs.filter((t) => !t.filePath);
         if (!findTab(activeTabId)) activeTabId = tabs[0]?.id ?? "";
+
         // Close Project now keep sidebar open
         // if (activePanel === "project") {
         //     activePanel = "history";
@@ -611,6 +718,53 @@
             unlistenChange.then((fn) => fn());
             unlistenContent.then((fn) => fn());
         };
+    });
+
+    // -- Window close guard (Alt+F4, X button, Ctrl+Q, File > Quit)
+    let closing = $state(false);
+    $effect(() => {
+        const unlisten = getCurrentWindow().onCloseRequested(async (event) => {
+            if (closing) {
+                // already mid-prompt; ignore duplicate close attempts
+                event.preventDefault();
+                return;
+            }
+
+            if (hasUnsavedTabs()) {
+                event.preventDefault();
+                closing = true;
+                try {
+                    const dirtyTabs = tabs.filter((t) =>
+                        t.filePath && t.originalContent !== undefined && t.content !== t.originalContent
+                    );
+                    const label = dirtyTabs.length === 1
+                        ? dirtyTabs[0].label
+                        : `${dirtyTabs.length} files`;
+                    const choice = await confirmUnsavedClose(label);
+                    if (choice === "cancel") {
+                        closing = false;
+                        return;
+                    }
+                    if (choice === "save") {
+                        for (const tab of dirtyTabs) {
+                            const err = await doSave(tab);
+                            if (err) {
+                                await message(err, { title: "Save Error", kind: "error" });
+                                closing = false;
+                                return;
+                            }
+                        }
+                    }
+                } catch (_) {
+                    closing = false;
+                    return;
+                }
+            }
+
+            await getCurrentWindow().destroy();
+            // closing stays true; window is gone, no need to reset
+        });
+        return () => { unlisten.then((fn) => fn()); };
     });
 
     // -- Derived
@@ -764,35 +918,10 @@
                 </div>
             {:else if !project.path}
                 <!-- No project + no tab - welcome state -->
-                <div class="flex-1 flex items-center justify-center">
-                    <div class="flex flex-col gap-6 w-80 select-none">
-                        <!-- Header: icon + title -->
-                        <div class="flex items-center justify-center gap-4">
-                            <img src="/icon.png" alt="Beep" class="w-10 h-10 opacity-80 shrink-0" />
-                            <div>
-                                <div class="text-lg">Welcome back to Beep</div>
-                                <div class="text-sm italic font-thin text-neutral-content">The next intuitive API client</div>
-                            </div>
-                        </div>
-
-                        <!-- Get Started -->
-                        <div>
-                            <div class="divider divider-start text-xs text-neutral-content uppercase m-0 my-2">Get Started</div>
-                            <div class="flex flex-col">
-                                <button class="btn btn-xs btn-ghost justify-start gap-2 w-full h-8" onclick={handleNewRequest}>
-                                    <PlusIcon class="w-3.5 h-3.5 text-neutral-content" />
-                                    <span class="flex-1 text-start font-normal">New Request</span>
-                                    <span class="text-neutral-content font-normal text-xs opacity-50 ">{app.modKey}+N</span>
-                                </button>
-                                <button class="btn btn-xs btn-ghost justify-start gap-2 w-full h-8" onclick={handleOpenProject}>
-                                    <FolderOpenIcon class="w-3.5 h-3.5 text-neutral-content" />
-                                    <span class="flex-1 text-start font-normal">Open Project</span>
-                                    <span class="text-neutral-content font-normal text-xs opacity-50">{app.modKey}+O</span>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                <WelcomeScreen
+                    onNewRequest={handleNewRequest}
+                    onOpenProject={handleOpenProject}
+                />
             {/if}
         </div>
     </div>
