@@ -284,6 +284,8 @@
         if (idx === -1) return;
 
         const tab = tabs[idx];
+        const wasActive = activeTabId === tab.id;
+
         // dirty confirmation dialog
         const isDirty = tab.originalContent !== undefined && tab.content !== tab.originalContent;
         if (isDirty) {
@@ -305,7 +307,7 @@
         }
 
         tabs.splice(idx, 1);
-        if (activeTabId === id) {
+        if (wasActive) {
             if (tabs.length === 0) {
                 activeTabId = "";
             } else if (idx < tabs.length) {
@@ -735,7 +737,8 @@
                 closing = true;
                 try {
                     const dirtyTabs = tabs.filter((t) =>
-                        t.filePath && t.originalContent !== undefined && t.content !== t.originalContent
+                        t.originalContent !== undefined
+                            && t.content !== t.originalContent
                     );
                     const label = dirtyTabs.length === 1
                         ? dirtyTabs[0].label
@@ -747,11 +750,19 @@
                     }
                     if (choice === "save") {
                         for (const tab of dirtyTabs) {
-                            const err = await doSave(tab);
-                            if (err) {
-                                await message(err, { title: "Save Error", kind: "error" });
-                                closing = false;
-                                return;
+                            if (tab.filePath) {
+                                const err = await doSave(tab);
+                                if (err) {
+                                    await message(err, { title: "Save Error", kind: "error" });
+                                    closing = false;
+                                    return;
+                                }
+                            } else {
+                                const saved = await handleSaveAs(tab);
+                                if (!saved) {
+                                    closing = false;
+                                    return;
+                                }
                             }
                         }
                     }
