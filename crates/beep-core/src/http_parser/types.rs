@@ -1,31 +1,39 @@
-//! Core types for .http file parsing. Shared between parse, serialize, and edit.
-
+//! types for .http file parsing. Shared between parse, serialize, and edit.
+//! Since this can has naming conflict, parsed type will be has Parsed prefix.
 use serde::{Deserialize, Serialize};
 
-/// A file-level variable declared with `@key = value`.
+/// A single parsed header field.
+///
+/// `auto: true` means this is an auto-header opt-out directive
+/// (e.g. `//- @headerAuto Connection`)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct FileVariable {
-    pub key: String,
-    pub value: String,
-}
-
-/// A parsed header from a request block.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct HttpHeaderField {
+pub struct ParsedHeaderField {
     pub key: String,
     pub value: String,
     #[serde(default = "default_true")]
     pub enabled: bool,
+    /// Whether this is an auto-header opt-out directive.
+    #[serde(default)]
+    pub auto: bool,
+}
+
+/// A file-level variable declared with `@key = value`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ParsedFileVariable {
+    pub key: String,
+    pub value: String,
 }
 
 /// A parsed query parameter.
 ///
-/// `is_inline` tracks placement origin: `true` when parsed from the URL
-/// (`?key=value`), `false` when parsed from a multiline `?` / `&` line.
-/// Once set to `false` (user disabled -> moved to multiline) it never
-/// goes back to `true`.
+/// `is_inline` tracks placement origin: `true` when parsed from the URL (`?key=value`),
+/// `false` when parsed from a multiline `?` / `&` line.
+/// Once set to `false` (user disabled -> moved to multiline) it never goes back to `true`.
+///
+/// Differs from `crate::types::QueryField`
+/// by carrying `is_inline` a parser/serializer concern that the executor does not need.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct QueryField {
+pub struct ParsedQueryField {
     pub key: String,
     pub value: String,
     #[serde(default = "default_true")]
@@ -37,10 +45,11 @@ pub struct QueryField {
 
 /// A parsed form field (urlencoded or multipart).
 ///
-/// `is_inline` works the same as QueryField: `true` when parsed from a
-/// single-line body, `false` from multiline `&` lines.
+/// `is_inline` works the same as QueryField:
+/// `true` when parsed from a single-line body,
+/// `false` from multiline `&` lines.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct FormField {
+pub struct ParsedFormField {
     pub key: String,
     pub value: String,
     #[serde(default = "default_true")]
@@ -96,7 +105,7 @@ impl Region {
 ///
 /// Contains both structured data (method, url, headers, etc...) and
 /// byte-offset regions for surgical editing.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ParsedRequest {
     /// Title after `###` (empty string if none).
     pub title: String,
@@ -104,21 +113,21 @@ pub struct ParsedRequest {
     pub method: String,
     /// The request URL (without query string).
     pub url: String,
-    /// Parsed headers.
-    pub headers: Vec<HttpHeaderField>,
+    /// Parsed headers. Uses canonical `HeaderField` (auto defaults to false).
+    pub headers: Vec<ParsedHeaderField>,
     /// Query parameters parsed from URL and multiline query lines.
     #[serde(default)]
-    pub query_params: Vec<QueryField>,
+    pub query_params: Vec<ParsedQueryField>,
     /// Request body, if any (raw body for JSON/XML/text modes).
     pub body: Option<String>,
     /// Detected body mode hint.
     pub body_mode: Option<String>,
     /// Parsed form-urlencoded fields (when body_mode is form-urlencoded).
     #[serde(default)]
-    pub form_urlencoded: Vec<FormField>,
+    pub form_urlencoded: Vec<ParsedFormField>,
     /// Parsed multipart fields (when body_mode is form-multipart).
     #[serde(default)]
-    pub form_multipart: Vec<FormField>,
+    pub form_multipart: Vec<ParsedFormField>,
     /// Pre-request script content, if any.
     pub pre_script: Option<String>,
     /// Post-request script content, if any.
@@ -151,9 +160,9 @@ pub struct ParsedRequest {
 
 /// Result of parsing an .http file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ParseHttpFileResult {
+pub struct ParsedHttpFile {
     /// File-level @var declarations.
-    pub variables: Vec<FileVariable>,
+    pub variables: Vec<ParsedFileVariable>,
     /// Parsed request blocks.
     pub requests: Vec<ParsedRequest>,
 }

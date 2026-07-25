@@ -1,24 +1,28 @@
+//! HTTP protocol executor.
+//!
+//! Takes an `ExecutableRequest`, sends it over HTTP, and returns `HttpResult`.
+
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 use http::{HeaderName, HeaderValue};
 use reqwest::Client;
 use reqwest_middleware::ClientWithMiddleware;
+use serde::{Deserialize, Serialize};
 
-use crate::inspector::{BeepInspector, CapturedRequest};
-use crate::models::{
-    Auth, BodyEncoding, HeaderField, HttpRequest, HttpResponse, RequestResult, SentRequest, Size,
-};
+use crate::exec::inspector::{BeepInspector, CapturedRequest};
+use crate::executable::{ExecutableRequest, FormFieldType, ResolvedBody, ResolvedFormField};
+use crate::types::{HeaderField, HttpVersion};
 
-/// Default header values used by HttpClient::new().
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
 pub const DEFAULT_ACCEPT: &str = "*/*";
 pub const DEFAULT_ACCEPT_ENCODING: &str = "gzip, deflate, br";
 pub const DEFAULT_USER_AGENT: &str = concat!("beep/", env!("CARGO_PKG_VERSION"));
-
-/// Maximum file size for multipart uploads (100 MB).
 pub const MAX_FILE_SIZE: u64 = 100 * 1024 * 1024;
 
-/// Map of default headers (key -> value) set on every HttpClient agent.
 pub fn default_headers() -> Vec<(&'static str, &'static str)> {
     vec![
         ("Accept", DEFAULT_ACCEPT),
@@ -27,29 +31,74 @@ pub fn default_headers() -> Vec<(&'static str, &'static str)> {
     ]
 }
 
+// ---------------------------------------------------------------------------
+// HTTP result types
+// ---------------------------------------------------------------------------
+
+/// Size breakdown for a request/response.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct Size {
+    pub headers: u64,
+    pub body: u64,
+}
+
+/// How the response body bytes are encoded for string transport.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum BodyEncoding {
+    #[default]
+    Utf8,
+    Base64,
+}
+
+/// The actual request as sent on the wire, captured by middleware.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SentRequest {
+    pub url: String,
+    pub method: String,
+    #[serde(default)]
+    pub headers: Vec<(String, String)>,
+    #[serde(default)]
+    pub body: Option<String>,
+    #[serde(default)]
+    pub http_version: String,
+    #[serde(default)]
+    pub size: Option<Size>,
+}
+
+/// HTTP response structure.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HttpResponse {
+    pub status: u16,
+    pub headers: HashMap<String, String>,
+    pub body: String,
+    pub elapsed_ms: u64,
+    pub size: Size,
+    #[serde(default)]
+    pub body_encoding: BodyEncoding,
+}
+
+/// Result of executing an HTTP request.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HttpResult {
+    pub request: SentRequest,
+    pub response: HttpResponse,
+}
+
+// ---------------------------------------------------------------------------
+// HttpExecutor
+// ---------------------------------------------------------------------------
+
 #[derive(Clone)]
-pub struct HttpClient {
-    client: ClientWithMiddleware, // Auto
+pub struct HttpExecutor {
+    client: ClientWithMiddleware,
     client_http1: ClientWithMiddleware,
     client_http2: ClientWithMiddleware,
 }
 
-impl HttpClient {
+impl HttpExecutor {
     fn base_builder() -> reqwest::ClientBuilder {
         Client::builder()
-            .user_agent(DEFAULT_USER_AGENT)
-            .default_headers({
-                let mut h = http::HeaderMap::new();
-                h.insert(
-                    http::header::ACCEPT,
-                    HeaderValue::from_static(DEFAULT_ACCEPT),
-                );
-                h.insert(
-                    http::header::ACCEPT_ENCODING,
-                    HeaderValue::from_static(DEFAULT_ACCEPT_ENCODING),
-                );
-                h
-            })
             .gzip(true)
             .brotli(true)
             .deflate(true)
@@ -90,71 +139,31 @@ impl HttpClient {
         }
     }
 
-    pub async fn execute(&self, request: &HttpRequest) -> Result<RequestResult, String> {
+    /// Execute a compiled `ExecutableRequest`.
+    pub async fn execute(&self, request: &ExecutableRequest) -> Result<HttpResult, String> {
         let url = self.build_url(request);
-        let method = request.method;
-        let headers = request.headers.clone();
-        let auth = request.auth.clone();
-
         let start = Instant::now();
 
-        // Infer body_mode if not explicitly set (CLI may not set it).
-        let body_mode = request.body_mode.as_deref().unwrap_or_else(|| {
-            if !request.form_multipart.is_empty() {
-                "form-multipart"
-            } else if !request.form_urlencoded.is_empty() {
-                "form-urlencoded"
-            } else if request.raw_body.is_some() || request.body.is_some() {
-                "raw/text"
-            } else {
-                "none"
-            }
-        });
-
-        let http_method = method.to_http_method();
-
-        // Route through the appropriate client based on HTTP version.
         let version_client = match request.http_version {
-            crate::models::HttpVersion::Http1 => &self.client_http1,
-            crate::models::HttpVersion::Http2 => &self.client_http2,
+            HttpVersion::Http1 => &self.client_http1,
+            HttpVersion::Http2 => &self.client_http2,
             _ => &self.client,
         };
+        let http_method = request.method.to_http_method();
         let mut req_builder = version_client.request(http_method, &url);
 
         // Merge auto + user headers with proper override:
-        // 1. auto headers first
+        // 1. auto headers first (that are enabled)
         // 2. user headers override matching auto keys (remove auto, keep user)
         // 3. user headers with no matching auto key are appended
-        let merged = merge_headers(&headers);
+        let merged = merge_headers(&request.headers);
         for field in &merged {
             let name = HeaderName::from_bytes(field.key.as_bytes())
                 .map_err(|e| format!("Invalid header name '{}': {}", field.key, e))?;
-            let val = HeaderValue::from_str(&field.value)
+            let resolved = resolve_basic_auth(field);
+            let val = HeaderValue::from_str(&resolved)
                 .map_err(|e| format!("Invalid header value '{}': {}", field.value, e))?;
             req_builder = req_builder.header(name, val);
-        }
-
-        match &auth {
-            Auth::Basic { username, password } => {
-                let encoded = base64_encode(format!("{}:{}", username, password).as_bytes());
-                req_builder = req_builder.header(
-                    HeaderName::from_static("authorization"),
-                    HeaderValue::from_str(&format!("Basic {}", encoded)).unwrap(),
-                );
-            }
-            Auth::Bearer { token } => {
-                let val = HeaderValue::from_str(&format!("Bearer {}", token))
-                    .map_err(|_| "Bearer token contains invalid characters".to_string())?;
-                req_builder = req_builder.header(HeaderName::from_static("authorization"), val);
-            }
-            Auth::ApiKey { key, value, add_to } if add_to == "header" => {
-                let name = HeaderName::from_bytes(key.as_bytes())
-                    .unwrap_or(HeaderName::from_static("x-api-key"));
-                let val = HeaderValue::from_str(value).unwrap_or(HeaderValue::from_static(""));
-                req_builder = req_builder.header(name, val);
-            }
-            Auth::ApiKey { .. } => {} // query param handled in build_url
-            Auth::None => {}
         }
 
         let has_user_content_type = merged
@@ -162,12 +171,26 @@ impl HttpClient {
             .any(|h| h.key.eq_ignore_ascii_case("content-type"));
 
         // Body
-        // Also track the body text + length for the response request snapshot.
         let request_body_str: Option<String>;
         let request_body_len: usize;
-        match body_mode {
-            "form-urlencoded" => {
-                let encoded = build_url_encoded_body(&request.form_urlencoded);
+        match &request.body {
+            ResolvedBody::None => {
+                request_body_len = 0;
+                request_body_str = None;
+            }
+            ResolvedBody::Raw {
+                content,
+                content_type,
+            } => {
+                if !has_user_content_type {
+                    req_builder = req_builder.header("content-type", content_type.as_str());
+                }
+                request_body_len = content.len();
+                request_body_str = Some(content.clone());
+                req_builder = req_builder.body(content.clone());
+            }
+            ResolvedBody::FormUrlEncoded(fields) => {
+                let encoded = build_url_encoded_body(fields);
                 request_body_len = encoded.len();
                 request_body_str = Some(encoded.clone());
                 if !has_user_content_type {
@@ -176,8 +199,8 @@ impl HttpClient {
                 }
                 req_builder = req_builder.body(encoded);
             }
-            "form-multipart" => {
-                let (mp_req, mp_body) = build_multipart_body(&request.form_multipart)
+            ResolvedBody::FormMultipart(fields) => {
+                let (mp_req, mp_body) = build_multipart_body(fields)
                     .await
                     .map_err(|e| format!("Multipart build failed: {}", e))?;
                 if !has_user_content_type {
@@ -191,40 +214,15 @@ impl HttpClient {
                 request_body_str = std::str::from_utf8(&mp_body).ok().map(|s| s.to_owned());
                 req_builder = req_builder.body(mp_body);
             }
-            _ => {
-                let content_type: Option<&str> = match body_mode {
-                    "raw/json" => Some("application/json"),
-                    "raw/xml" => Some("application/xml"),
-                    "raw/html" => Some("text/html"),
-                    "raw/text" => Some("text/plain"),
-                    _ => None,
-                };
-
-                let raw = request.raw_body.as_ref().or(request.body.as_ref());
-                if let Some(ref b) = raw {
-                    if let Some(ct) = content_type {
-                        if !has_user_content_type {
-                            req_builder = req_builder.header("content-type", ct);
-                        }
-                    }
-                    request_body_len = b.len();
-                    request_body_str = Some(b.to_string());
-                    req_builder = req_builder.body(b.to_string());
-                } else {
-                    request_body_len = 0;
-                    request_body_str = None;
-                }
-            }
         }
 
+        // --- Send ---
         let resp = req_builder
             .send()
             .await
             .map_err(|e| format!("Request failed: {}", e))?;
 
-        // Extract the exact request snapshot captured by the middleware
         let mut captured = resp.extensions().get::<CapturedRequest>().cloned();
-        // Patch in body data captured in execute() (middleware can't read it from reqwest).
         if let Some(ref mut cap) = captured {
             cap.body_bytes = request_body_len;
             cap.body_text = request_body_str;
@@ -233,28 +231,21 @@ impl HttpClient {
         let status = resp.status().as_u16();
         let resp_headers = extract_headers(resp.headers());
 
-        // Read decoded body (reqwest auto-decompresses gzip/deflate/brotli/zstd)
         let raw_body = resp
             .bytes()
             .await
             .map_err(|e| format!("Read response body failed: {}", e))?;
 
-        // For now, we use simple response encoding because Tauri commands serialized to json.
-        // If the response body isn't valid UTF-8, base64-encode it.
-        // While this is not efficient (33% overhead), it's more simple to maintain for now.
-        // TODO Improve response encoding overhead by using custom protocol or else.
         let (resp_body, body_encoding) = match String::from_utf8(raw_body.to_vec()) {
             Ok(s) => (s, BodyEncoding::Utf8),
             Err(_) => (base64_encode(&raw_body), BodyEncoding::Base64),
         };
 
-        // Compute response sizes
         let response_headers_size: u64 = resp_headers
             .iter()
             .map(|(k, v)| (k.len() + v.len() + 4) as u64)
             .sum();
         let response_body_size = raw_body.len() as u64;
-
         let elapsed_ms = start.elapsed().as_millis() as u64;
 
         let response = HttpResponse {
@@ -292,32 +283,24 @@ impl HttpClient {
             }
         };
 
-        Ok(RequestResult {
+        Ok(HttpResult {
             request: request_echo,
             response,
         })
     }
 
-    fn build_url(&self, request: &HttpRequest) -> String {
-        // Strip any existing query from URL. Query_params are the authoritative source.
+    fn build_url(&self, request: &ExecutableRequest) -> String {
         let base_url = match request.url.find('?') {
             Some(q) => &request.url[..q],
             None => &request.url,
         };
 
-        let mut params: Vec<String> = request
+        let params: Vec<String> = request
             .query_params
             .iter()
             .filter(|q| q.enabled && !q.key.is_empty())
             .map(|q| format!("{}={}", urlencode(&q.key), urlencode(&q.value)))
             .collect();
-
-        // Append API key as query param if add_to is "query"
-        if let Auth::ApiKey { key, value, add_to } = &request.auth {
-            if add_to == "query" {
-                params.push(format!("{}={}", urlencode(key), urlencode(value)));
-            }
-        }
 
         if params.is_empty() {
             base_url.to_string()
@@ -327,26 +310,55 @@ impl HttpClient {
     }
 }
 
-impl Default for HttpClient {
+impl Default for HttpExecutor {
     fn default() -> Self {
         Self::new()
     }
 }
 
-/// Merge auto and user headers with explicit override logic:
-/// 1. auto headers first (skip any key also defined by user)
-/// 2. user headers appended last (so they take precedence)
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/// Merge auto + user headers with proper override:
+/// 1. auto headers first (enabled ones from defaults + parsed)
+/// 2. user headers override matching auto keys (remove auto, keep user)
+/// 3. user headers with no matching auto key are appended
 fn merge_headers(headers: &[HeaderField]) -> Vec<HeaderField> {
-    // Collect user-defined keys (case-insensitive) to know which auto headers to drop.
+    // Collect disabled auto keys from @headerAuto directives.
+    let disabled_auto_keys: HashSet<String> = headers
+        .iter()
+        .filter(|h| !h.enabled && h.auto)
+        .map(|h| h.key.to_lowercase())
+        .collect();
+
+    let all_keys: HashSet<String> = headers
+        .iter()
+        .filter(|h| h.enabled && !h.key.is_empty())
+        .map(|h| h.key.to_lowercase())
+        .collect();
+
     let user_keys: HashSet<String> = headers
         .iter()
         .filter(|h| h.enabled && !h.key.is_empty() && !h.auto)
         .map(|h| h.key.to_lowercase())
         .collect();
 
+    // 1. Auto headers: defaults (not disabled, not overridden) + parsed auto headers.
     let mut merged: Vec<HeaderField> = Vec::new();
+    for (key, value) in default_headers() {
+        let kl = key.to_lowercase();
+        if !disabled_auto_keys.contains(&kl) && !all_keys.contains(&kl) {
+            merged.push(HeaderField {
+                key: key.to_string(),
+                value: value.to_string(),
+                enabled: true,
+                auto: true,
+            });
+        }
+    }
 
-    // Auto headers first, but skip any key that a user header overrides.
+    // Auto headers from parsed (e.g. UI-managed), skip overridden/disabled.
     for h in headers
         .iter()
         .filter(|h| h.enabled && !h.key.is_empty() && h.auto)
@@ -356,7 +368,7 @@ fn merge_headers(headers: &[HeaderField]) -> Vec<HeaderField> {
         }
     }
 
-    // User headers: replace matching auto key, or append if no match.
+    // 2+3. User headers (override auto, then append rest).
     for h in headers
         .iter()
         .filter(|h| h.enabled && !h.key.is_empty() && !h.auto)
@@ -365,6 +377,38 @@ fn merge_headers(headers: &[HeaderField]) -> Vec<HeaderField> {
     }
 
     merged
+}
+
+/// Auto-encode Basic auth credentials at execution time.
+///
+/// Encode the credentials if they are not already base64-encoded.
+/// The source header remains as-is, encoding is transparent to the user.
+fn resolve_basic_auth(field: &HeaderField) -> String {
+    if !field.key.eq_ignore_ascii_case("authorization") {
+        return field.value.clone();
+    }
+
+    let val = field.value.trim();
+    let Some(credentials) = val.strip_prefix("Basic ") else {
+        return field.value.clone();
+    };
+
+    let creds = credentials.trim();
+    if is_base64(creds) {
+        return field.value.clone();
+    }
+
+    // Plain-text credentials, auto-encode.
+    // Accept both "user:passwd" and "user passwd" formats.
+    let plain: String = creds.replace(' ', ":");
+    let encoded = base64_encode(plain.as_bytes());
+    format!("Basic {}", encoded)
+}
+
+/// Returns `true` if `s` consists entirely of base64 URL-safe characters.
+fn is_base64(s: &str) -> bool {
+    s.bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b == b'+' || b == b'/' || b == b'=')
 }
 
 fn extract_headers(header_map: &http::HeaderMap) -> HashMap<String, String> {
@@ -392,20 +436,17 @@ fn urlencode(s: &str) -> String {
     result
 }
 
-/// Build application/x-www-form-urlencoded body from form fields.
-fn build_url_encoded_body(form_data: &[crate::models::FormField]) -> String {
-    form_data
+fn build_url_encoded_body(fields: &[ResolvedFormField]) -> String {
+    fields
         .iter()
-        .filter(|f| f.enabled && !f.key.is_empty())
+        .filter(|f| !f.key.is_empty())
         .map(|f| format!("{}={}", urlencode(&f.key), urlencode(&f.value)))
         .collect::<Vec<_>>()
         .join("&")
 }
 
-/// Build multipart/form-data body from form fields.
-/// Returns (request_with_headers, body_bytes).
 async fn build_multipart_body(
-    form_data: &[crate::models::FormField],
+    fields: &[ResolvedFormField],
 ) -> Result<(http::Request<()>, Vec<u8>), String> {
     let boundary = format!(
         "----BeepFormBoundary{:x}",
@@ -417,8 +458,8 @@ async fn build_multipart_body(
 
     let mut body = Vec::new();
 
-    for field in form_data.iter().filter(|f| f.enabled && !f.key.is_empty()) {
-        let is_file = field.field_type == "file";
+    for field in fields.iter().filter(|f| !f.key.is_empty()) {
+        let is_file = field.field_type == FormFieldType::File;
         body.extend_from_slice(b"--");
         body.extend_from_slice(boundary.as_bytes());
         body.extend_from_slice(b"\r\n");
@@ -459,8 +500,7 @@ async fn build_multipart_body(
             };
             body.extend_from_slice(b"Content-Type: ");
             body.extend_from_slice(ct.as_bytes());
-            body.extend_from_slice(b"\r\n");
-            body.extend_from_slice(b"\r\n");
+            body.extend_from_slice(b"\r\n\r\n");
             body.extend_from_slice(&file_data);
         } else {
             body.extend_from_slice(b"\r\n");
@@ -482,7 +522,6 @@ async fn build_multipart_body(
     Ok((req, body))
 }
 
-/// Escape special characters for a quoted-string in an HTTP header value
 fn escape_quoted_string(s: &str) -> String {
     s.replace('\\', "\\\\")
         .replace('"', "\\\"")
@@ -516,4 +555,136 @@ fn base64_encode(data: &[u8]) -> String {
     }
 
     result
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_headers_not_empty() {
+        let headers = default_headers();
+        assert!(!headers.is_empty());
+        assert!(headers.iter().any(|(k, _)| *k == "Accept"));
+    }
+
+    #[test]
+    fn test_merge_no_duplicate_auto_headers() {
+        // Simulates the GUI sending parsed headers with auto defaults.
+        let headers = vec![
+            HeaderField {
+                key: "Accept".into(),
+                value: "*/*".into(),
+                enabled: true,
+                auto: true,
+            },
+            HeaderField {
+                key: "Accept-Encoding".into(),
+                value: "gzip, deflate, br".into(),
+                enabled: true,
+                auto: true,
+            },
+            HeaderField {
+                key: "User-Agent".into(),
+                value: "beep/0.1.0".into(),
+                enabled: true,
+                auto: true,
+            },
+        ];
+        let merged = merge_headers(&headers);
+        // Each key should appear exactly once
+        let accept_count = merged
+            .iter()
+            .filter(|h| h.key.eq_ignore_ascii_case("accept"))
+            .count();
+        let enc_count = merged
+            .iter()
+            .filter(|h| h.key.eq_ignore_ascii_case("accept-encoding"))
+            .count();
+        assert_eq!(accept_count, 1, "Accept header should not be duplicated");
+        assert_eq!(
+            enc_count, 1,
+            "Accept-Encoding header should not be duplicated"
+        );
+        let ua_count = merged
+            .iter()
+            .filter(|h| h.key.eq_ignore_ascii_case("user-agent"))
+            .count();
+        assert_eq!(ua_count, 1, "User-Agent header should not be duplicated");
+    }
+
+    #[test]
+    fn test_base64_roundtrip() {
+        let data = b"hello world";
+        let encoded = base64_encode(data);
+        // Basic sanity: base64 output length is multiple of 4
+        assert_eq!(encoded.len() % 4, 0);
+    }
+
+    #[test]
+    fn test_resolve_basic_auth_plain() {
+        let field = HeaderField {
+            key: "Authorization".into(),
+            value: "Basic user:passwd".into(),
+            enabled: true,
+            auto: false,
+        };
+        let result = resolve_basic_auth(&field);
+        assert!(result.starts_with("Basic "));
+        assert_ne!(result, "Basic user:passwd");
+    }
+
+    #[test]
+    fn test_resolve_basic_auth_already_encoded() {
+        let encoded = base64_encode(b"user:passwd");
+        let field = HeaderField {
+            key: "Authorization".into(),
+            value: format!("Basic {}", encoded),
+            enabled: true,
+            auto: false,
+        };
+        let result = resolve_basic_auth(&field);
+        assert_eq!(result, field.value);
+    }
+
+    #[test]
+    fn test_resolve_basic_auth_space_separated() {
+        let field = HeaderField {
+            key: "Authorization".into(),
+            value: "Basic user passwd".into(),
+            enabled: true,
+            auto: false,
+        };
+        let result = resolve_basic_auth(&field);
+        assert!(result.starts_with("Basic "));
+        assert_ne!(result, "Basic user passwd");
+    }
+
+    #[test]
+    fn test_resolve_basic_auth_bearer_untouched() {
+        let field = HeaderField {
+            key: "Authorization".into(),
+            value: "Bearer token123".into(),
+            enabled: true,
+            auto: false,
+        };
+        let result = resolve_basic_auth(&field);
+        assert_eq!(result, "Bearer token123");
+    }
+
+    #[test]
+    fn test_resolve_basic_auth_non_auth_header() {
+        let field = HeaderField {
+            key: "Content-Type".into(),
+            value: "application/json".into(),
+            enabled: true,
+            auto: false,
+        };
+        let result = resolve_basic_auth(&field);
+        assert_eq!(result, "application/json");
+    }
 }

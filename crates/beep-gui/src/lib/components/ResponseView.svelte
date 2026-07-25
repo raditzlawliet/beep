@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { RequestResult } from "$lib/types";
+    import type { HttpResult } from "$lib/types";
     import StatusBadge from "$lib/components/StatusBadge.svelte";
     import ResponseBodyTab from "$lib/components/tabs/ResponseBodyTab.svelte";
     import ResponseHeadersTab from "$lib/components/tabs/ResponseHeadersTab.svelte";
@@ -7,7 +7,7 @@
     import { UnplugIcon } from "@lucide/svelte";
 
     interface Props {
-        result: RequestResult | null;
+        result: HttpResult | null;
         loading: boolean;
         error: string | null;
     }

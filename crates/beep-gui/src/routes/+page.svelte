@@ -1,8 +1,8 @@
 <script lang="ts">
-    import type { HttpRequest, Tab, ProjectNode, ParsedRequest, HistoryEntrySummary } from "$lib/types";
+    import type { ParsedRequest, ParsedFileVariable, Tab, ProjectNode, HistoryEntrySummary } from "$lib/types";
     import { emptyParsedRequest, isHttpFile } from "$lib/types";
     import { request, history, app, project, httpFile } from "$lib/app-state.svelte";
-    import { httpRequestToContent } from "$lib/http-file-utils";
+    import { parsedRequestToContent } from "$lib/http-file-utils";
     import { invoke } from "@tauri-apps/api/core";
     import { open, save, message } from "@tauri-apps/plugin-dialog";
     import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -65,7 +65,7 @@
         const id = `__untitled_${untitledCounter}__`;
         untitledCounter++;
         const tab = createHttpTab(id, `Untitled-${untitledCounter - 1}.http`, undefined, true);
-        tab.content = "### New Request\nGET https://example.com\n";
+        tab.content = "### New Request\nGET https://httpbingo.org/get\n";
         tab.originalContent = tab.content; // Purpose: untitled tab can be treat as unchanged save
         return tab;
     }
@@ -590,12 +590,12 @@
 
     // -- Request / Send
 
-    async function handleSend(req: HttpRequest) {
+    async function handleSend(req: ParsedRequest, fileVars: ParsedFileVariable[] = []) {
         sending = true;
         reqError = null;
         const sendTabId = activeTabId;
         try {
-            await request.send(req);
+            await request.send(req, fileVars);
             // Save response to the active tab so each tab has its own response.
             const tab = findTab(sendTabId);
             if (tab) tab.lastResult = request.result;
@@ -654,7 +654,7 @@
                 if (tempIdx !== -1) tabs.splice(tempIdx, 1);
             }
 
-            const content = httpRequestToContent(request.current);
+            const content = parsedRequestToContent(request.current);
             tabs.push({
                 id, type: "http-file" as const,
                 label: `${summary.method} ${summary.url.slice(0, 50)}.http`,

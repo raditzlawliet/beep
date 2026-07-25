@@ -1,12 +1,11 @@
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
-use beep_core::{HttpClient, RequestHistory};
+use beep_core::RequestHistory;
 use notify::RecommendedWatcher;
 use serde::Serialize;
 
 pub struct AppState {
-    pub client: HttpClient,
-    pub history: Mutex<RequestHistory>,
+    pub history: Arc<Mutex<RequestHistory>>,
     pub watcher: Mutex<Option<RecommendedWatcher>>,
 }
 

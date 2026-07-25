@@ -1,34 +1,43 @@
-//! Request history management
+//! Request history management.
 
-use crate::models::{HttpRequest, RequestResult};
+use crate::exec::http::HttpResult;
+use crate::executable::ExecutableRequest;
+use crate::http_parser::ParsedRequest;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 
-/// Lightweight summary for the sidebar - no request/response bodies.
+/// Lightweight summary for the sidebar, no request/response bodies.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HistoryEntrySummary {
     pub id: u64,
     pub method: String,
     pub url: String,
     pub status: Option<u16>,
-    pub size: Option<crate::models::Size>,
+    pub size: Option<crate::exec::http::Size>,
     pub error: Option<String>,
     pub timestamp: String,
     pub label: Option<String>,
 }
 
-/// A stored request in history with metadata and the latest result.
+/// A stored request in history with source, compiled form, and result.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HistoryEntry {
     pub id: u64,
-    pub request: HttpRequest,
-    pub result: Option<RequestResult>,
+    /// The parsed source request (for replay / display).
+    pub parsed: ParsedRequest,
+    /// The compiled executable that was sent.
+    pub executable: ExecutableRequest,
+    /// The execution result, if successful.
+    pub result: Option<HttpResult>,
+    /// Error message, if execution failed.
     pub error: Option<String>,
+    /// Timestamp of the request.
     pub timestamp: String,
+    /// Optional user label.
     pub label: Option<String>,
 }
 
-/// Manages request history
+/// Manages request history.
 pub struct RequestHistory {
     entries: VecDeque<HistoryEntry>,
     max_size: usize,
@@ -50,38 +59,38 @@ impl RequestHistory {
         }
     }
 
-    /// Adds a request to history, optionally with its result and error.
-    pub fn add(
+    /// Add a request from the engine pipeline (parsed + executable + result).
+    pub fn add_parsed(
         &mut self,
-        request: HttpRequest,
-        result: Option<RequestResult>,
+        parsed: ParsedRequest,
+        executable: ExecutableRequest,
+        result: Option<HttpResult>,
         error: Option<String>,
         label: Option<String>,
     ) {
         let entry = HistoryEntry {
             id: self.next_id,
-            request,
+            parsed,
+            executable,
             result,
             error,
             timestamp: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
             label,
         };
         self.next_id += 1;
-
         self.entries.push_back(entry);
 
-        // Remove oldest entry if we exceed max size
         if self.entries.len() > self.max_size {
             self.entries.pop_front();
         }
     }
 
-    /// Clears all history
+    /// Clears all history.
     pub fn clear(&mut self) {
         self.entries.clear();
     }
 
-    /// Removes a specific entry by id. Returns true if an entry was removed.
+    /// Removes a specific entry by id.
     pub fn remove_by_id(&mut self, id: u64) -> bool {
         if let Some(pos) = self.entries.iter().position(|e| e.id == id) {
             self.entries.remove(pos);
@@ -91,14 +100,14 @@ impl RequestHistory {
         }
     }
 
-    /// Returns lightweight summaries of all entries (for sidebar display).
+    /// Lightweight summaries for sidebar display.
     pub fn get_all_summaries(&self) -> Vec<HistoryEntrySummary> {
         self.entries
             .iter()
             .map(|e| HistoryEntrySummary {
                 id: e.id,
-                method: e.request.method.to_string(),
-                url: e.request.url.clone(),
+                method: e.executable.method.to_string(),
+                url: e.executable.url.clone(),
                 status: e.result.as_ref().map(|r| r.response.status),
                 size: e.result.as_ref().map(|r| r.response.size),
                 error: e.error.clone(),
@@ -113,7 +122,6 @@ impl RequestHistory {
         self.entries.iter().find(|e| e.id == id)
     }
 
-    /// Returns the number of entries in history
     pub fn len(&self) -> usize {
         self.entries.len()
     }
@@ -132,14 +140,25 @@ impl Default for RequestHistory {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::HttpMethod;
+    use crate::types::HttpMethod;
 
     #[test]
     fn test_history_add_and_retrieve() {
         let mut history = RequestHistory::new();
-        let req = HttpRequest::new("https://api.example.com".to_string(), HttpMethod::Get);
+        let parsed = ParsedRequest::default();
+        let executable = ExecutableRequest {
+            url: "https://api.example.com".into(),
+            method: HttpMethod::Get,
+            ..Default::default()
+        };
 
-        history.add(req, None, None, Some("Test Request".to_string()));
+        history.add_parsed(
+            parsed,
+            executable,
+            None,
+            None,
+            Some("Test Request".to_string()),
+        );
         assert_eq!(history.len(), 1);
 
         let entries = history.get_all_summaries();
@@ -154,10 +173,15 @@ mod tests {
         let mut history = RequestHistory::with_capacity(3);
 
         for i in 0..5 {
-            let req = HttpRequest::new(format!("https://api.example.com/{}", i), HttpMethod::Get);
-            history.add(req, None, None, None);
+            let parsed = ParsedRequest::default();
+            let executable = ExecutableRequest {
+                url: format!("https://api.example.com/{}", i),
+                method: HttpMethod::Get,
+                ..Default::default()
+            };
+            history.add_parsed(parsed, executable, None, None, None);
         }
 
-        assert_eq!(history.len(), 3); // Should only keep last 3
+        assert_eq!(history.len(), 3);
     }
 }

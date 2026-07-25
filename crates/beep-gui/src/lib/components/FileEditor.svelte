@@ -56,7 +56,7 @@
 
     interface Props {
         value: string;
-        language?: "text" | "json" | "html" | "xml";
+        language?: "text" | "json" | "html" | "xml" | "http";
         onchange?: (value: string) => void;
         oncursorchange?: (pos: number) => void;
         initialCursorPos?: number;
@@ -84,7 +84,7 @@
 
     function createEditor(
         initialValue: string,
-        lang: "text" | "json" | "html" | "xml",
+        lang: "text" | "json" | "html" | "xml" | "http",
         wrap: boolean,
     ) {
         const runGutter = gutter({

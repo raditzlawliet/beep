@@ -1,9 +1,9 @@
 //! Tauri commands for handling HTTP file parsing, serialization, and mutations.
-use beep_core::{FileVariable, ParseHttpFileResult, ParsedRequest, http_parser};
+use beep_core::{ParsedFileVariable, ParsedHttpFile, ParsedRequest, http_parser};
 
 #[tauri::command]
-pub fn http_parse(content: String) -> ParseHttpFileResult {
-    http_parser::parse_http_file(&content)
+pub fn http_parse(content: String) -> ParsedHttpFile {
+    http_parser::parse(&content)
 }
 
 #[tauri::command]
@@ -12,12 +12,12 @@ pub fn http_serialize_req(req: ParsedRequest) -> String {
 }
 
 #[tauri::command]
-pub fn http_serialize_vars(variables: Vec<FileVariable>) -> String {
+pub fn http_serialize_vars(variables: Vec<ParsedFileVariable>) -> String {
     http_parser::serialize_file_variables(&variables)
 }
 
 #[tauri::command]
-pub fn http_update_vars(content: String, variables: Vec<FileVariable>) -> String {
+pub fn http_update_vars(content: String, variables: Vec<ParsedFileVariable>) -> String {
     http_parser::apply_variable_update(&content, &variables)
 }
 

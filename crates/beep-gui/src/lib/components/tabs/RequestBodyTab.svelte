@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { FormField } from "$lib/types";
+    import type { ParsedFormField } from "$lib/types";
     import CodeEditor from "$lib/components/CodeEditor.svelte";
     import RequestUrlEncodedTab from "./RequestUrlEncodedTab.svelte";
     import RequestMultipartTab from "./RequestMultipartTab.svelte";
@@ -9,13 +9,13 @@
     interface Props {
         bodyMode: BodyMode;
         rawBodyContent: string;
-        formUrlEncoded: FormField[];
-        formMultipart: FormField[];
+        formUrlEncoded: ParsedFormField[];
+        formMultipart: ParsedFormField[];
         onBodyModeChange: (mode: BodyMode) => void;
         onRawBodyChange: (value: string) => void;
         onBeautify: () => Promise<string>;
-        onFormUrlEncodedChange: (fields: FormField[]) => void;
-        onFormMultipartChange: (fields: FormField[]) => void;
+        onFormUrlEncodedChange: (fields: ParsedFormField[]) => void;
+        onFormMultipartChange: (fields: ParsedFormField[]) => void;
     }
 
     let {

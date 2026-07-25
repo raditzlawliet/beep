@@ -1,16 +1,16 @@
 <script lang="ts">
-    import type { FormField } from "$lib/types";
+    import type { ParsedFormField } from "$lib/types";
     import DeleteRowButton from "$lib/components/buttons/DeleteRowButton.svelte";
     import AddRowButton from "$lib/components/buttons/AddRowButton.svelte";
 
     interface Props {
-        initialValue: FormField[];
-        onchange: (fields: FormField[]) => void;
+        initialValue: ParsedFormField[];
+        onchange: (fields: ParsedFormField[]) => void;
     }
 
     let { initialValue = [], onchange }: Props = $props();
 
-    type Row = { key: string; value: string; enabled: boolean };
+    type Row = { key: string; value: string; enabled: boolean; isInline: boolean };
     let rows = $state<Row[]>([]);
 
     // Track last synced value to detect external changes (history load).
@@ -24,13 +24,14 @@
             key: f.key,
             value: f.value,
             enabled: f.enabled,
+            isInline: f.is_inline,
         }));
     }
 
     function emit() {
-        const out: FormField[] = [];
+        const out: ParsedFormField[] = [];
         for (const r of rows) {
-            out.push({ key: r.key.trim(), value: r.value, enabled: r.enabled, field_type: "text", content_type: "" });
+            out.push({ key: r.key.trim(), value: r.value, enabled: r.enabled, field_type: "text", content_type: "", is_inline: r.isInline });
         }
         onchange(out);
     }

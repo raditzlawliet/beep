@@ -1,13 +1,15 @@
 //! Surgical edit operations on .http files.
 
-use super::parse::parse_http_file;
-use super::serialize::{
+use super::parser::parse;
+use super::serializer::{
     serialize_body_section, serialize_file_variables, serialize_headers_section,
     serialize_query_section, serialize_request_block, serialize_request_line,
 };
 use super::types::*;
 
-// --- Newline helpers
+// ---------------------------------------------------------------------------
+// Newline helpers
+// ---------------------------------------------------------------------------
 
 /// Detect the line-ending convention used in the file content.
 fn detect_newline(content: &str) -> &'static str {
@@ -27,7 +29,9 @@ fn normalize_newlines(s: &str, target: &str) -> String {
     }
 }
 
-// --- Change detection
+// ---------------------------------------------------------------------------
+// Change detection
+// ---------------------------------------------------------------------------
 
 #[derive(Default)]
 struct ChangedSections {
@@ -65,10 +69,12 @@ fn detect_changed_sections(old: &ParsedRequest, new: &ParsedRequest) -> ChangedS
     }
 }
 
-// --- Variable update
+// ---------------------------------------------------------------------------
+// Variable update
+// ---------------------------------------------------------------------------
 
 /// Replace file-level @var declarations while preserving all other content.
-pub fn apply_variable_update(content: &str, variables: &[FileVariable]) -> String {
+pub fn apply_variable_update(content: &str, variables: &[ParsedFileVariable]) -> String {
     // Split at the first request block.
     let nl = detect_newline(content);
 
@@ -116,16 +122,17 @@ pub fn apply_variable_update(content: &str, variables: &[FileVariable]) -> Strin
     result
 }
 
-// --- Surgical request update
+// ---------------------------------------------------------------------------
+// Surgical request update
+// ---------------------------------------------------------------------------
 
 /// Apply a surgical update to a single request block.
 ///
 /// Uses region offsets to replace only the sections that actually changed.
-/// Comments, formatting, and any unrecognized content in unchanged sections
-/// are preserved verbatim.
+/// Comments, formatting, and any unrecognized content in unchanged sections are preserved verbatim.
 /// Ugh... so much...
 pub fn apply_request_update(content: &str, request_idx: usize, updated: &ParsedRequest) -> String {
-    let parse_result = parse_http_file(content);
+    let parse_result = parse(content);
     if request_idx >= parse_result.requests.len() {
         return content.to_string();
     }
@@ -159,7 +166,7 @@ pub fn apply_request_update(content: &str, request_idx: usize, updated: &ParsedR
     // 1. Pre area (title + everything between title and request line)
     out.push_str(&content[old_req.block_region.start..old_req.request_line_region.start]);
 
-    // 2. Request line
+    // 2. ParsedRequest line
     if changed.request_line {
         out.push_str(&normalize_newlines(&serialize_request_line(updated), nl));
     } else {
@@ -217,7 +224,9 @@ pub fn apply_request_update(content: &str, request_idx: usize, updated: &ParsedR
     out
 }
 
-// --- Append
+// ---------------------------------------------------------------------------
+// Append
+// ---------------------------------------------------------------------------
 
 /// Append a new request block to an .http file.
 pub fn append_request_block(content: &str, new_request: &ParsedRequest) -> String {

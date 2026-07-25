@@ -13,16 +13,9 @@ export type Auth =
   | { type: "None" }
   | { type: "Basic"; username: string; password: string }
   | { type: "Bearer"; token: string }
-  | { type: "ApiKey"; key: string; value: string; add_to: string };
+  | { type: "Custom"; value: string };
 
-export interface FormField {
-  key: string;
-  value: string;
-  enabled: boolean;
-  field_type: string;
-  content_type: string;
-  is_inline?: boolean;
-}
+// --- Core types (matches Rust types::*) ---
 
 export interface HeaderField {
   key: string;
@@ -35,88 +28,9 @@ export interface QueryField {
   key: string;
   value: string;
   enabled: boolean;
-  is_inline?: boolean;
 }
 
-export interface HttpRequest {
-  url: string;
-  method: HttpMethod;
-  headers: HeaderField[];
-  query_params: QueryField[];
-  body: string | null;
-  auth: Auth;
-  body_mode?: string;
-  raw_body?: string | null;
-  form_urlencoded?: FormField[];
-  form_multipart?: FormField[];
-  http_version?: HttpVersion;
-}
-
-export interface Size {
-  headers: number;
-  body: number;
-}
-
-export interface AppConstants {
-  version: string;
-  platform: string;
-  default_headers: [string, string][];
-}
-
-export interface SentRequest {
-  url: string;
-  method: string;
-  headers: [string, string][];
-  body: string | null;
-  http_version: string;
-  size: Size | null;
-}
-
-export interface HttpResponse {
-  status: number;
-  headers: Record<string, string>;
-  body: string;
-  elapsed_ms: number;
-  size: Size;
-  body_encoding?: "utf8" | "base64";
-}
-
-export interface RequestResult {
-  request: SentRequest;
-  response: HttpResponse;
-}
-
-export interface HistoryEntrySummary {
-  id: number;
-  method: string;
-  url: string;
-  status: number | null;
-  size: Size | null;
-  error: string | null;
-  timestamp: string;
-  label: string | null;
-}
-
-export interface HistoryEntry {
-  id: number;
-  request: HttpRequest;
-  result: RequestResult | null;
-  error: string | null;
-  timestamp: string;
-  label: string | null;
-}
-
-export interface ProjectNode {
-  name: string;
-  path: string;
-  is_dir: boolean;
-  children?: ProjectNode[];
-}
-
-// Tab types
-
-export type TabType = "http-file" | "file";
-export type ViewMode = "code" | "file" | "request";
+// --- Parser types (matches Rust http_parser::*) ---
 
 export interface ParsedFileVariable {
   key: string;
@@ -127,6 +41,7 @@ export interface ParsedHeaderField {
   key: string;
   value: string;
   enabled: boolean;
+  auto: boolean;
 }
 
 export interface ParsedQueryField {
@@ -160,21 +75,101 @@ export interface ParsedRequest {
   body_mode: string | null;
   form_urlencoded: ParsedFormField[];
   form_multipart: ParsedFormField[];
+  pre_script: string | null;
+  post_script: string | null;
+  http_version: string | null;
   //
   block_region: ParsedRegion;
   request_line_region: ParsedRegion;
   query_region: ParsedRegion;
   headers_region: ParsedRegion;
   body_region: ParsedRegion;
-  pre_script: string | null;
-  post_script: string | null;
-  http_version: string | null;
 }
 
-export interface ParsedHttpFileResult {
+export interface HttpFile {
   variables: ParsedFileVariable[];
   requests: ParsedRequest[];
 }
+
+// --- Execution types (matches Rust exec::http::*) ---
+
+export interface Size {
+  headers: number;
+  body: number;
+}
+
+export interface SentRequest {
+  url: string;
+  method: string;
+  headers: [string, string][];
+  body: string | null;
+  http_version: string;
+  size: Size | null;
+}
+
+export interface HttpResponse {
+  status: number;
+  headers: Record<string, string>;
+  body: string;
+  elapsed_ms: number;
+  size: Size;
+  body_encoding?: "utf8" | "base64";
+}
+
+export interface HttpResult {
+  request: SentRequest;
+  response: HttpResponse;
+}
+
+// --- History types (matches Rust history::*) ---
+
+export interface HistoryEntrySummary {
+  id: number;
+  method: string;
+  url: string;
+  status: number | null;
+  size: Size | null;
+  error: string | null;
+  timestamp: string;
+  label: string | null;
+}
+
+export interface HistoryEntry {
+  id: number;
+  parsed: ParsedRequest;
+  executable: {
+    url: string;
+    method: HttpMethod;
+    http_version: HttpVersion;
+    headers: HeaderField[];
+    query_params: QueryField[];
+    body: any;
+  };
+  result: HttpResult | null;
+  error: string | null;
+  timestamp: string;
+  label: string | null;
+}
+
+// --- App types ---
+
+export interface AppConstants {
+  version: string;
+  platform: string;
+  default_headers: [string, string][];
+}
+
+export interface ProjectNode {
+  name: string;
+  path: string;
+  is_dir: boolean;
+  children?: ProjectNode[];
+}
+
+// --- Tab types ---
+
+export type TabType = "http-file" | "file";
+export type ViewMode = "code" | "file" | "request";
 
 export interface Tab {
   id: string;
@@ -194,47 +189,34 @@ export interface Tab {
   // sub-tab state preservation
   requestFormTab?: string;
   fileOverviewTab?: string;
-  lastResult?: RequestResult | null;
+  lastResult?: HttpResult | null;
   // Timestamp of last activation (for MRU tab switcher ordering)
   lastActiveAt?: number;
 }
 
-export function defaultRequest(): HttpRequest {
-  return {
-    url: "",
-    method: "GET",
-    headers: [],
-    query_params: [],
-    body: null,
-    auth: { type: "None" },
-    body_mode: "none",
-    raw_body: null,
-    form_urlencoded: [],
-    form_multipart: [],
-    http_version: "Auto",
-  };
-}
+// --- Helpers ---
 
 export function emptyParsedRequest(): ParsedRequest {
   return {
     title: "Untitled",
     method: "GET",
-    url: "https://example.com",
+    url: "https://httpbingo.org/get",
     headers: [],
     query_params: [],
     body: null,
     body_mode: "none",
     form_urlencoded: [],
     form_multipart: [],
+    pre_script: null,
+    post_script: null,
+    http_version: null,
+    
     //
     block_region: { start: 0, end: 0 },
     request_line_region: { start: 0, end: 0 },
     query_region: { start: 0, end: 0 },
     headers_region: { start: 0, end: 0 },
     body_region: { start: 0, end: 0 },
-    pre_script: null,
-    post_script: null,
-    http_version: null,
   };
 }
 

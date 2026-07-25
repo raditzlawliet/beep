@@ -1,13 +1,13 @@
 <script lang="ts">
-    import type { FormField } from "$lib/types";
+    import type { ParsedFormField } from "$lib/types";
     import { ChevronDownIcon, CheckIcon, PaperclipIcon, UploadIcon, XIcon } from "@lucide/svelte";
     import DeleteRowButton from "$lib/components/buttons/DeleteRowButton.svelte";
     import AddRowButton from "$lib/components/buttons/AddRowButton.svelte";
     import { open } from "@tauri-apps/plugin-dialog";
 
     interface Props {
-        initialValue: FormField[];
-        onchange: (fields: FormField[]) => void;
+        initialValue: ParsedFormField[];
+        onchange: (fields: ParsedFormField[]) => void;
     }
 
     let { initialValue = [], onchange }: Props = $props();
@@ -18,7 +18,8 @@
         enabled: boolean;
         fieldType: "text" | "file";
         contentType: string;
-        fileName: string; // display name for file picker
+        fileName: string;
+        isInline: boolean;
     };
     let rows = $state<Row[]>([]);
     let dragOverIdx = $state<number | null>(null);
@@ -55,11 +56,12 @@
             fileName: f.field_type === "file" && f.value
                 ? f.value.split(/[/\\]/).pop() ?? f.value
                 : "",
+            isInline: f.is_inline,
         }));
     }
 
     function emit() {
-        const out: FormField[] = [];
+        const out: ParsedFormField[] = [];
         for (const r of rows) {
             out.push({
                 key: r.key.trim(),
@@ -67,6 +69,7 @@
                 enabled: r.enabled,
                 field_type: r.fieldType,
                 content_type: r.contentType,
+                is_inline: r.isInline,
             });
         }
         onchange(out);
@@ -96,7 +99,7 @@
     }
 
     function addRow() {
-        rows = [...rows, { key: "", value: "", enabled: true, fieldType: "text", contentType: "", fileName: "" }];
+        rows = [...rows, { key: "", value: "", enabled: true, fieldType: "text", contentType: "", fileName: "", isInline: true }];
         emit();
     }
 

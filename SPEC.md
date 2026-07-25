@@ -120,6 +120,64 @@ Authorization: Bearer {{token}}
 
 In the example above, only `Accept` and `Authorization` are sent. `X-Debug`, `X-Forwarded-For`, and `Cache-Control` are disabled and excluded from the request.
 
+### 5.1.1 Disabling Auto-Generated Headers
+
+Beep sends several auto-generated headers on every request by settings (`Accept`, `Accept-Encoding`, `User-Agent`, `Connection`). To disable a specific auto-generated header via code, use the `//- @headerAuto <Key>` directive:
+
+```http
+### Request with disabled auto headers
+GET https://api.example.com/data HTTP/1.1
+//- @headerAuto Connection
+//- @headerAuto Accept-Encoding
+Accept: text/html
+```
+
+In the example above:
+- `Connection` is excluded from the request.
+- `Accept-Encoding` is excluded from the request.
+- `Accept: text/html` overrides the default `Accept: */*`.
+- The remaining auto-generated headers (`User-Agent`) are sent as usual.
+
+When re-enabled in the UI, the `//- @headerAuto Key` line is removed from the file.
+
+### 5.2 Authorization
+
+The `Authorization` header is the single source of truth for auth. Beep detects common schemes and provides a dedicated Auth tab in the GUI for editing. Credentials are stored as plain text in the source file; base64 encoding for Basic auth happens transparently at execution time.
+
+#### 5.2.1 Basic Auth
+
+Basic authentication credentials are stored as plain text (`user:passwd`). Beep auto-encodes them to base64 at execution time. Three formats are accepted:
+
+```http
+### Plain-text user:passwd - auto base64-encoded at execution
+GET https://httpbin.org/basic-auth/user/passwd HTTP/1.1
+Authorization: Basic user:passwd
+
+### Pre-encoded base64 - passed through as-is
+Authorization: Basic dXNlcjpwYXNzd2Q=
+
+### Space-separated credentials
+Authorization: Basic user passwd
+```
+
+#### 5.2.2 Bearer Token
+
+Bearer tokens are passed through directly with no additional processing.
+
+```http
+GET https://api.example.com/me HTTP/1.1
+Authorization: Bearer {{token}}
+```
+
+#### 5.2.3 Other Schemes
+
+Unknown schemes are sent verbatim as an `Authorization` header.
+
+```http
+GET https://api.example.com/data HTTP/1.1
+Authorization: CustomScheme credentials-here
+```
+
 ---
 
 ## 6. Request Body

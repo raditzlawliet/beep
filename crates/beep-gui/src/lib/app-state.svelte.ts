@@ -1,16 +1,15 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AppConstants,
-  HttpRequest,
   HistoryEntry,
   HistoryEntrySummary,
   ParsedRequest,
   ParsedFileVariable,
-  ParsedHttpFileResult,
+  HttpFile,
   ProjectNode,
-  RequestResult,
+  HttpResult,
 } from "./types";
-import { defaultRequest } from "./types";
+import { emptyParsedRequest } from "./types";
 
 function mergeChildren(
   tree: ProjectNode[],
@@ -50,8 +49,8 @@ function mergeChildren(
 }
 
 // Internal state
-let _request = $state<HttpRequest>(defaultRequest());
-let _result = $state<RequestResult | null>(null);
+let _request = $state<ParsedRequest>(emptyParsedRequest());
+let _result = $state<HttpResult | null>(null);
 let _history = $state<HistoryEntrySummary[]>([]);
 let _constants = $state<AppConstants | null>(null);
 let _projectPath = $state<string | null>(null);
@@ -80,10 +79,11 @@ export const request = {
     return _result?.response ?? null;
   },
 
-  async send(req: HttpRequest): Promise<RequestResult> {
+  async send(req: ParsedRequest, fileVars: ParsedFileVariable[] = []): Promise<HttpResult> {
     try {
-      const res = await invoke<RequestResult>("execute_request", {
+      const res = await invoke<HttpResult>("execute_request", {
         payload: req,
+        fileVars,
       });
       _result = res;
       history.refresh().catch(() => {});
@@ -95,23 +95,21 @@ export const request = {
   },
 
   // Update the draft request (called on every form edit).
-  update(req: HttpRequest) {
+  update(req: ParsedRequest) {
     _request = req;
   },
 
-  // Reset the form to a blank request.
   reset() {
-    _request = defaultRequest();
+    _request = emptyParsedRequest();
     _result = null;
   },
 
-  // Populate the form from a history entry.
   async loadFromHistory(summary: HistoryEntrySummary) {
     try {
       const entry = await invoke<HistoryEntry>("get_history_entry", {
         id: summary.id,
       });
-      _request = { ...entry.request };
+      _request = { ...entry.parsed };
       _result = entry.result ? { ...entry.result } : null;
     } catch (e) {
       throw e;
@@ -221,8 +219,8 @@ export const project = {
 
 // http-file domain - parse, serialize, update .http file content
 export const httpFile = {
-  async parse(content: string): Promise<ParsedHttpFileResult> {
-    return invoke<ParsedHttpFileResult>("http_parse", { content });
+  async parse(content: string): Promise<HttpFile> {
+    return invoke<HttpFile>("http_parse", { content });
   },
 
   async updateVars(

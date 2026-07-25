@@ -1,15 +1,14 @@
 <script lang="ts">
     import type {
         Tab,
-        HttpRequest,
         ParsedRequest,
         ParsedFileVariable,
         ViewMode,
-        RequestResult,
+        HttpResult,
     } from "$lib/types";
     import { emptyParsedRequest } from "$lib/types";
     import { app, httpFile, project } from "$lib/app-state.svelte";
-    import { parsedToHttpRequest, httpRequestToParsed } from "$lib/http-file-utils";
+    import { parsedToFormRequest, formRequestToParsed } from "$lib/http-file-utils";
     import MainEditorToolbar from "$lib/components/MainEditorToolbar.svelte";
     import FileEditor from "$lib/components/FileEditor.svelte";
     import RequestForm from "$lib/components/RequestForm.svelte";
@@ -21,10 +20,10 @@
         tab: Tab;
         sending: boolean;
         reqError: string | null;
-        result: RequestResult | null;
+        result: HttpResult | null;
         onContentChange: (newContent: string) => void;
         onTabStateChange: (state: Partial<Tab>) => void;
-        onSend: (req: HttpRequest) => void;
+        onSend: (req: ParsedRequest, fileVars: ParsedFileVariable[]) => void;
         requestHeight: number;
         onSplitterStart: (e: MouseEvent) => void;
     }
@@ -46,9 +45,16 @@
     let activeRequestIdx = $state(0);
     let viewMode = $state<ViewMode>("request");
     let cursorPos = $state<number | undefined>(undefined);
-    let formRequest = $state<HttpRequest>(parsedToHttpRequest(undefined));
+    let formRequest = $state<ParsedRequest>(parsedToFormRequest(undefined));
     let requestFormTab = $state<string>("params");
     let fileOverviewTab = $state<string>("requests");
+    let editorLanguage = $derived(detectLanguage(tab.filePath ?? "", tab.content));
+
+    function detectLanguage(path: string, _raw: string): "text" | "http" {
+        const ext = path.split(".").pop()?.toLowerCase();
+        if (ext === "http" || ext === "rest") return "http";
+        return "text";
+    }
 
     // Run gutter dropdown
     let runDropdown = $state<{ requestIdx: number; x: number; y: number } | null>(null);
@@ -74,7 +80,7 @@
         cursorPos = tab.cursorPos;
         requestFormTab = tab.requestFormTab ?? "params";
         fileOverviewTab = tab.fileOverviewTab ?? "requests";
-        formRequest = parsedToHttpRequest(parsedRequests[activeRequestIdx]);
+        formRequest = parsedToFormRequest(parsedRequests[activeRequestIdx]);
     });
 
     // Parse content when it changes
@@ -90,7 +96,7 @@
             activeRequestIdx = 0;
             parsedRequests = [emptyParsedRequest()];
             fileVariables = [];
-            formRequest = parsedToHttpRequest(parsedRequests[0]);
+            formRequest = parsedToFormRequest(parsedRequests[0]);
             saveTabState({ viewMode, activeRequestIdx: 0, parsedRequests, fileVariables });
             return;
         }
@@ -111,7 +117,7 @@
 
             // Populate form from fresh parse.
             if (viewMode === "request") {
-                const parsed = parsedToHttpRequest(parsedRequests[activeRequestIdx]);
+                const parsed = parsedToFormRequest(parsedRequests[activeRequestIdx]);
                 // Restore display URL: inline params must show in the URL field.
                 const inline = (parsed.query_params ?? []).filter((q) => q.is_inline && q.enabled && q.key);
                 if (inline.length > 0) {
@@ -145,7 +151,7 @@
         if (found !== -1 && found !== activeRequestIdx) {
             activeRequestIdx = found;
             saveTabState({ activeRequestIdx: found });
-            formRequest = parsedToHttpRequest(parsedRequests[found]);
+            formRequest = parsedToFormRequest(parsedRequests[found]);
         }
     }
 
@@ -153,7 +159,7 @@
         activeRequestIdx = idx;
         saveTabState({ activeRequestIdx: idx });
         if (idx >= 0 && idx < parsedRequests.length) {
-            formRequest = parsedToHttpRequest(parsedRequests[idx]);
+            formRequest = parsedToFormRequest(parsedRequests[idx]);
         }
 
         // Reposition cursor to selected request's start and focus editor in code mode
@@ -179,7 +185,7 @@
         }
         viewMode = mode;
         if (mode === "request") {
-            formRequest = parsedToHttpRequest(parsedRequests[activeRequestIdx]);
+            formRequest = parsedToFormRequest(parsedRequests[activeRequestIdx]);
         } else if (mode === "code") {
             // Reposition cursor to active request's start if cursor is outside its scope
             const req = parsedRequests[activeRequestIdx];
@@ -209,7 +215,7 @@
     function handleNavigateToRequest(idx: number) {
         activeRequestIdx = idx;
         viewMode = "request";
-        formRequest = parsedToHttpRequest(parsedRequests[idx]);
+        formRequest = parsedToFormRequest(parsedRequests[idx]);
         saveTabState({ viewMode, activeRequestIdx: idx });
     }
 
@@ -227,7 +233,7 @@ async function handleVariablesUpdate(vars: ParsedFileVariable[]) {
     async function syncFormToContent() {
         const base = parsedRequests[activeRequestIdx];
         if (!base) return;
-        const updated = httpRequestToParsed(formRequest, base);
+        const updated = formRequestToParsed(formRequest, base);
         parsedRequests[activeRequestIdx] = updated;
         saveTabState({ parsedRequests });
         try {
@@ -241,16 +247,16 @@ async function handleVariablesUpdate(vars: ParsedFileVariable[]) {
         }
     }
 
-    function handleFormUpdate(req: HttpRequest) {
+    function handleFormUpdate(req: ParsedRequest) {
         formRequest = req;
         const base = parsedRequests[activeRequestIdx];
         if (!base) return;
-        const updated = httpRequestToParsed(req, base);
+        const updated = formRequestToParsed(req, base);
         parsedRequests[activeRequestIdx] = updated;
         saveTabState({ parsedRequests });
     }
 
-    function handleSend(req: HttpRequest) {
+    function handleSend(req: ParsedRequest) {
         // Only sync form to content when in request mode (form may have been edited).
         // In code/file mode, formRequest already reflects the active parsed request.
         if (viewMode === "request") {
@@ -260,10 +266,10 @@ async function handleVariablesUpdate(vars: ParsedFileVariable[]) {
         // Switch to request mode to show result when sent from code/file mode
         if (viewMode !== "request") {
             viewMode = "request";
-            formRequest = parsedToHttpRequest(parsedRequests[activeRequestIdx]);
+            formRequest = parsedToFormRequest(parsedRequests[activeRequestIdx]);
             saveTabState({ viewMode });
         }
-        onSend(req);
+        onSend(req, fileVariables ?? []);
     }
 
     // --- Run gutter ---
@@ -283,7 +289,7 @@ async function handleVariablesUpdate(vars: ParsedFileVariable[]) {
             saveTabState({ viewMode });
         }
         if (idx >= 0 && idx < parsedRequests.length) {
-            onSend(parsedToHttpRequest(parsedRequests[idx]));
+            onSend(parsedToFormRequest(parsedRequests[idx]), fileVariables ?? []);
         }
     }
 
@@ -360,7 +366,7 @@ async function handleVariablesUpdate(vars: ParsedFileVariable[]) {
         <div class="flex-1 min-h-0 overflow-hidden">
             <FileEditor
                 value={tab.content}
-                language="text"
+                language={editorLanguage}
                 wrapLines={true}
                 onchange={handleCodeChange}
                 initialCursorPos={cursorPos}

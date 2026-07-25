@@ -2,9 +2,9 @@
 //! Body bytes are filled by the caller (execute()).
 
 use async_trait::async_trait;
-use reqwest::{Request, Response};
 use reqwest_middleware::{Middleware, Next};
 
+/// Wire-level request data captured by the middleware.
 #[derive(Debug, Clone)]
 pub(crate) struct CapturedRequest {
     pub url: String,
@@ -16,16 +16,18 @@ pub(crate) struct CapturedRequest {
     pub http_version: String,
 }
 
+/// Middleware that captures the outgoing request before it hits the wire.
+/// The captured data is stored in `http::Extensions` and retrieved after the response arrives.
 pub(crate) struct BeepInspector;
 
 #[async_trait]
 impl Middleware for BeepInspector {
     async fn handle(
         &self,
-        req: Request,
+        req: reqwest::Request,
         extensions: &mut http::Extensions,
         next: Next<'_>,
-    ) -> reqwest_middleware::Result<Response> {
+    ) -> reqwest_middleware::Result<reqwest::Response> {
         let url = req.url().to_string();
         let method = req.method().to_string();
         let http_version = format!("{:?}", req.version());
@@ -56,8 +58,6 @@ impl Middleware for BeepInspector {
 
         let mut resp = next.run(req, extensions).await?;
 
-        // Use the response version (actual negotiated protocol) instead of the request version
-        // (reqwest may keep HTTP/1.1 on the object even with http2_prior_knowledge).
         let actual_version = format!("{:?}", resp.version());
         if let Some(mut captured) = extensions.remove::<CapturedRequest>() {
             captured.http_version = actual_version;
