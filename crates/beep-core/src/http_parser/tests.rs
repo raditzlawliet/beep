@@ -24,13 +24,13 @@ mod tests {
         }
     }
 
-    // =======================================================================
+    // ---------------------------------------------------------------------------
     // Parse tests
-    // =======================================================================
+    // ---------------------------------------------------------------------------
 
     #[test]
     fn test_parse_empty() {
-        let result = parse_http_file("");
+        let result = parse("");
         assert!(result.variables.is_empty());
         assert!(result.requests.is_empty());
     }
@@ -42,7 +42,7 @@ mod tests {
 GET https://api.example.com/users HTTP/1.1
 Accept: application/json
 ";
-        let result = parse_http_file(content);
+        let result = parse(content);
         assert_eq!(result.requests.len(), 1);
         assert_eq!(result.requests[0].title, "Get Users");
         assert_eq!(result.requests[0].method, "GET");
@@ -64,7 +64,7 @@ Content-Type: application/json
 
 {\"user\": \"test\"}
 ";
-        let result = parse_http_file(content);
+        let result = parse(content);
         assert_eq!(result.variables.len(), 2);
         assert_eq!(result.variables[0].key, "baseUrl");
         assert_eq!(result.variables[1].key, "token");
@@ -88,7 +88,7 @@ POST https://example.com/3 HTTP/2
 
 {\"key\": \"value\"}
 ";
-        let result = parse_http_file(content);
+        let result = parse(content);
         assert_eq!(result.requests.len(), 3);
         assert_eq!(result.requests[0].title, "First");
         assert_eq!(result.requests[1].title, "Second");
@@ -97,9 +97,9 @@ POST https://example.com/3 HTTP/2
         assert!(result.requests[2].body.is_some());
     }
 
-    // =======================================================================
+    // ---------------------------------------------------------------------------
     // Region offset tests
-    // =======================================================================
+    // ---------------------------------------------------------------------------
 
     #[test]
     fn test_region_offsets_single_request() {
@@ -108,7 +108,7 @@ POST https://example.com/3 HTTP/2
 GET https://api.example.com/users HTTP/1.1
 Accept: application/json
 ";
-        let result = parse_http_file(content);
+        let result = parse(content);
         let req = &result.requests[0];
 
         assert_eq!(req.block_region.start, 1);
@@ -128,7 +128,7 @@ Content-Type: application/json
 
 {\"a\":1}
 ";
-        let result = parse_http_file(content);
+        let result = parse(content);
         let req = &result.requests[0];
 
         assert!(!req.body_region.is_empty());
@@ -149,7 +149,7 @@ POST /second HTTP/1.1
 
 {\"x\":1}
 ";
-        let result = parse_http_file(content);
+        let result = parse(content);
         assert_eq!(result.requests.len(), 2);
 
         let r0 = &result.requests[0];
@@ -171,7 +171,7 @@ GET https://api.example.com/users HTTP/1.1
     &limit=20
 Accept: application/json
 ";
-        let result = parse_http_file(content);
+        let result = parse(content);
         let req = &result.requests[0];
 
         assert!(!req.query_region.is_empty());
@@ -180,9 +180,9 @@ Accept: application/json
         assert!(query_slice.contains("&limit=20"));
     }
 
-    // =======================================================================
+    // ---------------------------------------------------------------------------
     // Query string tests
-    // =======================================================================
+    // ---------------------------------------------------------------------------
 
     #[test]
     fn test_parse_query_string_inline() {
@@ -190,7 +190,7 @@ Accept: application/json
 ### Search
 GET https://api.example.com/users?page=1&limit=20&sort=name HTTP/1.1
 ";
-        let result = parse_http_file(content);
+        let result = parse(content);
         assert_eq!(result.requests[0].url, "https://api.example.com/users");
         assert_eq!(result.requests[0].query_params.len(), 3);
         assert_eq!(result.requests[0].query_params[0].key, "page");
@@ -209,7 +209,7 @@ GET https://api.example.com/users HTTP/1.1
     &sort=name
 Accept: application/json
 ";
-        let result = parse_http_file(content);
+        let result = parse(content);
         assert_eq!(result.requests[0].url, "https://api.example.com/users");
         assert_eq!(result.requests[0].query_params.len(), 3);
         assert_eq!(result.requests[0].query_params[0].is_inline, false);
@@ -225,7 +225,7 @@ GET https://api.example.com/users?page=1 HTTP/1.1
     //- &limit=20
     //-&sort=name
 ";
-        let result = parse_http_file(content);
+        let result = parse(content);
         assert_eq!(result.requests[0].query_params.len(), 3);
         // page from URL is inline
         assert_eq!(result.requests[0].query_params[0].enabled, true);
@@ -245,7 +245,7 @@ GET https://api.example.com/users?page=1 HTTP/1.1
     &limit=20
     &sort=name
 ";
-        let result = parse_http_file(content);
+        let result = parse(content);
         assert_eq!(result.requests[0].url, "https://api.example.com/users");
         assert_eq!(result.requests[0].query_params.len(), 3);
         // page from URL, limit/sort from multiline
@@ -261,16 +261,16 @@ GET https://api.example.com/users?page=1 HTTP/1.1
 ### Flag
 GET https://api.example.com/data?debug HTTP/1.1
 ";
-        let result = parse_http_file(content);
+        let result = parse(content);
         assert_eq!(result.requests[0].query_params.len(), 1);
         assert_eq!(result.requests[0].query_params[0].key, "debug");
         assert_eq!(result.requests[0].query_params[0].value, "");
         assert_eq!(result.requests[0].query_params[0].is_inline, true);
     }
 
-    // =======================================================================
+    // ---------------------------------------------------------------------------
     // Header tests
-    // =======================================================================
+    // ---------------------------------------------------------------------------
 
     #[test]
     fn test_parse_disabled_headers() {
@@ -281,7 +281,7 @@ X-Enabled: val1
 //-X-Disabled: val2
 //- X-Disabled2: val3
 ";
-        let result = parse_http_file(content);
+        let result = parse(content);
         assert_eq!(result.requests[0].headers.len(), 3);
         assert_eq!(result.requests[0].headers[0].enabled, true);
         assert_eq!(result.requests[0].headers[1].enabled, false);
@@ -290,9 +290,62 @@ X-Enabled: val1
         assert_eq!(result.requests[0].headers[2].key, "X-Disabled2");
     }
 
-    // =======================================================================
+    #[test]
+    fn test_parse_headerauto_disabled() {
+        let content = "
+### Test
+GET / HTTP/1.1
+Accept: text/html
+//-@headerAuto Connection
+//- @headerAuto Accept-Encoding
+";
+        let result = parse(content);
+        assert_eq!(result.requests[0].headers.len(), 3);
+
+        // Regular header
+        assert_eq!(result.requests[0].headers[0].key, "Accept");
+        assert_eq!(result.requests[0].headers[0].value, "text/html");
+        assert!(result.requests[0].headers[0].enabled);
+        assert!(!result.requests[0].headers[0].auto);
+
+        // Disabled auto headers
+        assert_eq!(result.requests[0].headers[1].key, "Connection");
+        assert!(result.requests[0].headers[1].value.is_empty());
+        assert!(!result.requests[0].headers[1].enabled);
+        assert!(result.requests[0].headers[1].auto);
+
+        assert_eq!(result.requests[0].headers[2].key, "Accept-Encoding");
+        assert!(result.requests[0].headers[2].value.is_empty());
+        assert!(!result.requests[0].headers[2].enabled);
+        assert!(result.requests[0].headers[2].auto);
+    }
+
+    #[test]
+    fn test_headerauto_roundtrip() {
+        let content = "
+### Test
+GET / HTTP/1.1
+Accept: text/html
+//- @headerAuto Connection
+";
+        let result = parse(content);
+        let serialized = serialize_request_block(&result.requests[0]);
+        assert!(serialized.contains("//- @headerAuto Connection"));
+        assert!(serialized.contains("Accept: text/html"));
+        assert!(!serialized.contains("//- Connection:"));
+
+        // Parse again and verify
+        let result2 = parse(&serialized);
+        assert_eq!(result2.requests[0].headers.len(), 2);
+        let auto_h = &result2.requests[0].headers[1];
+        assert_eq!(auto_h.key, "Connection");
+        assert!(auto_h.auto);
+        assert!(!auto_h.enabled);
+    }
+
+    // ---------------------------------------------------------------------------
     // Form URL-encoded tests
-    // =======================================================================
+    // ---------------------------------------------------------------------------
 
     #[test]
     fn test_parse_form_urlencoded_single_line() {
@@ -303,7 +356,7 @@ Content-Type: application/x-www-form-urlencoded
 
 username=john&password=secret&remember=true
 ";
-        let result = parse_http_file(content);
+        let result = parse(content);
         assert_eq!(
             result.requests[0].body_mode.as_deref(),
             Some("form-urlencoded")
@@ -326,7 +379,7 @@ username=john
 &password=secret
 &remember=true
 ";
-        let result = parse_http_file(content);
+        let result = parse(content);
         assert_eq!(result.requests[0].form_urlencoded.len(), 3);
         assert_eq!(result.requests[0].form_urlencoded[0].is_inline, false);
         assert_eq!(result.requests[0].form_urlencoded[0].key, "username");
@@ -344,16 +397,16 @@ username=john
 //-&password=secret
 &remember=true
 ";
-        let result = parse_http_file(content);
+        let result = parse(content);
         assert_eq!(result.requests[0].form_urlencoded.len(), 3);
         assert_eq!(result.requests[0].form_urlencoded[0].enabled, true);
         assert_eq!(result.requests[0].form_urlencoded[1].enabled, false);
         assert_eq!(result.requests[0].form_urlencoded[2].enabled, true);
     }
 
-    // =======================================================================
+    // ---------------------------------------------------------------------------
     // Multipart tests
-    // =======================================================================
+    // ---------------------------------------------------------------------------
 
     #[test]
     fn test_parse_multipart_text_fields() {
@@ -372,7 +425,7 @@ Content-Disposition: form-data; name=\"email\"
 john@example.com
 --boundary--
 ";
-        let result = parse_http_file(content);
+        let result = parse(content);
         assert_eq!(
             result.requests[0].body_mode.as_deref(),
             Some("form-multipart")
@@ -402,7 +455,7 @@ Content-Type: image/png
 < ./photo.png
 --boundary--
 ";
-        let result = parse_http_file(content);
+        let result = parse(content);
         assert_eq!(result.requests[0].form_multipart.len(), 1);
         assert_eq!(result.requests[0].form_multipart[0].key, "avatar");
         assert_eq!(result.requests[0].form_multipart[0].value, "photo.png");
@@ -430,7 +483,7 @@ John
 //-disabled@email.com
 --boundary--
 ";
-        let result = parse_http_file(content);
+        let result = parse(content);
         assert_eq!(result.requests[0].form_multipart.len(), 2);
         assert_eq!(result.requests[0].form_multipart[0].enabled, true);
         assert_eq!(result.requests[0].form_multipart[0].key, "name");
@@ -438,9 +491,9 @@ John
         assert_eq!(result.requests[0].form_multipart[1].key, "email");
     }
 
-    // =======================================================================
+    // ---------------------------------------------------------------------------
     // Serializer tests
-    // =======================================================================
+    // ---------------------------------------------------------------------------
 
     #[test]
     fn test_serialize_roundtrip() {
@@ -449,16 +502,16 @@ John
 GET https://api.example.com/users HTTP/1.1
 Accept: application/json
 ";
-        let result = parse_http_file(content);
+        let result = parse(content);
         let serialized = serialize_request_block(&result.requests[0]);
-        let reparsed = parse_http_file(&serialized);
+        let reparsed = parse(&serialized);
         assert_eq!(reparsed.requests[0].method, "GET");
         assert_eq!(reparsed.requests[0].url, "https://api.example.com/users");
     }
 
-    // =======================================================================
+    // ---------------------------------------------------------------------------
     // Update / append tests
-    // =======================================================================
+    // ---------------------------------------------------------------------------
 
     #[test]
     fn test_apply_variable_update() {
@@ -468,7 +521,7 @@ Accept: application/json
 ### Test
 GET /test HTTP/1.1
 ";
-        let new_vars = vec![FileVariable {
+        let new_vars = vec![ParsedFileVariable {
             key: "new".to_string(),
             value: "value2".to_string(),
         }];
@@ -490,7 +543,7 @@ POST /second HTTP/1.1
 
 {\"a\":1}
 ";
-        let parse_result = parse_http_file(content);
+        let parse_result = parse(content);
         let mut updated = parse_result.requests[1].clone();
         updated.method = "PUT".to_string();
         updated.url = "/updated".to_string();
@@ -515,16 +568,17 @@ GET /first HTTP/1.1
         assert!(result.contains("### Second"));
     }
 
-    // =======================================================================
+    // ---------------------------------------------------------------------------
     // Body mode detection
-    // =======================================================================
+    // ---------------------------------------------------------------------------
 
     #[test]
     fn test_body_mode_detection_json() {
-        let headers = vec![HttpHeaderField {
+        let headers = vec![ParsedHeaderField {
             key: "Content-Type".to_string(),
             value: "application/json".to_string(),
             enabled: true,
+            auto: false,
         }];
         let mode = detect_body_mode(&headers, Some("{\"a\": 1}"));
         assert_eq!(mode, Some("raw/json".to_string()));
@@ -536,9 +590,9 @@ GET /first HTTP/1.1
         assert_eq!(mode, Some("none".to_string()));
     }
 
-    // =======================================================================
+    // ---------------------------------------------------------------------------
     // URL query splitting
-    // =======================================================================
+    // ---------------------------------------------------------------------------
 
     #[test]
     fn test_split_url_query() {
@@ -546,7 +600,7 @@ GET /first HTTP/1.1
 ### S
 GET https://api.example.com/users?page=1&limit=20 HTTP/1.1
 ";
-        let result = parse_http_file(content);
+        let result = parse(content);
         assert_eq!(result.requests[0].url, "https://api.example.com/users");
         assert_eq!(result.requests[0].query_params.len(), 2);
     }
@@ -557,14 +611,14 @@ GET https://api.example.com/users?page=1&limit=20 HTTP/1.1
 ### S
 GET https://api.example.com/users HTTP/1.1
 ";
-        let result = parse_http_file(content);
+        let result = parse(content);
         assert_eq!(result.requests[0].url, "https://api.example.com/users");
         assert!(result.requests[0].query_params.is_empty());
     }
 
-    // =======================================================================
+    // ---------------------------------------------------------------------------
     // Surgical update tests
-    // =======================================================================
+    // ---------------------------------------------------------------------------
 
     #[test]
     fn test_surgical_update_preserves_comments_in_body() {
@@ -577,7 +631,7 @@ Content-Type: application/json
 {\"file\": \"data\"}
 // End comment
 ";
-        let parse_result = parse_http_file(content);
+        let parse_result = parse(content);
         let mut updated = parse_result.requests[0].clone();
         // Only change the method.
         updated.method = "PUT".to_string();
@@ -598,7 +652,7 @@ Authorization: Bearer token
 // custom header
 X-Custom: value
 ";
-        let parse_result = parse_http_file(content);
+        let parse_result = parse(content);
         let mut updated = parse_result.requests[0].clone();
         // Only change URL, headers and their comments should stay.
         updated.url = "/api/v2".to_string();
@@ -615,7 +669,7 @@ X-Custom: value
 GET /api HTTP/1.1
 X-Custom: value
 ";
-        let parse_result = parse_http_file(content);
+        let parse_result = parse(content);
         let updated = parse_result.requests[0].clone();
         let result = apply_request_update(content, 0, &updated);
         // Should be byte-identical to original.
@@ -631,7 +685,7 @@ Content-Type: application/json
 
 {\"old\": true}
 ";
-        let parse_result = parse_http_file(content);
+        let parse_result = parse(content);
         let mut updated = parse_result.requests[0].clone();
         updated.body = Some("{\"new\": true}".to_string());
         let result = apply_request_update(content, 0, &updated);
@@ -648,7 +702,7 @@ Content-Type: application/json
 GET https://api.example.com/search?q=old HTTP/1.1
 Accept: application/json
 ";
-        let parse_result = parse_http_file(content);
+        let parse_result = parse(content);
         let mut updated = parse_result.requests[0].clone();
         // Change only a query param.
         if let Some(q) = updated.query_params.iter_mut().find(|q| q.key == "q") {
@@ -672,7 +726,7 @@ X-One: 1
 GET /second HTTP/1.1
 X-Two: 2
 ";
-        let parse_result = parse_http_file(content);
+        let parse_result = parse(content);
         let mut updated = parse_result.requests[1].clone();
         updated.method = "POST".to_string();
         let result = apply_request_update(content, 1, &updated);
@@ -691,13 +745,13 @@ X-Two: 2
 ### Flag
 GET https://api.example.com/data?debug HTTP/1.1
 ";
-        let parse_result = parse_http_file(content);
+        let parse_result = parse(content);
         let serialized = serialize_request_block(&parse_result.requests[0]);
         // The no-value param should be preserved without a trailing =.
         assert!(serialized.contains("?debug"));
         assert!(!serialized.contains("?debug="));
         // Roundtrip should parse back correctly.
-        let reparsed = parse_http_file(&serialized);
+        let reparsed = parse(&serialized);
         assert_eq!(reparsed.requests[0].query_params.len(), 1);
         assert_eq!(reparsed.requests[0].query_params[0].key, "debug");
         assert_eq!(reparsed.requests[0].query_params[0].value, "");
@@ -710,7 +764,7 @@ GET https://api.example.com/data?debug HTTP/1.1
 ### Search
 GET https://api.example.com/search?q=test&page=1 HTTP/1.1
 ";
-        let parse_result = parse_http_file(content);
+        let parse_result = parse(content);
         let mut updated = parse_result.requests[0].clone();
         // Disable "page"
         if let Some(q) = updated.query_params.iter_mut().find(|q| q.key == "page") {
@@ -738,13 +792,13 @@ GET https://api.example.com/search?q=test&page=1 HTTP/1.1
     #[test]
     fn test_surgical_edit_no_body_keep_blank_line() {
         let content = "
-### GET Request
+### GET ParsedRequest
 GET https://httpbingo.org/get HTTP/1.1
 
 ### GET with Query Parameters
 GET https://httpbingo.org/get?foo=bar&baz=qux HTTP/1.1
 ";
-        let parse_result = parse_http_file(content);
+        let parse_result = parse(content);
         let mut updated = parse_result.requests[0].clone();
         updated.url = "https://httpbingo.org/get1".to_string();
         let result = apply_request_update(content, 0, &updated);
@@ -755,24 +809,25 @@ GET https://httpbingo.org/get?foo=bar&baz=qux HTTP/1.1
     #[test]
     fn test_surgical_edit_url_with_header_no_body_keep_blank_line() {
         let content = "
-### GET Request
+### GET ParsedRequest
 GET https://httpbingo.org/get HTTP/1.1
 Authorization: Bearer key
 
 ### GET with Query Parameters
 GET https://httpbingo.org/get?foo=bar&baz=qux HTTP/1.1
     ";
-        let parse_result = parse_http_file(content);
+        let parse_result = parse(content);
         let mut updated = parse_result.requests[0].clone();
         updated.url = "https://httpbingo.org/get1".to_string();
         updated.headers[0].value = "Bearer key_updated".to_string();
         let result = apply_request_update(content, 0, &updated);
         assert!(result.contains("Authorization: Bearer key_updated\n\n###"));
 
-        updated.headers.push(HttpHeaderField {
+        updated.headers.push(ParsedHeaderField {
             key: "TheHeader".to_string(),
             value: "TheValue".to_string(),
             enabled: true,
+            auto: false,
         });
         let result2 = apply_request_update(content, 0, &updated);
         assert!(result2.contains("Authorization: Bearer key_updated\nTheHeader: TheValue\n\n###"));

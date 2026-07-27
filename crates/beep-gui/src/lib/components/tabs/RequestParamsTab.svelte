@@ -1,12 +1,12 @@
 <script lang="ts">
-    import type { QueryField } from "$lib/types";
+    import type { ParsedQueryField } from "$lib/types";
     import DeleteRowButton from "$lib/components/buttons/DeleteRowButton.svelte";
     import AddRowButton from "$lib/components/buttons/AddRowButton.svelte";
 
     interface Props {
-        initialValue: QueryField[];
+        initialValue: ParsedQueryField[];
         url: string;
-        onchange: (params: QueryField[], url: string) => void;
+        onchange: (params: ParsedQueryField[], url: string) => void;
     }
 
     let { initialValue = [], url = "", onchange }: Props = $props();
@@ -32,7 +32,7 @@
     });
 
     function emit() {
-        const out: QueryField[] = rows.map((r) => ({
+        const out: ParsedQueryField[] = rows.map((r) => ({
             key: r.key.trim(),
             value: r.value,
             enabled: r.enabled,

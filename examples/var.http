@@ -1,0 +1,49 @@
+@token = 123
+@user = user
+@pass = password
+@key = theKey
+@key2 = theKey2
+@key3 = theKey3
+@value = theValue
+@value2 = theValue2
+@value3 = theValue3
+
+### Auth Basic
+GET https://httpbingo.org/get
+Authorization: Basic {{user}}:{{pass}}
+
+### Auth Bearer
+GET https://httpbingo.org/get
+Authorization: Bearer {{token}}
+
+### Auth Custom
+GET https://httpbingo.org/get
+Authorization: Unknown {{token}}
+
+### GET with Var
+GET https://httpbingo.org/get?{{key}}={{value}}&staticKey=staticValue HTTP/1.1
+    &{{key2}}={{value2}}
+//- &keyDisabled=valueDisabled
+//- @headerAuto Connection
+Authorization: Basic {{user}}:{{pass}}
+HeaderKey: HeaderValue
+{{key}}: {{value}}
+//- DisabledHeader: DisabledValue
+
+### POST JSON with Var
+POST https://httpbingo.org/post?{{key}}={{value}}&staticKey=staticValue HTTP/1.1
+    &{{key3}}={{value3}}
+//- &keyDisabled=valueDisabled
+//- @headerAuto Connection
+Authorization: Basic {{user}}:{{pass}}
+HeaderKey: HeaderValue
+{{key}}: {{value}}
+//- DisabledHeader: DisabledValue
+Content-Type: application/json
+
+{
+    "name": "John",
+    "email": "email@example.com",
+    "{{key}}": "extra-{{value}}"
+}
+

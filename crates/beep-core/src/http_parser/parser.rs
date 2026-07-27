@@ -3,7 +3,7 @@
 use super::types::*;
 
 /// Parse an .http file into structured data with region offsets.
-pub fn parse_http_file(content: &str) -> ParseHttpFileResult {
+pub fn parse(content: &str) -> ParsedHttpFile {
     let mut variables = Vec::new();
     let mut requests = Vec::new();
 
@@ -31,7 +31,7 @@ pub fn parse_http_file(content: &str) -> ParseHttpFileResult {
                 } else {
                     value_raw.to_string()
                 };
-                variables.push(FileVariable { key, value });
+                variables.push(ParsedFileVariable { key, value });
             }
         }
     }
@@ -59,13 +59,15 @@ pub fn parse_http_file(content: &str) -> ParseHttpFileResult {
         }
     }
 
-    ParseHttpFileResult {
+    ParsedHttpFile {
         variables,
         requests,
     }
 }
 
-// --- Internal: delimiter & offset helpers
+// ---------------------------------------------------------------------------
+// Internal: delimiter & offset helpers
+// ---------------------------------------------------------------------------
 
 /// Find the next `###` at the start of a line (supports both \n and \r\n).
 fn find_delim(bytes: &[u8], start: usize) -> Option<usize> {
@@ -115,7 +117,9 @@ fn line_end_offset(base: usize, block: &str, line_idx: usize) -> usize {
     (start + line.len() + nl_len).min(base + block.len())
 }
 
-// --- Request block parser
+// ---------------------------------------------------------------------------
+// ParsedRequest block parser
+// ---------------------------------------------------------------------------
 
 /// Parse a single request block (from ### to next ### or EOF).
 fn parse_request_block(block: &str, base: usize) -> ParsedRequest {
@@ -151,7 +155,7 @@ fn parse_request_block(block: &str, base: usize) -> ParsedRequest {
         }
     }
 
-    // Request line
+    // ParsedRequest line
     let mut method = String::new();
     let mut url = String::new();
     let mut http_version: Option<String> = None;
@@ -210,11 +214,11 @@ fn parse_request_block(block: &str, base: usize) -> ParsedRequest {
 
     // Resolve query params
     let (clean_url, url_query) = split_url_query(&url);
-    let mut query_params: Vec<QueryField> = Vec::new();
+    let mut query_params: Vec<ParsedQueryField> = Vec::new();
 
     // URL params are inline
     for (k, v) in url_query {
-        query_params.push(QueryField {
+        query_params.push(ParsedQueryField {
             key: k,
             value: v,
             enabled: true,
@@ -228,7 +232,7 @@ fn parse_request_block(block: &str, base: usize) -> ParsedRequest {
             existing.enabled = !disabled;
             existing.is_inline = false;
         } else {
-            query_params.push(QueryField {
+            query_params.push(ParsedQueryField {
                 key: k,
                 value: v,
                 enabled: !disabled,
@@ -256,13 +260,32 @@ fn parse_request_block(block: &str, base: usize) -> ParsedRequest {
             break;
         }
         let (content, disabled) = strip_disable_marker(trimmed);
+        // Check for auto-header opt-out: //- @headerAuto Key
+        if let Some(key) = content
+            .strip_prefix("@headerAuto ")
+            .or_else(|| content.strip_prefix("@headerauto "))
+        {
+            let key = key.trim().to_string();
+            if !key.is_empty() {
+                headers.push(ParsedHeaderField {
+                    key,
+                    value: String::new(),
+                    enabled: false,
+                    auto: true,
+                });
+            }
+            headers_region_end = line_end_offset(base, block, i);
+            i += 1;
+            continue;
+        }
         if let Some(colon) = content.find(':') {
             let key = content[..colon].trim().to_string();
             let value = content[colon + 1..].trim().to_string();
-            headers.push(HttpHeaderField {
+            headers.push(ParsedHeaderField {
                 key,
                 value,
                 enabled: !disabled,
+                auto: false,
             });
         }
         headers_region_end = line_end_offset(base, block, i);
@@ -360,7 +383,9 @@ fn parse_request_block(block: &str, base: usize) -> ParsedRequest {
     }
 }
 
-// --- Internal helpers
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
 
 fn split_url_query(url: &str) -> (String, Vec<(String, String)>) {
     if let Some(q_pos) = url.find('?') {
@@ -409,7 +434,7 @@ pub fn strip_disable_marker(trimmed: &str) -> (&str, bool) {
 fn parse_body_fields(
     body: Option<&str>,
     body_mode: Option<&str>,
-) -> (Vec<FormField>, Vec<FormField>) {
+) -> (Vec<ParsedFormField>, Vec<ParsedFormField>) {
     let body = match body {
         Some(b) if !b.is_empty() => b,
         _ => return (Vec::new(), Vec::new()),
@@ -422,8 +447,8 @@ fn parse_body_fields(
     }
 }
 
-fn parse_urlencoded_body(body: &str) -> Vec<FormField> {
-    let mut fields: Vec<FormField> = Vec::new();
+fn parse_urlencoded_body(body: &str) -> Vec<ParsedFormField> {
+    let mut fields: Vec<ParsedFormField> = Vec::new();
     let lines: Vec<&str> = body.lines().collect();
 
     // Determine if this is inline (single-line with `&` joins) or multiline.
@@ -454,7 +479,7 @@ fn parse_urlencoded_body(body: &str) -> Vec<FormField> {
                     existing.enabled = !disabled;
                     existing.is_inline = false;
                 } else {
-                    fields.push(FormField {
+                    fields.push(ParsedFormField {
                         key: k.to_string(),
                         value: v.to_string(),
                         enabled: !disabled,
@@ -469,7 +494,7 @@ fn parse_urlencoded_body(body: &str) -> Vec<FormField> {
     fields
 }
 
-fn parse_multipart_body(body: &str) -> Vec<FormField> {
+fn parse_multipart_body(body: &str) -> Vec<ParsedFormField> {
     let first_line = body.lines().next().unwrap_or("").trim();
     let (first_content, _) = strip_disable_marker(first_line);
     if !first_content.starts_with("--") {
@@ -538,7 +563,7 @@ fn parse_multipart_body(body: &str) -> Vec<FormField> {
             } else {
                 value
             };
-            fields.push(FormField {
+            fields.push(ParsedFormField {
                 key: name,
                 value: final_value,
                 enabled: !disabled,
@@ -574,7 +599,7 @@ fn parse_kv_pair_quoted(input: &str) -> Option<(&str, &str)> {
 }
 
 /// Detect body mode from Content-Type header and body content.
-pub fn detect_body_mode(headers: &[HttpHeaderField], body: Option<&str>) -> Option<String> {
+pub fn detect_body_mode(headers: &[ParsedHeaderField], body: Option<&str>) -> Option<String> {
     if body.is_none() || body.unwrap().is_empty() {
         return Some("none".to_string());
     }

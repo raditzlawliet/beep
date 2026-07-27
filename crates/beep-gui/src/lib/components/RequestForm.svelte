@@ -1,6 +1,7 @@
 <script lang="ts">
-    import type { HttpRequest, HttpMethod, HeaderField } from "$lib/types";
+    import type { ParsedRequest, HttpMethod, HttpVersion, HeaderField } from "$lib/types";
     import { methodTextColor } from "$lib/types";
+    import { parseHttpVersion } from "$lib/http-file-utils";
     import { jsonrepair } from "jsonrepair";
     import { format } from "prettier/standalone";
     import * as htmlParser from "prettier/plugins/html";
@@ -13,10 +14,10 @@
     import { showToast } from "$lib/toast.svelte";
 
     interface Props {
-        request: HttpRequest;
+        request: ParsedRequest;
         loading: boolean;
-        onSend: (req: HttpRequest) => void;
-        onUpdate: (req: HttpRequest) => void;
+        onSend: (req: ParsedRequest) => void;
+        onUpdate: (req: ParsedRequest) => void;
         defaultHeaders: [string, string][];
         initialTab?: string;
         onTabChange?: (tab: string) => void;
@@ -43,14 +44,20 @@
     // Raw body editing state (CodeEditor needs local $state for reactivity).
     let rawBodyContent = $state("");
 
-    const httpVersion = $derived(request.http_version ?? "Auto");
+    const httpVersion = $derived(parseHttpVersion(request.http_version));
+
+    function httpVersionToHttp(v: HttpVersion): string | null {
+        if (v === "Http1") return "HTTP/1.1";
+        if (v === "Http2") return "HTTP/2";
+        return null;
+    }
 
     // Sync rawBodyContent from request on mount / request switch.
     let _lastSyncedRawBody: string | null | undefined = $state(undefined);
     $effect(() => {
-        const rb = request.raw_body;
+        const rb = request.body;
         bodyMode = (request.body_mode as BodyMode) ||
-            (request.raw_body ? "raw/text" : "none");
+            (request.body ? "raw/text" : "none");
 
         // TODO not tested yet, since this review suggestion and the edge-case.
         // Editing raw body, then something triggers a re-parse that restores a slightly different version.
@@ -113,9 +120,41 @@
         "OPTIONS",
     ];
 
+    const isKnownMethod = $derived(METHODS.includes(request.method.toUpperCase() as HttpMethod));
+
+    // Custom method combobox state
+    let methodOpen = $state(false);
+    let methodFilter = $state("");
+    let methodTrigger = $state<HTMLElement | null>(null);
+
+    function handleMethodSelect(m: string) {
+        emitUpdate({ method: m });
+        methodOpen = false;
+        methodFilter = "";
+    }
+
+    function handleMethodInput(e: Event) {
+        const v = (e.target as HTMLInputElement).value;
+        methodFilter = v;
+        emitUpdate({ method: v });
+    }
+
+    function handleMethodFocus() {
+        methodFilter = request.method || "";
+        methodOpen = true;
+    }
+
+    function handleMethodBlur() {
+        // Delay close so click on option registers
+        setTimeout(() => (methodOpen = false), 150);
+    }
+
     // Tab badge indicators - derived directly from request data.
     const hasParams = $derived(request.query_params.filter((q) => q.enabled && q.key).length > 0);
-    const headerCount = $derived(request.headers.filter((h) => h.enabled && (!h.auto || h.key)).length);
+    const headerCount = $derived(request.headers.filter((h) => h.enabled && h.key).length);
+    const hasAuth = $derived(
+        request.headers.some((h) => !h.auto && h.enabled && h.key.toLowerCase() === "authorization"),
+    );
 
     // Merge auto-generated default headers into request so the tab badge
     // shows the correct count even before the headers tab is opened.
@@ -134,13 +173,13 @@
         }
     });
 
-    function emitUpdate(overrides: Partial<HttpRequest>) {
+    function emitUpdate(overrides: Partial<ParsedRequest>) {
         onUpdate({ ...request, ...overrides });
     }
 
     function handleSend() {
         onSend({ ...request, body_mode: bodyMode,
-            raw_body: bodyMode.startsWith("raw/") ? rawBodyContent : request.raw_body });
+            body: bodyMode.startsWith("raw/") ? rawBodyContent : request.body });
     }
 </script>
 
@@ -148,21 +187,17 @@
     <div class="card-body p-0 flex flex-col min-h-0">
         <!-- method + url + send row -->
         <div class="join w-full p-2 pb-0">
-            <select
-                class="join-item select select-bordered select-sm w-28 font-mono font-bold {methodTextColor(
-                    request.method,
-                )}"
-                value={request.method}
-                onchange={(e) =>
-                    emitUpdate({
-                        method: (e.target as HTMLSelectElement)
-                            .value as HttpMethod,
-                    })}
-            >
-                {#each METHODS as m}
-                    <option value={m} class={methodTextColor(m)}>{m}</option>
-                {/each}
-            </select>
+            <div class="join-item relative w-28" bind:this={methodTrigger}>
+                <input
+                    type="text"
+                    class="select select-bordered select-sm w-full font-mono font-bold {methodTextColor(request.method.toUpperCase() as HttpMethod)}"
+                    value={request.method}
+                    placeholder="METHOD"
+                    onfocus={handleMethodFocus}
+                    onblur={handleMethodBlur}
+                    oninput={handleMethodInput}
+                />
+            </div>
             <input
                 type="text"
                 class="join-item input input-bordered input-sm flex-1 font-mono"
@@ -188,6 +223,39 @@
                 Send
             </button>
         </div>
+        {#if methodOpen && methodTrigger}
+            {@const rect = methodTrigger.getBoundingClientRect()}
+            <ul
+                class="fixed z-101 mt-1 bg-base-200 border border-base-content/20 rounded-box shadow-lg max-h-60 overflow-y-auto"
+                style="top: {rect.bottom}px; left: {rect.left}px; width: {rect.width}px;"
+            >
+                {#each METHODS as m}
+                    {@const selected = request.method.toUpperCase() === m}
+                    <li>
+                        <button
+                            class="w-full text-left px-3 py-1 text-xs font-mono font-bold hover:bg-base-300 flex items-center gap-2 {selected ? 'bg-base-300' : ''} {methodTextColor(m)}"
+                            onmousedown={() => handleMethodSelect(m)}
+                        >
+                            <span class="flex-1">{m}</span>
+                            {#if selected}
+                                <span class="text-xs opacity-50">✓</span>
+                            {/if}
+                        </button>
+                    </li>
+                {/each}
+                <li>
+                    <button
+                        class="w-full text-left px-3 py-1 text-xs font-mono font-bold hover:bg-base-300 flex items-center gap-2 {!isKnownMethod ? 'bg-base-300' : ''}"
+                        onmousedown={() => handleMethodSelect(isKnownMethod ? "OTHER" : request.method)}
+                    >
+                        <span class="flex-1">OTHER</span>
+                        {#if !isKnownMethod}
+                            <span class="text-xs opacity-50">✓</span>
+                        {/if}
+                    </button>
+                </li>
+            </ul>
+        {/if}
         <div class="border-b border-b-base-content/10"></div>
 
         <!-- tabs -->
@@ -209,7 +277,7 @@
                             class="w-1.5 h-1.5 rounded-full bg-accent inline-block"
                         ></span>
                     {/if}
-                    {#if tab === "auth" && request.auth.type !== "None"}
+                    {#if tab === "auth" && hasAuth}
                         <span
                             class="w-1.5 h-1.5 rounded-full bg-accent inline-block"
                         ></span>
@@ -246,11 +314,14 @@
                     onchange={(headers) => {
                         emitUpdate({ headers });
                     }}
+                    onFocusAuth={() => { activeTab = "auth"; onTabChange?.("auth"); }}
                 />
             {:else if activeTab === "auth"}
                 <RequestAuthTab
-                    auth={request.auth}
-                    onUpdate={(a) => emitUpdate({ auth: a })}
+                    headers={request.headers}
+                    onUpdate={(headers) => {
+                        emitUpdate({ headers });
+                    }}
                 />
             {:else if activeTab === "body"}
                 <RequestBodyTab
@@ -264,7 +335,7 @@
                     }}
                     onRawBodyChange={(v) => {
                         rawBodyContent = v;
-                        emitUpdate({ raw_body: v });
+                        emitUpdate({ body: v });
                     }}
                     onFormUrlEncodedChange={(fields) => {
                         emitUpdate({ form_urlencoded: fields });
@@ -277,7 +348,7 @@
             {:else if activeTab === "settings"}
                 <RequestSettingsTab
                     {httpVersion}
-                    onUpdate={(v) => emitUpdate({ http_version: v })}
+                    onUpdate={(v) => emitUpdate({ http_version: httpVersionToHttp(v) })}
                 />
             {/if}
         </div>

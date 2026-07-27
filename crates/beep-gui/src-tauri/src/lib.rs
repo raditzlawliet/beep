@@ -3,13 +3,15 @@ mod models;
 
 use std::fs;
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use notify::{Event, EventKind, RecursiveMode, Watcher};
 use tauri::Emitter;
 
-use beep_core::client::default_headers;
-use beep_core::{HistoryEntrySummary, HttpClient, HttpRequest, RequestHistory, RequestResult};
+use beep_core::default_headers;
+use beep_core::{
+    ExecuteInput, ExecutionContext, HistoryEntrySummary, ParsedRequest, RequestHistory,
+};
 
 use models::{AppConstants, AppState, FsChangePayload, FsContentChangePayload, ProjectNode};
 
@@ -82,26 +84,12 @@ fn read_dir_path_children(dir: &Path) -> Vec<ProjectNode> {
 #[tauri::command]
 async fn execute_request(
     state: tauri::State<'_, AppState>,
-    payload: HttpRequest,
-) -> Result<RequestResult, String> {
-    match state.client.execute(&payload).await {
-        Ok(result) => {
-            state
-                .history
-                .lock()
-                .map_err(|e| format!("failed to lock request history: {e}"))?
-                .add(payload, Some(result.clone()), None, None);
-            Ok(result)
-        }
-        Err(err) => {
-            state
-                .history
-                .lock()
-                .map_err(|e| format!("failed to lock request history: {e}"))?
-                .add(payload, None, Some(err.clone()), None);
-            Err(err)
-        }
-    }
+    payload: ParsedRequest,
+    file_vars: Vec<beep_core::ParsedFileVariable>,
+) -> Result<beep_core::HttpResult, String> {
+    let mut ctx = ExecutionContext::new(state.history.clone());
+    ctx.file_vars = file_vars;
+    beep_core::execute(ExecuteInput::Parsed(payload), &mut ctx).await
 }
 
 #[tauri::command]
@@ -114,7 +102,7 @@ fn get_history(state: tauri::State<'_, AppState>) -> Vec<HistoryEntrySummary> {
 fn get_history_entry(
     state: tauri::State<'_, AppState>,
     id: u64,
-) -> Result<beep_core::history::HistoryEntry, String> {
+) -> Result<beep_core::HistoryEntry, String> {
     let history = state
         .history
         .lock()
@@ -260,8 +248,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState {
-            client: HttpClient::new(),
-            history: Mutex::new(RequestHistory::new()),
+            history: Arc::new(Mutex::new(RequestHistory::new())),
             watcher: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![

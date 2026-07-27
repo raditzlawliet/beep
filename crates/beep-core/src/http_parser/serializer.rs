@@ -3,7 +3,7 @@
 use super::types::*;
 
 /// Serialize file-level @var lines.
-pub fn serialize_file_variables(variables: &[FileVariable]) -> String {
+pub fn serialize_file_variables(variables: &[ParsedFileVariable]) -> String {
     variables
         .iter()
         .map(|v| format!("@{} = {}", v.key, v.value))
@@ -44,9 +44,9 @@ pub fn serialize_request_line(req: &ParsedRequest) -> String {
 }
 
 /// Serialize multiline query param lines.
-/// `has_inline`, when true (URL already has `?inline`), all multiline
-/// params use `&`. When false, first enabled multiline uses `?`.
-pub fn serialize_query_section(params: &[QueryField], has_inline: bool) -> String {
+/// `has_inline`, when true (URL already has `?inline`),
+/// all multiline params use `&`. When false, first enabled multiline uses `?`.
+pub fn serialize_query_section(params: &[ParsedQueryField], has_inline: bool) -> String {
     let multiline: Vec<_> = params.iter().filter(|q| !q.is_inline).collect();
     if multiline.is_empty() {
         return String::new();
@@ -77,13 +77,17 @@ pub fn serialize_query_section(params: &[QueryField], has_inline: bool) -> Strin
 
 /// Serialize header lines. Each line ends with `\n`.
 /// Returns empty string if no headers.
-pub fn serialize_headers_section(headers: &[HttpHeaderField]) -> String {
+pub fn serialize_headers_section(headers: &[ParsedHeaderField]) -> String {
     if headers.is_empty() {
         return String::new();
     }
     headers
         .iter()
         .map(|h| {
+            // Auto-header opt-out: //- @headerAuto Key
+            if h.auto {
+                return format!("//- @headerAuto {}\n", h.key);
+            }
             let prefix = if h.enabled { "" } else { "//- " };
             format!("{}{}: {}\n", prefix, h.key, h.value)
         })
@@ -92,13 +96,12 @@ pub fn serialize_headers_section(headers: &[HttpHeaderField]) -> String {
 }
 
 /// Serialize body content for a given mode.
-///
 /// Returns empty string when there is no body and no post-script.
 pub fn serialize_body_section(
     body_mode: Option<&str>,
     body: Option<&str>,
-    form_urlencoded: &[FormField],
-    form_multipart: &[FormField],
+    form_urlencoded: &[ParsedFormField],
+    form_multipart: &[ParsedFormField],
     post_script: Option<&str>,
 ) -> String {
     let mut out = String::new();
@@ -212,7 +215,7 @@ pub fn serialize_request_block(req: &ParsedRequest) -> String {
         }
     }
 
-    // Request line
+    // ParsedRequest line
     out.push_str(&serialize_request_line(req));
 
     // Multiline query params

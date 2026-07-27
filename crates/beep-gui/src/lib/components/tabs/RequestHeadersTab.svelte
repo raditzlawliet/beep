@@ -4,13 +4,39 @@
     import DeleteRowButton from "$lib/components/buttons/DeleteRowButton.svelte";
     import AddRowButton from "$lib/components/buttons/AddRowButton.svelte";
 
+    const AUTH_HEADER_KEYS = ["authorization"];
+
+    function isAuthHeader(key: string): boolean {
+        return AUTH_HEADER_KEYS.some((k) => k === key.toLowerCase());
+    }
+
+    function isBase64(s: string): boolean {
+        return /^[A-Za-z0-9+\/=]+$/.test(s);
+    }
+
+    function basicWirePreview(value: string): string | null {
+        const v = value.trim();
+        if (!v.startsWith("Basic ")) return null;
+        const creds = v.slice(6).trim();
+        if (isBase64(creds)) return null;
+        // Normalize space-separated to colon-separated
+        const plain = creds.replace(/ /g, ":");
+        const encoded = btoa(plain);
+        return `Basic ${encoded}`;
+    }
+
+    function hasAuthScheme(value: string): boolean {
+        return value.trim().length > 0;
+    }
+
     interface Props {
         initialValue: HeaderField[];
         defaultHeaders: [string, string][];
         onchange: (headers: HeaderField[]) => void;
+        onFocusAuth?: () => void;
     }
 
-    let { initialValue = [], defaultHeaders = [], onchange }: Props = $props();
+    let { initialValue = [], defaultHeaders = [], onchange, onFocusAuth }: Props = $props();
 
     type Row = { key: string; value: string; enabled: boolean; auto: boolean };
     let rows = $state<Row[]>([]);
@@ -48,7 +74,6 @@
         // All headers from initialValue (preserves enabled/auto from history).
         const allKeys = new Set(initialValue.map((h) => normalizeHeaderKey(h.key)));
         for (const h of initialValue) {
-            // rows.push({ key: h.key, value: h.value, enabled: h.enabled, auto: h.auto });
             const defaultHeader = h.auto ? defaultsByKey.get(normalizeHeaderKey(h.key)) : undefined;
             if (h.auto && !defaultHeader) continue;
             rows.push({
@@ -140,7 +165,9 @@
     <tbody>
         {#each rows as row, i}
             {@const isAuto = row.auto}
+            {@const isAuth = isAuthHeader(row.key)}
             {@const overridden = isOverridden(row)}
+            {@const wirePreview = basicWirePreview(row.value)}
             <tr class="group hover:bg-base-300 divide-x divide-base-content/10"
                 hidden={!showAutoHeaders && isAuto}>
                 <td>
@@ -149,24 +176,51 @@
                         onchange={() => toggleRow(i)} />
                 </td>
                 <td>
-                    <div
-                        class="w-full"
-                        class:tooltip={overridden}
-                        data-tip={overridden ? "This header is overridden by your custom header" : undefined}>
-                        <input
-                            class="input input-ghost input-xs w-full font-mono p-0"
-                            placeholder="Key"
-                            value={row.key}
-                            disabled={isAuto}
-                            oninput={(e) => updateRow(i, "key", (e.target as HTMLInputElement).value)}
-                        />
+                    <div class="w-full flex items-center gap-1">
+                        {#if overridden}
+                            <div class="tooltip tooltip-top">
+                                <input
+                                    class="input input-ghost input-xs flex-1 font-mono p-0"
+                                    placeholder="Key"
+                                    value={row.key}
+                                    disabled={isAuto}
+                                    oninput={(e) => updateRow(i, "key", (e.target as HTMLInputElement).value)}
+                                />
+                                <div class="tooltip-content text-xs">
+                                    <span>This header is overridden by your custom header</span>
+                                </div>
+                            </div>
+                        {:else}
+                            <input
+                                class="input input-ghost input-xs flex-1 font-mono p-0"
+                                placeholder="Key"
+                                value={row.key}
+                                disabled={isAuto}
+                                oninput={(e) => updateRow(i, "key", (e.target as HTMLInputElement).value)}
+                            />
+                        {/if}
+                        {#if isAuth && hasAuthScheme(row.value)}
+                            <button
+                                class="badge badge-ghost badge-xs px-1 text-[10px] opacity-60 hover:opacity-100 shrink-0 cursor-pointer"
+                                onclick={() => onFocusAuth?.()}
+                                title="Edit in Auth tab">
+                                Auth ↗
+                            </button>
+                        {/if}
                     </div>
                 </td>
                 <td>
-                    <div
-                        class="w-full"
-                        class:tooltip={overridden}
-                        data-tip={overridden ? "This header is overridden by your custom header" : undefined}>
+                    <div class="w-full" class:tooltip={wirePreview !== null || overridden} class:tooltip-top={wirePreview !== null || overridden}>
+                        {#if wirePreview !== null}
+                            <div class="tooltip-content text-xs flex flex-col gap-0.5">
+                                <span class="opacity-70">Auto-encoded on send:</span>
+                                <span class="font-mono">{wirePreview}</span>
+                            </div>
+                        {:else if overridden}
+                            <div class="tooltip-content text-xs">
+                                <span>This header is overridden by your custom header</span>
+                            </div>
+                        {/if}
                         <input
                             class="input input-ghost input-xs w-full font-mono p-0"
                             class:line-through={overridden}

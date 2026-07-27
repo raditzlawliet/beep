@@ -11,11 +11,12 @@
 
     let { fileName, content, onContentChange, initialCursorPos, oncursorchange }: Props = $props();
 
-    function detectLanguage(name: string, raw: string): "text" | "json" | "html" | "xml" {
+    function detectLanguage(name: string, raw: string): "text" | "json" | "html" | "xml" | "http" {
         const ext = name.split(".").pop()?.toLowerCase();
         if (ext === "json") return "json";
         if (ext === "html" || ext === "htm") return "html";
         if (ext === "xml") return "xml";
+        if (ext === "http" || ext === "rest") return "http";
 
         const trimmed = raw.trim();
         if ((trimmed.startsWith("{") || trimmed.startsWith("[")) && trimmed.length > 0) {
