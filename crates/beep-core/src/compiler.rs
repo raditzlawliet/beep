@@ -726,6 +726,7 @@ mod tests {
     #[test]
     fn parse_method_unknown() {
         let parsed = minimal("CONNECT", "https://example.com");
-        assert!(compile(&parsed, &[]).is_err());
+        let exe = compile(&parsed, &[]).unwrap();
+        assert!(matches!(exe.method, HttpMethod::Other(ref m) if m == "CONNECT"));
     }
 }

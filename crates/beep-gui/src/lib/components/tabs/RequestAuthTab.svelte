@@ -15,13 +15,14 @@
             if (!h.enabled || h.auto) continue;
             if (h.key.toLowerCase() !== "authorization") continue;
             const val = h.value.trim();
+            const lower = val.toLowerCase();
 
-            if (val.startsWith("Bearer")) {
-                const token = val.startsWith("Bearer ") ? val.slice(7).trim() : "";
+            if (lower.startsWith("bearer")) {
+                const token = lower.startsWith("bearer ") ? val.slice(7).trim() : "";
                 return { type: "Bearer", token };
             }
-            if (val.startsWith("Basic")) {
-                const creds = val.startsWith("Basic ") ? val.slice(6).trim() : "";
+            if (lower.startsWith("basic")) {
+                const creds = lower.startsWith("basic ") ? val.slice(6).trim() : "";
                 try {
                     const decoded = atob(creds);
                     const colon = decoded.indexOf(":");

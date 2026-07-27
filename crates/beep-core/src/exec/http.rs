@@ -388,8 +388,13 @@ fn resolve_basic_auth(field: &HeaderField) -> String {
         return field.value.clone();
     }
 
-    let val = field.value.trim();
-    let Some(credentials) = val.strip_prefix("Basic ") else {
+    let val_lower = field.value.to_lowercase();
+    let creds = val_lower
+        .trim()
+        .strip_prefix("basic ")
+        .or_else(|| val_lower.trim().strip_prefix("basic"));
+
+    let Some(credentials) = creds else {
         return field.value.clone();
     };
 
