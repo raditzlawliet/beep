@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { EyeIcon, EyeOffIcon } from "@lucide/svelte";
+    import { ExternalLinkIcon, EyeIcon, EyeOffIcon } from "@lucide/svelte";
     import type { HeaderField } from "$lib/types";
     import DeleteRowButton from "$lib/components/buttons/DeleteRowButton.svelte";
     import AddRowButton from "$lib/components/buttons/AddRowButton.svelte";
@@ -199,12 +199,13 @@
                                 oninput={(e) => updateRow(i, "key", (e.target as HTMLInputElement).value)}
                             />
                         {/if}
-                        {#if isAuth && hasAuthScheme(row.value)}
+                        <!-- Auth now encourge user to focus on Auth tab instead of inline editing. -->
+                        {#if isAuth}
                             <button
                                 class="badge badge-ghost badge-xs px-1 text-[10px] opacity-60 hover:opacity-100 shrink-0 cursor-pointer"
                                 onclick={() => onFocusAuth?.()}
                                 title="Edit in Auth tab">
-                                Auth ↗
+                                Auth <ExternalLinkIcon class="w-2.5 h-2.5" />
                             </button>
                         {/if}
                     </div>

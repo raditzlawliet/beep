@@ -43,7 +43,7 @@ struct ChangedSections {
     query_region: bool,
     /// Headers vec changed.
     headers: bool,
-    /// Body, body_mode, form fields, or post_script changed.
+    /// Body, body directive, form fields, or post_script changed.
     body: bool,
 }
 
@@ -60,9 +60,8 @@ fn detect_changed_sections(old: &ParsedRequest, new: &ParsedRequest) -> ChangedS
             || old.http_version != new.http_version
             || old_inline != new_inline,
         query_region: old_multiline != new_multiline,
-        headers: old.headers != new.headers,
+        headers: old.headers != new.headers || old.body_directive != new.body_directive,
         body: old.body != new.body
-            || old.body_mode != new.body_mode
             || old.form_urlencoded != new.form_urlencoded
             || old.form_multipart != new.form_multipart
             || old.post_script != new.post_script,
@@ -190,7 +189,7 @@ pub fn apply_request_update(content: &str, request_idx: usize, updated: &ParsedR
     // 4. Headers
     if changed.headers {
         out.push_str(&normalize_newlines(
-            &serialize_headers_section(&updated.headers),
+            &serialize_headers_section(&updated.headers, updated.body_directive.as_deref()),
             nl,
         ));
     } else {
@@ -201,7 +200,11 @@ pub fn apply_request_update(content: &str, request_idx: usize, updated: &ParsedR
     if changed.body {
         out.push_str(&normalize_newlines(
             &serialize_body_section(
-                updated.body_mode.as_deref(),
+                super::parser::effective_body_kind(
+                    &updated.headers,
+                    updated.body_directive.as_deref(),
+                    updated.body.as_deref(),
+                ),
                 updated.body.as_deref(),
                 &updated.form_urlencoded,
                 &updated.form_multipart,

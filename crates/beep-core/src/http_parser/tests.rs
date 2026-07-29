@@ -10,7 +10,7 @@ mod tests {
             headers: vec![],
             query_params: vec![],
             body: None,
-            body_mode: Some("none".to_string()),
+            body_directive: None,
             form_urlencoded: vec![],
             form_multipart: vec![],
             pre_script: None,
@@ -358,8 +358,12 @@ username=john&password=secret&remember=true
 ";
         let result = parse(content);
         assert_eq!(
-            result.requests[0].body_mode.as_deref(),
-            Some("form-urlencoded")
+            effective_body_kind(
+                &result.requests[0].headers,
+                None,
+                Some("username=john&password=secret&remember=true")
+            ),
+            "form-urlencoded"
         );
         assert_eq!(result.requests[0].form_urlencoded.len(), 3);
         assert_eq!(result.requests[0].form_urlencoded[0].key, "username");
@@ -427,8 +431,12 @@ john@example.com
 ";
         let result = parse(content);
         assert_eq!(
-            result.requests[0].body_mode.as_deref(),
-            Some("form-multipart")
+            effective_body_kind(
+                &result.requests[0].headers,
+                None,
+                result.requests[0].body.as_deref()
+            ),
+            "form-multipart"
         );
         assert_eq!(result.requests[0].form_multipart.len(), 2);
         assert_eq!(result.requests[0].form_multipart[0].key, "name");
@@ -569,25 +577,42 @@ GET /first HTTP/1.1
     }
 
     // ---------------------------------------------------------------------------
-    // Body mode detection
+    // Body kind resolution
     // ---------------------------------------------------------------------------
 
     #[test]
-    fn test_body_mode_detection_json() {
+    fn test_body_kind_uses_content_type() {
         let headers = vec![ParsedHeaderField {
             key: "Content-Type".to_string(),
             value: "application/json".to_string(),
             enabled: true,
             auto: false,
         }];
-        let mode = detect_body_mode(&headers, Some("{\"a\": 1}"));
-        assert_eq!(mode, Some("raw/json".to_string()));
+        assert_eq!(
+            effective_body_kind(&headers, None, Some("{\"a\": 1}")),
+            "raw/json"
+        );
     }
 
     #[test]
-    fn test_body_mode_detection_none() {
-        let mode = detect_body_mode(&[], None);
-        assert_eq!(mode, Some("none".to_string()));
+    fn test_body_kind_defaults_to_none_without_content_type() {
+        assert_eq!(effective_body_kind(&[], None, None), "none");
+    }
+
+    #[test]
+    fn test_body_directive_overrides_content_type() {
+        let content = "### Custom\nPOST https://example.com\nContent-Type: application/custom\n// @body raw/json\n\n{\"ok\":true}\n";
+        let result = parse(content);
+        let request = &result.requests[0];
+        assert_eq!(request.body_directive.as_deref(), Some("raw/json"));
+        assert_eq!(
+            effective_body_kind(
+                &request.headers,
+                request.body_directive.as_deref(),
+                request.body.as_deref()
+            ),
+            "raw/json"
+        );
     }
 
     // ---------------------------------------------------------------------------

@@ -77,11 +77,14 @@ pub fn serialize_query_section(params: &[ParsedQueryField], has_inline: bool) ->
 
 /// Serialize header lines. Each line ends with `\n`.
 /// Returns empty string if no headers.
-pub fn serialize_headers_section(headers: &[ParsedHeaderField]) -> String {
-    if headers.is_empty() {
+pub fn serialize_headers_section(
+    headers: &[ParsedHeaderField],
+    body_directive: Option<&str>,
+) -> String {
+    if headers.is_empty() && body_directive.is_none() {
         return String::new();
     }
-    headers
+    let mut out = headers
         .iter()
         .map(|h| {
             // Auto-header opt-out: //- @headerAuto Key
@@ -92,13 +95,17 @@ pub fn serialize_headers_section(headers: &[ParsedHeaderField]) -> String {
             format!("{}{}: {}\n", prefix, h.key, h.value)
         })
         .collect::<Vec<_>>()
-        .concat()
+        .concat();
+    if let Some(kind) = body_directive {
+        out.push_str(&format!("// @body {kind}\n"));
+    }
+    out
 }
 
 /// Serialize body content for a given mode.
 /// Returns empty string when there is no body and no post-script.
 pub fn serialize_body_section(
-    body_mode: Option<&str>,
+    body_kind: &str,
     body: Option<&str>,
     form_urlencoded: &[ParsedFormField],
     form_multipart: &[ParsedFormField],
@@ -106,8 +113,8 @@ pub fn serialize_body_section(
 ) -> String {
     let mut out = String::new();
 
-    match body_mode {
-        Some("form-urlencoded") if !form_urlencoded.is_empty() => {
+    match body_kind {
+        "form-urlencoded" if !form_urlencoded.is_empty() => {
             // Mixing inline & multiline causing too much chaos... need to consider for later
             let all_inline = form_urlencoded.iter().all(|f| f.is_inline && f.enabled);
             if all_inline {
@@ -125,7 +132,7 @@ pub fn serialize_body_section(
                 }
             }
         }
-        Some("form-multipart") if !form_multipart.is_empty() => {
+        "form-multipart" if !form_multipart.is_empty() => {
             let boundary = "boundary";
             for f in form_multipart {
                 let p = if f.enabled { "" } else { "//- " };
@@ -226,11 +233,18 @@ pub fn serialize_request_block(req: &ParsedRequest) -> String {
     }
 
     // Headers
-    out.push_str(&serialize_headers_section(&req.headers));
+    out.push_str(&serialize_headers_section(
+        &req.headers,
+        req.body_directive.as_deref(),
+    ));
 
     // Body + post-script
     let body_text = serialize_body_section(
-        req.body_mode.as_deref(),
+        super::parser::effective_body_kind(
+            &req.headers,
+            req.body_directive.as_deref(),
+            req.body.as_deref(),
+        ),
         req.body.as_deref(),
         &req.form_urlencoded,
         &req.form_multipart,

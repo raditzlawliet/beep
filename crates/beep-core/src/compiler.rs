@@ -4,7 +4,7 @@
 //! Variable interpolation happens here.
 use crate::context::ExecutionContext;
 use crate::executable::{ExecutableRequest, FormFieldType, ResolvedBody, ResolvedFormField};
-use crate::http_parser::{ParsedFileVariable, ParsedRequest};
+use crate::http_parser::{ParsedFileVariable, ParsedRequest, effective_body_kind};
 use crate::types::{HeaderField, HttpMethod, HttpVersion, QueryField};
 
 // ---------------------------------------------------------------------------
@@ -131,9 +131,15 @@ fn compile_query_params(
 }
 
 fn compile_body(parsed: &ParsedRequest, vars: &[ParsedFileVariable]) -> ResolvedBody {
-    let mode = parsed.body_mode.as_deref().unwrap_or("none");
+    let mode = effective_body_kind(
+        &parsed.headers,
+        parsed.body_directive.as_deref(),
+        parsed.body.as_deref(),
+    );
 
     match mode {
+        "none" => ResolvedBody::None,
+
         "form-urlencoded" => {
             let fields: Vec<ResolvedFormField> = parsed
                 .form_urlencoded
@@ -177,7 +183,7 @@ fn compile_body(parsed: &ParsedRequest, vars: &[ParsedFileVariable]) -> Resolved
         }
 
         _ => {
-            // raw/json, raw/xml, raw/html, raw/text, or "none" with body present
+            // Raw kinds send the source body unchanged.
             if let Some(ref body) = parsed.body {
                 let ct = match mode {
                     "raw/json" => "application/json",
@@ -227,9 +233,15 @@ fn compile_query_params_ctx(
 }
 
 fn compile_body_ctx(parsed: &ParsedRequest, ctx: &ExecutionContext) -> ResolvedBody {
-    let mode = parsed.body_mode.as_deref().unwrap_or("none");
+    let mode = effective_body_kind(
+        &parsed.headers,
+        parsed.body_directive.as_deref(),
+        parsed.body.as_deref(),
+    );
 
     match mode {
+        "none" => ResolvedBody::None,
+
         "form-urlencoded" => {
             let fields: Vec<ResolvedFormField> = parsed
                 .form_urlencoded
@@ -386,7 +398,7 @@ mod tests {
     fn body_raw_json_substitution() {
         let parsed = ParsedRequest {
             body: Some("{\"name\": \"{{user}}\"}".into()),
-            body_mode: Some("raw/json".into()),
+            body_directive: Some("raw/json".into()),
             ..minimal("POST", "https://example.com")
         };
         let exe = compile(&parsed, &vars(&[("user", "alice")])).unwrap();
@@ -406,7 +418,7 @@ mod tests {
     fn body_raw_xml_substitution() {
         let parsed = ParsedRequest {
             body: Some("<id>{{id}}</id>".into()),
-            body_mode: Some("raw/xml".into()),
+            body_directive: Some("raw/xml".into()),
             ..minimal("POST", "https://example.com")
         };
         let exe = compile(&parsed, &vars(&[("id", "42")])).unwrap();
@@ -426,7 +438,7 @@ mod tests {
     fn body_raw_html_substitution() {
         let parsed = ParsedRequest {
             body: Some("<h1>{{title}}</h1>".into()),
-            body_mode: Some("raw/html".into()),
+            body_directive: Some("raw/html".into()),
             ..minimal("POST", "https://example.com")
         };
         let exe = compile(&parsed, &vars(&[("title", "Hello")])).unwrap();
@@ -446,7 +458,7 @@ mod tests {
     fn body_raw_text_substitution() {
         let parsed = ParsedRequest {
             body: Some("Hello {{name}}".into()),
-            body_mode: Some("raw/text".into()),
+            body_directive: Some("raw/text".into()),
             ..minimal("POST", "https://example.com")
         };
         let exe = compile(&parsed, &vars(&[("name", "world")])).unwrap();
@@ -475,7 +487,7 @@ mod tests {
     fn form_urlencoded_substitution() {
         use crate::http_parser::ParsedFormField as PF;
         let parsed = ParsedRequest {
-            body_mode: Some("form-urlencoded".into()),
+            body_directive: Some("form-urlencoded".into()),
             form_urlencoded: vec![
                 PF {
                     key: "user".into(),
@@ -513,7 +525,7 @@ mod tests {
     fn form_multipart_substitution() {
         use crate::http_parser::ParsedFormField as PF;
         let parsed = ParsedRequest {
-            body_mode: Some("form-multipart".into()),
+            body_directive: Some("form-multipart".into()),
             form_multipart: vec![PF {
                 key: "file".into(),
                 value: "{{path}}".into(),
@@ -544,7 +556,7 @@ mod tests {
     fn form_multipart_field_type_text() {
         use crate::http_parser::ParsedFormField as PF;
         let parsed = ParsedRequest {
-            body_mode: Some("form-multipart".into()),
+            body_directive: Some("form-multipart".into()),
             form_multipart: vec![PF {
                 key: "desc".into(),
                 value: "hello".into(),
@@ -622,7 +634,7 @@ mod tests {
     fn disabled_form_fields_omitted() {
         use crate::http_parser::ParsedFormField as PF;
         let parsed = ParsedRequest {
-            body_mode: Some("form-urlencoded".into()),
+            body_directive: Some("form-urlencoded".into()),
             form_urlencoded: vec![
                 PF {
                     key: "x".into(),
@@ -656,7 +668,7 @@ mod tests {
     #[test]
     fn empty_form_fields_becomes_none() {
         let parsed = ParsedRequest {
-            body_mode: Some("form-urlencoded".into()),
+            body_directive: Some("form-urlencoded".into()),
             form_urlencoded: vec![],
             ..minimal("POST", "https://example.com")
         };

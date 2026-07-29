@@ -47,3 +47,21 @@ Content-Type: application/json
     "{{key}}": "extra-{{value}}"
 }
 
+
+### POST JSON with var and Custom Content-Type text/plain
+POST https://httpbingo.org/post?{{key}}={{value}}&staticKey=staticValue HTTP/1.1
+    &{{key3}}={{value3}}
+//- &keyDisabled=valueDisabled
+//- @headerAuto Connection
+Authorization: Basic {{user}}:{{pass}}
+HeaderKey: HeaderValue
+{{key}}: {{value}}
+//- DisabledHeader: DisabledValue
+Content-Type: text/plain
+// @body raw/json
+
+{
+    "name": "John",
+    "email": "email@example.com",
+    "{{key}}": "extra-{{value}}"
+}
