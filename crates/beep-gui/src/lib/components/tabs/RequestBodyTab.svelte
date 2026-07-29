@@ -146,7 +146,7 @@
                 onchange={(event) => {
                     const checked = (event.target as HTMLInputElement).checked;
                     updateContentType = checked;
-                    if (checked) onBodyModeChange(bodyMode, true);
+                    onBodyModeChange(bodyMode, checked);
                 }}
             />
             <span>Update Content-Type</span>

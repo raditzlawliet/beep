@@ -311,7 +311,7 @@ Content-Type: image/png
 
 In the example above, `display_name` and `avatar` are sent. `phone` is disabled and excluded. Note that disabled boundary lines use `//- --boundary` (the `//-` sigil followed by `--boundary`).
 
-### 6.5 Plain Text / Raw
+### 6.6 Plain Text / Raw
 
 ```http
 ### Plain text body
@@ -322,7 +322,7 @@ This is raw text content.
 No structure required.
 ```
 
-### 6.6 No Body
+### 6.7 No Body
 
 Requests with no body (e.g., `GET`, `DELETE`, `HEAD`) simply omit the blank line and body.
 
@@ -348,7 +348,7 @@ HEAD https://api.example.com/users HTTP/1.1
 OPTIONS https://api.example.com/users HTTP/1.1
 ```
 
-### 6.7 Body from External File
+### 6.8 Body from External File
 
 Use `< ./path/to/file` to load body content from a file.
 

@@ -114,6 +114,7 @@ pub fn serialize_body_section(
     let mut out = String::new();
 
     match body_kind {
+        "none" => {}
         "form-urlencoded" if !form_urlencoded.is_empty() => {
             // Mixing inline & multiline causing too much chaos... need to consider for later
             let all_inline = form_urlencoded.iter().all(|f| f.is_inline && f.enabled);
