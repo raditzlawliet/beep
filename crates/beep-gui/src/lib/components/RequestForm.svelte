@@ -352,6 +352,7 @@
                         emitUpdate({ headers });
                     }}
                     onFocusAuth={() => { activeTab = "auth"; onTabChange?.("auth"); }}
+                    onFocusBody={() => { activeTab = "body"; onTabChange?.("body"); }}
                 />
             {:else if activeTab === "auth"}
                 <RequestAuthTab
