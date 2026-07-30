@@ -32,8 +32,10 @@ pub struct ResolvedFormField {
     pub key: String,
     pub value: String,
     pub field_type: FormFieldType,
-    /// MIME type for files. Empty -> auto-detect.
-    pub content_type: String,
+    /// Content-Type for this part. None = not set (no header).
+    /// Some("") = auto (executor uses application/octet-stream for files).
+    /// Some("image/png") = explicit.
+    pub content_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

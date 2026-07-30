@@ -503,16 +503,27 @@ async fn build_multipart_body(
                 .await
                 .map_err(|e| format!("Failed to read file '{}': {}", file_path, e))?;
 
-            let ct = if field.content_type.is_empty() {
-                "application/octet-stream"
-            } else {
-                &field.content_type
+            let ct = match &field.content_type {
+                Some(ct) if !ct.is_empty() => &ct[..],
+                _ => "application/octet-stream",
             };
             body.extend_from_slice(b"Content-Type: ");
             body.extend_from_slice(ct.as_bytes());
             body.extend_from_slice(b"\r\n\r\n");
             body.extend_from_slice(&file_data);
         } else {
+            match &field.content_type {
+                Some(ct) if !ct.is_empty() => {
+                    body.extend_from_slice(b"Content-Type: ");
+                    body.extend_from_slice(ct.as_bytes());
+                    body.extend_from_slice(b"\r\n");
+                }
+                Some(_) => {
+                    // auto for text field: text/plain
+                    body.extend_from_slice(b"Content-Type: text/plain\r\n");
+                }
+                None => {}
+            }
             body.extend_from_slice(b"\r\n");
             body.extend_from_slice(field.value.as_bytes());
         }

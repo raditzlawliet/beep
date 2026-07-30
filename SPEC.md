@@ -292,8 +292,8 @@ Content-Type: image/png
 **Content-Type per field:** Each multipart part may optionally include a `Content-Type` header. Three states:
 
 - `Content-Type: image/png` explicit MIME type
-- `Content-Type: ` (empty value after colon) auto, Beep decides (`application/octet-stream` for files)
-- _(no `Content-Type` line)_ not set, same behavior as auto
+- `Content-Type: ` (empty value after colon) auto, Beep decides (`application/octet-stream` for files, `text/plain` for text)
+- _(no `Content-Type` line)_ not set, no `Content-Type` header sent for this part
 
 **File fields:** File content is read from the path on the `<` line (relative or absolute). The executor reads the file at send time. An empty line separates part headers from the `<` directive.
 

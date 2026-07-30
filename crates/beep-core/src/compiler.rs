@@ -156,7 +156,7 @@ fn compile_body(parsed: &ParsedRequest, vars: &[ParsedFileVariable]) -> Resolved
                     key: resolve(&f.key, vars),
                     value: resolve(&f.value, vars),
                     field_type: FormFieldType::Text,
-                    content_type: String::new(),
+                    content_type: None,
                 })
                 .collect();
             if fields.is_empty() {
@@ -179,10 +179,7 @@ fn compile_body(parsed: &ParsedRequest, vars: &[ParsedFileVariable]) -> Resolved
                     } else {
                         FormFieldType::Text
                     },
-                    content_type: f
-                        .content_type
-                        .as_ref()
-                        .map_or(String::new(), |ct| resolve(ct, vars)),
+                    content_type: f.content_type.as_ref().map(|ct| resolve(ct, vars)),
                 })
                 .collect();
             if fields.is_empty() {
@@ -261,7 +258,7 @@ fn compile_body_ctx(parsed: &ParsedRequest, ctx: &ExecutionContext) -> ResolvedB
                     key: ctx.resolve(&f.key),
                     value: ctx.resolve(&f.value),
                     field_type: FormFieldType::Text,
-                    content_type: String::new(),
+                    content_type: None,
                 })
                 .collect();
             if fields.is_empty() {
@@ -284,10 +281,7 @@ fn compile_body_ctx(parsed: &ParsedRequest, ctx: &ExecutionContext) -> ResolvedB
                     } else {
                         FormFieldType::Text
                     },
-                    content_type: f
-                        .content_type
-                        .as_ref()
-                        .map_or(String::new(), |ct| ctx.resolve(ct)),
+                    content_type: f.content_type.as_ref().map(|ct| ctx.resolve(ct)),
                 })
                 .collect();
             if fields.is_empty() {
@@ -559,7 +553,7 @@ mod tests {
                 assert_eq!(fields.len(), 1);
                 assert_eq!(fields[0].key, "file");
                 assert_eq!(fields[0].value, "/tmp/photo.png");
-                assert_eq!(fields[0].content_type, "image/png");
+                assert_eq!(fields[0].content_type, Some("image/png".into()));
             }
             _ => panic!("expected form-multipart body"),
         }
