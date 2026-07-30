@@ -60,10 +60,13 @@ fn detect_changed_sections(old: &ParsedRequest, new: &ParsedRequest) -> ChangedS
             || old.http_version != new.http_version
             || old_inline != new_inline,
         query_region: old_multiline != new_multiline,
-        headers: old.headers != new.headers || old.body_directive != new.body_directive,
+        headers: old.headers != new.headers
+            || old.body_directive != new.body_directive
+            || old.multipart_boundary != new.multipart_boundary,
         body: old.body != new.body
             || old.form_urlencoded != new.form_urlencoded
             || old.form_multipart != new.form_multipart
+            || old.multipart_boundary != new.multipart_boundary
             || old.post_script != new.post_script,
     }
 }
@@ -189,7 +192,11 @@ pub fn apply_request_update(content: &str, request_idx: usize, updated: &ParsedR
     // 4. Headers
     if changed.headers {
         out.push_str(&normalize_newlines(
-            &serialize_headers_section(&updated.headers, updated.body_directive.as_deref()),
+            &serialize_headers_section(
+                &updated.headers,
+                updated.body_directive.as_deref(),
+                updated.multipart_boundary.as_deref(),
+            ),
             nl,
         ));
     } else {
@@ -209,6 +216,7 @@ pub fn apply_request_update(content: &str, request_idx: usize, updated: &ParsedR
                 &updated.form_urlencoded,
                 &updated.form_multipart,
                 updated.post_script.as_deref(),
+                updated.multipart_boundary.as_deref(),
             ),
             nl,
         ));

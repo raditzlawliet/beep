@@ -57,9 +57,10 @@ pub struct ParsedFormField {
     /// "text" or "file" (multipart only).
     #[serde(default = "default_field_type")]
     pub field_type: String,
-    /// MIME type for file uploads. Empty = auto-detect.
+    /// MIME type for file uploads. None = not set (no Content-Type line).
+    /// Some("") = auto (beep decides). Some("text/plain") = explicit.
     #[serde(default)]
-    pub content_type: String,
+    pub content_type: Option<String>,
     /// Whether this field came from an inline single line (`true`) or
     /// multiline `&`-prefixed lines (`false`).
     #[serde(default = "default_true")]
@@ -129,6 +130,9 @@ pub struct ParsedRequest {
     /// Parsed multipart fields (when the effective body kind is form-multipart).
     #[serde(default)]
     pub form_multipart: Vec<ParsedFormField>,
+    /// Custom boundary for multipart. None = auto-generate.
+    #[serde(default)]
+    pub multipart_boundary: Option<String>,
     /// Pre-request script content, if any.
     pub pre_script: Option<String>,
     /// Post-request script content, if any.

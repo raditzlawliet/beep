@@ -895,6 +895,9 @@
                     {sending}
                     {reqError}
                     result={activeTab?.lastResult ?? null}
+                    basePath={activeTab.filePath
+                        ? activeTab.filePath.replace(/[/\\][^/\\]*$/, "")
+                        : project.path}
                     onContentChange={handleContentChange}
                     onTabStateChange={handleTabStateChange}
                     onSend={handleSend}

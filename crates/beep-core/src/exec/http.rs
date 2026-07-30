@@ -158,6 +158,12 @@ impl HttpExecutor {
         // 3. user headers with no matching auto key are appended
         let merged = merge_headers(&request.headers);
         for field in &merged {
+            // Skip Content-Type for multipart — executor injects it with boundary.
+            if matches!(request.body, ResolvedBody::FormMultipart(_))
+                && field.key.eq_ignore_ascii_case("content-type")
+            {
+                continue;
+            }
             let name = HeaderName::from_bytes(field.key.as_bytes())
                 .map_err(|e| format!("Invalid header name '{}': {}", field.key, e))?;
             let resolved = resolve_basic_auth(field);
@@ -189,11 +195,24 @@ impl HttpExecutor {
                 req_builder = req_builder.body(encoded);
             }
             ResolvedBody::FormMultipart(fields) => {
-                let (_mp_req, mp_body) = build_multipart_body(fields)
-                    .await
-                    .map_err(|e| format!("Multipart build failed: {}", e))?;
+                let (_mp_req, mp_body) =
+                    build_multipart_body(fields, request.multipart_boundary.as_deref())
+                        .await
+                        .map_err(|e| format!("Multipart build failed: {}", e))?;
                 request_body_len = mp_body.len();
                 request_body_str = std::str::from_utf8(&mp_body).ok().map(|s| s.to_owned());
+                // Always inject Content-Type with boundary for multipart.
+                // Replaces any existing Content-Type header (reqwest .header() replaces).
+                if let Some(ct) = _mp_req.headers().get("content-type") {
+                    let ct_val = ct
+                        .to_str()
+                        .map_err(|e| format!("Invalid content-type: {}", e))?;
+                    let name = HeaderName::from_bytes(b"content-type")
+                        .map_err(|e| format!("Invalid header name: {}", e))?;
+                    let val = HeaderValue::from_str(ct_val)
+                        .map_err(|e| format!("Invalid header value: {}", e))?;
+                    req_builder = req_builder.header(name, val);
+                }
                 req_builder = req_builder.body(mp_body);
             }
         }
@@ -434,14 +453,18 @@ fn build_url_encoded_body(fields: &[ResolvedFormField]) -> String {
 
 async fn build_multipart_body(
     fields: &[ResolvedFormField],
+    custom_boundary: Option<&str>,
 ) -> Result<(http::Request<()>, Vec<u8>), String> {
-    let boundary = format!(
-        "----BeepFormBoundary{:x}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos()
-    );
+    let boundary = match custom_boundary {
+        Some(b) if !b.is_empty() => b.to_string(),
+        _ => format!(
+            "----BeepFormBoundary{:x}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ),
+    };
 
     let mut body = Vec::new();
 

@@ -51,6 +51,7 @@ export function parsedToFormRequest(
       body_directive: null,
       form_urlencoded: [],
       form_multipart: [],
+      multipart_boundary: null,
       pre_script: null,
       post_script: null,
       http_version: null,
@@ -111,7 +112,7 @@ export function formRequestToParsed(
           value: f.value,
           enabled: f.enabled !== false,
           field_type: f.field_type ?? "text",
-          content_type: f.content_type ?? "",
+          content_type: f.content_type ?? null,
           is_inline: baseF
             ? f.enabled === false
               ? false
@@ -128,7 +129,7 @@ export function formRequestToParsed(
           value: f.value,
           enabled: f.enabled !== false,
           field_type: f.field_type ?? "text",
-          content_type: f.content_type ?? "",
+          content_type: f.content_type ?? null,
           is_inline: baseF
             ? f.enabled === false
               ? false
@@ -136,6 +137,7 @@ export function formRequestToParsed(
             : true,
         };
       }),
+    multipart_boundary: form.multipart_boundary ?? null,
   };
 }
 

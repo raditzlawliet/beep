@@ -11,11 +11,14 @@
         rawBodyContent: string;
         formUrlEncoded: ParsedFormField[];
         formMultipart: ParsedFormField[];
+        multipartBoundary: string | null;
+        basePath: string | null;
         onBodyModeChange: (mode: BodyKind, updateContentType: boolean) => void;
         onRawBodyChange: (value: string) => void;
         onBeautify: () => Promise<string>;
         onFormUrlEncodedChange: (fields: ParsedFormField[]) => void;
         onFormMultipartChange: (fields: ParsedFormField[]) => void;
+        onMultipartBoundaryChange: (boundary: string | null) => void;
     }
 
     let {
@@ -24,11 +27,14 @@
         rawBodyContent,
         formUrlEncoded,
         formMultipart,
+        multipartBoundary,
+        basePath,
         onBodyModeChange,
         onRawBodyChange,
         onBeautify,
         onFormUrlEncodedChange,
         onFormMultipartChange,
+        onMultipartBoundaryChange,
     }: Props = $props();
 
     // Derived: body type extracted from combined bodyMode ("raw/json" to "json").
@@ -37,9 +43,8 @@
     );
 
     const selectedLabel = $derived(
-        // TODO: Multipart disabled after implementing others related to multipart
         bodyMode === "none" ? "No Body"
-        // : bodyMode === "form-multipart" ? "Multipart Form"
+        : bodyMode === "form-multipart" ? "Multipart Form"
         : bodyMode === "form-urlencoded" ? "Form URL Encoded"
         : bodyMode === "raw/json" ? "JSON"
         : bodyMode === "raw/xml" ? "XML"
@@ -50,9 +55,16 @@
     const selectedValue = $derived(bodyMode);
 
     let updateContentType = $state(true);
+    let autoBoundary = $state(true);
+    let boundaryText = $state("");
 
     $effect(() => {
         updateContentType = bodyDirective === null;
+    });
+
+    $effect(() => {
+        autoBoundary = multipartBoundary === null;
+        boundaryText = multipartBoundary ?? "";
     });
 
     function select(val: string) {
@@ -67,8 +79,8 @@
             <button class="btn btn-ghost btn-xs font-normal gap-1 align-baseline" role="menu" tabindex="0">
                 {#if bodyMode === "none"}
                     <XIcon class="w-3 h-3" />
-                <!-- {:else if bodyMode === "form-multipart"}
-                    <PaperclipIcon class="w-3 h-3" /> -->
+                {:else if bodyMode === "form-multipart"}
+                    <PaperclipIcon class="w-3 h-3" />
                 {:else if bodyMode === "form-urlencoded"}
                     <LinkIcon class="w-3 h-3" />
                 {:else if bodyMode.startsWith("raw/")}
@@ -90,13 +102,12 @@
                     <CheckIcon class="w-3 h-3 ml-auto {selectedValue === val ? '' : 'invisible'}" />
                 {/snippet}
                 <li class="menu-title p-0 px-2 text-xs">Form</li>
-                <!-- TODO: enable when multipart is implemented -->
-                <!-- <li>
+                <li>
                     <button onclick={() => select("form-multipart")}>
                         <PaperclipIcon class="w-3.5 h-3.5" /> Multipart Form
                         {@render item("form-multipart")}
                     </button>
-                </li> -->
+                </li>
                 <li>
                     <button onclick={() => select("form-urlencoded")}>
                         <LinkIcon class="w-3.5 h-3.5" /> Form URL Encoded
@@ -153,6 +164,37 @@
         </label>
 
         <div class="flex-1"></div>
+        {#if bodyMode === "form-multipart"}
+            <label class="label cursor-pointer gap-1 px-2 py-0 text-xs">
+                <input
+                    type="checkbox"
+                    class="checkbox checkbox-xs"
+                    checked={autoBoundary}
+                    onchange={(e) => {
+                        autoBoundary = (e.target as HTMLInputElement).checked;
+                        if (autoBoundary) {
+                            onMultipartBoundaryChange(null);
+                        } else {
+                            onMultipartBoundaryChange(boundaryText || "boundary");
+                        }
+                    }}
+                />
+                <span>Boundary</span>
+            </label>
+            <input
+                class="input input-xs input-ghost w-40 p-0"
+                placeholder="(Auto)"
+                value={boundaryText}
+                disabled={autoBoundary}
+                oninput={(e) => {
+                    const val = (e.target as HTMLInputElement).value;
+                    boundaryText = val;
+                    if (!autoBoundary) {
+                        onMultipartBoundaryChange(val || null);
+                    }
+                }}
+            />
+        {/if}
         {#if bodyMode.startsWith("raw/") && (bodyType === "json" || bodyType === "html" || bodyType === "xml")}
             <button class="btn btn-xs btn-ghost text-accent"
                 onclick={async () => { const beautified = await onBeautify(); onRawBodyChange(beautified); }}
@@ -184,7 +226,11 @@
 
     {#if bodyMode === "form-multipart"}
         <div class="flex-1 min-h-0 overflow-y-auto">
-            <RequestMultipartTab initialValue={formMultipart} onchange={onFormMultipartChange} />
+            <RequestMultipartTab
+                initialValue={formMultipart}
+                {basePath}
+                onchange={onFormMultipartChange}
+            />
         </div>
     {/if}
 </div>

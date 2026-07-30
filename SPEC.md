@@ -133,6 +133,7 @@ Accept: text/html
 ```
 
 In the example above:
+
 - `Connection` is excluded from the request.
 - `Accept-Encoding` is excluded from the request.
 - `Accept: text/html` overrides the default `Accept: */*`.
@@ -286,6 +287,16 @@ Content-Type: image/png
 --boundary--
 ```
 
+**Boundary:** The boundary value is declared in the `Content-Type` header as `boundary=<value>` and used in body separators as `--<value>`. When no `; boundary=...` parameter is present, Beep auto-generates a boundary at execution time.
+
+**Content-Type per field:** Each multipart part may optionally include a `Content-Type` header. Three states:
+
+- `Content-Type: image/png` explicit MIME type
+- `Content-Type: ` (empty value after colon) auto, Beep decides (`application/octet-stream` for files)
+- _(no `Content-Type` line)_ not set, same behavior as auto
+
+**File fields:** File content is read from the path on the `<` line (relative or absolute). The executor reads the file at send time. An empty line separates part headers from the `<` directive.
+
 **Disabling multipart fields:** Prefix every line of the disabled field's block with `//- `, including the boundary separator, headers, blank line, and value.
 
 ```http
@@ -299,7 +310,7 @@ Content-Disposition: form-data; name="display_name"
 John Doe
 //- --boundary
 //- Content-Disposition: form-data; name="phone"
-//- 
+//-
 //- +1-555-0000
 --boundary
 Content-Disposition: form-data; name="avatar"; filename="photo.png"

@@ -62,4 +62,7 @@ pub struct ExecutableRequest {
     pub query_params: Vec<QueryField>,
     #[serde(default)]
     pub body: ResolvedBody,
+    /// Custom multipart boundary. None = auto-generate.
+    #[serde(default)]
+    pub multipart_boundary: Option<String>,
 }

@@ -16,6 +16,7 @@
     interface Props {
         request: ParsedRequest;
         loading: boolean;
+        basePath: string | null;
         onSend: (req: ParsedRequest) => void;
         onUpdate: (req: ParsedRequest) => void;
         defaultHeaders: [string, string][];
@@ -24,7 +25,7 @@
         onUrlBlur?: () => void;
     }
 
-    let { request, loading, onSend, onUpdate, defaultHeaders, initialTab = "params", onTabChange, onUrlBlur }: Props = $props();
+    let { request, loading, basePath, onSend, onUpdate, defaultHeaders, initialTab = "params", onTabChange, onUrlBlur }: Props = $props();
 
     type Tab = "params" | "headers" | "auth" | "body" | "settings";
     let activeTab = $state<Tab>("params");
@@ -216,7 +217,12 @@
             return header;
         });
         if (!updated) headers.push({ key: "Content-Type", value, enabled: true, auto: false });
-        emitUpdate({ headers, body_directive: null });
+        // Initialize boundary if switching to multipart without one set
+        const boundaryOverride: Partial<ParsedRequest> = {};
+        if (kind === "form-multipart" && !request.multipart_boundary) {
+            boundaryOverride.multipart_boundary = null; // auto-generate by default
+        }
+        emitUpdate({ headers, body_directive: null, ...boundaryOverride });
     }
 </script>
 
@@ -307,25 +313,39 @@
                 >
                     {tab}
                     {#if tab === "headers" && headerCount > 0}
-                        <span class="text-xs opacity-50">({headerCount})</span>
+                        <span
+                            data-testid="request-headers-tab-indicator"
+                            class="text-xs opacity-50">({headerCount})</span>
                     {/if}
+
                     {#if tab === "params" && hasParams}
                         <span
+                            data-testid="request-params-tab-indicator"
                             class="w-1.5 h-1.5 rounded-full bg-accent inline-block"
                         ></span>
                     {/if}
+
                     {#if tab === "auth" && hasAuth}
                         <span
+                            data-testid="request-auth-tab-indicator"
                             class="w-1.5 h-1.5 rounded-full bg-accent inline-block"
                         ></span>
                     {/if}
-                    {#if tab === "body" && (request.body || request.form_urlencoded.length || request.form_multipart.length)}
-                        <span
-                            class="w-1.5 h-1.5 rounded-full bg-accent inline-block"
-                        ></span>
+
+                    <!-- NOTICE Weird case, combined condition tab === "body" && (...) condition, sometime act bypass all in some case -->
+                    <!-- That's why, it's now splitted into 2 condition to avoid that weird case -->
+                    {#if tab === "body"}
+                        {#if request.body || request.form_urlencoded.length || request.form_multipart.length}
+                            <span
+                                data-testid="request-body-tab-indicator"
+                                class="w-1.5 h-1.5 rounded-full bg-accent inline-block"
+                            ></span>
+                        {/if}
                     {/if}
+
                     {#if tab === "settings" && httpVersion !== "Auto"}
                         <span
+                            data-testid="request-settings-tab-indicator"
                             class="w-1.5 h-1.5 rounded-full bg-accent inline-block"
                         ></span>
                     {/if}
@@ -368,6 +388,8 @@
                     {rawBodyContent}
                     formUrlEncoded={request.form_urlencoded ?? []}
                     formMultipart={request.form_multipart ?? []}
+                    multipartBoundary={request.multipart_boundary}
+                    {basePath}
                     onBodyModeChange={changeBodyKind}
                     onRawBodyChange={(v) => {
                         rawBodyContent = v;
@@ -378,6 +400,9 @@
                     }}
                     onFormMultipartChange={(fields) => {
                         emitUpdate({ form_multipart: fields });
+                    }}
+                    onMultipartBoundaryChange={(boundary) => {
+                        emitUpdate({ multipart_boundary: boundary });
                     }}
                     onBeautify={beautify}
                 />

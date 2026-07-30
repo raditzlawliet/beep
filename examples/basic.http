@@ -51,3 +51,27 @@ Content-Type: application/x-www-form-urlencoded
 name=John
 &email=email@example.com
 //- &phone=08123123
+
+### POST Multipart Form + Disabled + HTTP/2
+POST https://httpbingo.org/post HTTP/2
+Content-Type: multipart/form-data
+
+--boundary
+Content-Disposition: form-data; name="a"
+
+1
+//- --boundary
+//- Content-Disposition: form-data; name="b"; filename="D:\work\github.com\raditzlawliet\beep\SPEC.md"
+//- Content-Type: application/octet-stream
+//- 
+//- < ./D:\work\github.com\raditzlawliet\beep\SPEC.md
+//- --boundary
+//- Content-Disposition: form-data; name="c"
+//- 
+//- 2
+--boundary
+Content-Disposition: form-data; name="d"
+
+3
+--boundary--
+

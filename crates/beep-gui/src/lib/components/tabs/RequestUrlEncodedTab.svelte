@@ -48,7 +48,7 @@
     }
 
     function addRow() {
-        rows = [...rows, { key: "", value: "", enabled: true }];
+        rows = [...rows, { key: "", value: "", enabled: true, isInline: true }];
         emit();
     }
 

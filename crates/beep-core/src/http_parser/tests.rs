@@ -13,6 +13,7 @@ mod tests {
             body_directive: None,
             form_urlencoded: vec![],
             form_multipart: vec![],
+            multipart_boundary: None,
             pre_script: None,
             post_script: None,
             http_version: None,
@@ -470,7 +471,7 @@ Content-Type: image/png
         assert_eq!(result.requests[0].form_multipart[0].field_type, "file");
         assert_eq!(
             result.requests[0].form_multipart[0].content_type,
-            "image/png"
+            Some("image/png".to_string())
         );
     }
 
