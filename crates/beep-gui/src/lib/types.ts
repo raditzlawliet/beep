@@ -72,7 +72,7 @@ export interface ParsedRequest {
   headers: ParsedHeaderField[];
   query_params: ParsedQueryField[];
   body: string | null;
-  body_mode: string | null;
+  body_directive: BodyKind | null;
   form_urlencoded: ParsedFormField[];
   form_multipart: ParsedFormField[];
   pre_script: string | null;
@@ -85,6 +85,15 @@ export interface ParsedRequest {
   headers_region: ParsedRegion;
   body_region: ParsedRegion;
 }
+
+export type BodyKind =
+  | "none"
+  | "raw/json"
+  | "raw/xml"
+  | "raw/html"
+  | "raw/text"
+  | "form-urlencoded"
+  | "form-multipart";
 
 export interface HttpFile {
   variables: ParsedFileVariable[];
@@ -204,13 +213,13 @@ export function emptyParsedRequest(): ParsedRequest {
     headers: [],
     query_params: [],
     body: null,
-    body_mode: "none",
+    body_directive: null,
     form_urlencoded: [],
     form_multipart: [],
     pre_script: null,
     post_script: null,
     http_version: null,
-    
+
     //
     block_region: { start: 0, end: 0 },
     request_line_region: { start: 0, end: 0 },

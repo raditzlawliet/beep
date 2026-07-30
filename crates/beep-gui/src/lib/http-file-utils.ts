@@ -1,11 +1,31 @@
 import type {
-  HttpMethod,
   HttpVersion,
   ParsedRequest,
   HeaderField,
-  ParsedQueryField,
-  ParsedFormField,
+  BodyKind,
 } from "./types";
+
+export function effectiveBodyKind(
+  headers: HeaderField[],
+  bodyDirective: BodyKind | null,
+  body: string | null,
+): BodyKind {
+  if (bodyDirective) return bodyDirective;
+  const contentType = headers
+    .find(
+      (header) =>
+        header.enabled && header.key.trim().toLowerCase() === "content-type",
+    )
+    ?.value.toLowerCase();
+  if (contentType?.includes("json")) return "raw/json";
+  if (contentType?.includes("xml")) return "raw/xml";
+  if (contentType?.includes("text/html")) return "raw/html";
+  if (contentType?.includes("application/x-www-form-urlencoded"))
+    return "form-urlencoded";
+  if (contentType?.includes("multipart/form-data")) return "form-multipart";
+  if (contentType) return "raw/text";
+  return body ? "raw/text" : "none";
+}
 
 export function parseHttpVersion(v: string | null | undefined): HttpVersion {
   if (!v) return "Auto";
@@ -28,7 +48,7 @@ export function parsedToFormRequest(
       headers: [],
       query_params: [],
       body: null,
-      body_mode: "none",
+      body_directive: null,
       form_urlencoded: [],
       form_multipart: [],
       pre_script: null,
@@ -80,7 +100,7 @@ export function formRequestToParsed(
         };
       }),
     body: form.body,
-    body_mode: form.body_mode ?? "none",
+    body_directive: form.body_directive ?? null,
     http_version: form.http_version,
     form_urlencoded: (form.form_urlencoded ?? [])
       .filter((f) => f.key)

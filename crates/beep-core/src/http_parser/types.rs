@@ -120,12 +120,13 @@ pub struct ParsedRequest {
     pub query_params: Vec<ParsedQueryField>,
     /// Request body, if any (raw body for JSON/XML/text modes).
     pub body: Option<String>,
-    /// Detected body mode hint.
-    pub body_mode: Option<String>,
-    /// Parsed form-urlencoded fields (when body_mode is form-urlencoded).
+    /// Explicit `// @body <kind>` directive, if present.
+    #[serde(default)]
+    pub body_directive: Option<String>,
+    /// Parsed form-urlencoded fields (when the effective body kind is form-urlencoded).
     #[serde(default)]
     pub form_urlencoded: Vec<ParsedFormField>,
-    /// Parsed multipart fields (when body_mode is form-multipart).
+    /// Parsed multipart fields (when the effective body kind is form-multipart).
     #[serde(default)]
     pub form_multipart: Vec<ParsedFormField>,
     /// Pre-request script content, if any.

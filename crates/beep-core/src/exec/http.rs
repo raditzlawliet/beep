@@ -166,10 +166,6 @@ impl HttpExecutor {
             req_builder = req_builder.header(name, val);
         }
 
-        let has_user_content_type = merged
-            .iter()
-            .any(|h| h.key.eq_ignore_ascii_case("content-type"));
-
         // Body
         let request_body_str: Option<String>;
         let request_body_len: usize;
@@ -180,11 +176,8 @@ impl HttpExecutor {
             }
             ResolvedBody::Raw {
                 content,
-                content_type,
+                content_type: _,
             } => {
-                if !has_user_content_type {
-                    req_builder = req_builder.header("content-type", content_type.as_str());
-                }
                 request_body_len = content.len();
                 request_body_str = Some(content.clone());
                 req_builder = req_builder.body(content.clone());
@@ -193,23 +186,12 @@ impl HttpExecutor {
                 let encoded = build_url_encoded_body(fields);
                 request_body_len = encoded.len();
                 request_body_str = Some(encoded.clone());
-                if !has_user_content_type {
-                    req_builder =
-                        req_builder.header("content-type", "application/x-www-form-urlencoded");
-                }
                 req_builder = req_builder.body(encoded);
             }
             ResolvedBody::FormMultipart(fields) => {
-                let (mp_req, mp_body) = build_multipart_body(fields)
+                let (_mp_req, mp_body) = build_multipart_body(fields)
                     .await
                     .map_err(|e| format!("Multipart build failed: {}", e))?;
-                if !has_user_content_type {
-                    if let Some(ct) = mp_req.headers().get("content-type") {
-                        if let Ok(v) = ct.to_str() {
-                            req_builder = req_builder.header("content-type", v);
-                        }
-                    }
-                }
                 request_body_len = mp_body.len();
                 request_body_str = std::str::from_utf8(&mp_body).ok().map(|s| s.to_owned());
                 req_builder = req_builder.body(mp_body);

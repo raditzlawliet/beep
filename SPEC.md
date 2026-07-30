@@ -182,9 +182,32 @@ Authorization: CustomScheme credentials-here
 
 ## 6. Request Body
 
-A **blank line** separates headers from the body. Body type is determined by `Content-Type`.
+A **blank line** separates headers from the body. `Content-Type` is an independent HTTP header: it is sent exactly as written and may accompany an empty body or a body with a different representation.
 
-### 6.1 JSON
+Beep selects the body editor and serializer in this order:
+
+1. The request-level `// @body <kind>` directive.
+2. The first enabled `Content-Type` header.
+3. Fallback: `none` when body is empty, `raw/text` when body has content.
+
+### 6.1 `@body` Directive
+
+Use `// @body <kind>` in the header section to explicitly select how Beep parses, edits, and serializes the body without changing `Content-Type`.
+
+Supported kinds are `none`, `raw/json`, `raw/xml`, `raw/html`, `raw/text`, `form-urlencoded`, and `form-multipart`. Raw kinds send the body text unchanged. Form kinds use Beep's structured form parser and serializer. Use `none` to explicitly mark a request as having no body.
+
+```http
+### Keep a custom media type while editing JSON
+POST https://api.example.com/events
+Content-Type: application/vnd.example.event+json
+// @body raw/json
+
+{"event":"created"}
+```
+
+An empty body is represented by no content after the blank line. It is independent from both `Content-Type` and `// @body`. Use `// @body none` to explicitly declare no body should be sent, which suppresses the body editor and clears any body content.
+
+### 6.2 JSON
 
 ```http
 ### JSON body
@@ -197,7 +220,7 @@ Content-Type: application/json
 }
 ```
 
-### 6.2 XML
+### 6.3 XML
 
 ```http
 ### XML body
@@ -211,7 +234,7 @@ Content-Type: application/xml
 </user>
 ```
 
-### 6.3 Form URL Encoded
+### 6.4 Form URL Encoded
 
 ```http
 ### Single line
@@ -244,7 +267,7 @@ username=john
 
 In the example above, `username` and `password` are sent. `remember` and `redirect_uri` are disabled and excluded from the request body. Only multiline support disabled option.
 
-### 6.4 Multipart Form Data
+### 6.5 Multipart Form Data
 
 ```http
 ### Multipart
@@ -288,7 +311,7 @@ Content-Type: image/png
 
 In the example above, `display_name` and `avatar` are sent. `phone` is disabled and excluded. Note that disabled boundary lines use `//- --boundary` (the `//-` sigil followed by `--boundary`).
 
-### 6.5 Plain Text / Raw
+### 6.6 Plain Text / Raw
 
 ```http
 ### Plain text body
@@ -299,9 +322,19 @@ This is raw text content.
 No structure required.
 ```
 
-### 6.6 No Body
+### 6.7 No Body
 
 Requests with no body (e.g., `GET`, `DELETE`, `HEAD`) simply omit the blank line and body.
+
+Use `// @body none` to explicitly declare no body when a Content-Type header is also present:
+
+```http
+### Explicit no body with Content-Type
+POST https://api.example.com/events HTTP/1.1
+Content-Type: application/json
+// @body none
+
+```
 
 ```http
 ### No body
@@ -315,7 +348,7 @@ HEAD https://api.example.com/users HTTP/1.1
 OPTIONS https://api.example.com/users HTTP/1.1
 ```
 
-### 6.7 Body from External File
+### 6.8 Body from External File
 
 Use `< ./path/to/file` to load body content from a file.
 

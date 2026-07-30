@@ -249,6 +249,7 @@ fn parse_request_block(block: &str, base: usize) -> ParsedRequest {
     };
     let mut headers_region_end = headers_region_start;
     let mut headers = Vec::new();
+    let mut body_directive = None;
     let mut body_line_start: Option<usize> = None;
 
     while i < lines.len() {
@@ -260,6 +261,17 @@ fn parse_request_block(block: &str, base: usize) -> ParsedRequest {
             break;
         }
         let (content, disabled) = strip_disable_marker(trimmed);
+        if !disabled {
+            if let Some(kind) = content.strip_prefix("// @body ") {
+                let kind = kind.trim();
+                if is_body_kind(kind) {
+                    body_directive = Some(kind.to_string());
+                }
+                headers_region_end = line_end_offset(base, block, i);
+                i += 1;
+                continue;
+            }
+        }
         // Check for auto-header opt-out: //- @headerAuto Key
         if let Some(key) = content
             .strip_prefix("@headerAuto ")
@@ -356,9 +368,8 @@ fn parse_request_block(block: &str, base: usize) -> ParsedRequest {
         Some(body_lines.join("\n"))
     };
 
-    let body_mode = detect_body_mode(&headers, body.as_deref());
-    let (form_urlencoded, form_multipart) =
-        parse_body_fields(body.as_deref(), body_mode.as_deref());
+    let body_kind = effective_body_kind(&headers, body_directive.as_deref(), body.as_deref());
+    let (form_urlencoded, form_multipart) = parse_body_fields(body.as_deref(), Some(body_kind));
 
     let block_end = base + block.len();
 
@@ -369,7 +380,7 @@ fn parse_request_block(block: &str, base: usize) -> ParsedRequest {
         headers,
         query_params,
         body,
-        body_mode,
+        body_directive,
         form_urlencoded,
         form_multipart,
         pre_script,
@@ -433,14 +444,14 @@ pub fn strip_disable_marker(trimmed: &str) -> (&str, bool) {
 
 fn parse_body_fields(
     body: Option<&str>,
-    body_mode: Option<&str>,
+    body_kind: Option<&str>,
 ) -> (Vec<ParsedFormField>, Vec<ParsedFormField>) {
     let body = match body {
         Some(b) if !b.is_empty() => b,
         _ => return (Vec::new(), Vec::new()),
     };
 
-    match body_mode {
+    match body_kind {
         Some("form-urlencoded") => (parse_urlencoded_body(body), Vec::new()),
         Some("form-multipart") => (Vec::new(), parse_multipart_body(body)),
         _ => (Vec::new(), Vec::new()),
@@ -598,12 +609,28 @@ fn parse_kv_pair_quoted(input: &str) -> Option<(&str, &str)> {
     }
 }
 
-/// Detect body mode from Content-Type header and body content.
-pub fn detect_body_mode(headers: &[ParsedHeaderField], body: Option<&str>) -> Option<String> {
-    if body.is_none() || body.unwrap().is_empty() {
-        return Some("none".to_string());
+pub fn is_body_kind(kind: &str) -> bool {
+    matches!(
+        kind,
+        "none"
+            | "raw/json"
+            | "raw/xml"
+            | "raw/html"
+            | "raw/text"
+            | "form-urlencoded"
+            | "form-multipart"
+    )
+}
+
+/// Resolve the Beep body representation without guessing from body text.
+pub fn effective_body_kind<'a>(
+    headers: &[ParsedHeaderField],
+    directive: Option<&'a str>,
+    body: Option<&str>,
+) -> &'a str {
+    if let Some(kind) = directive.filter(|kind| is_body_kind(kind)) {
+        return kind;
     }
-    let body = body.unwrap();
     let ct = headers
         .iter()
         .filter(|h| h.enabled)
@@ -611,25 +638,17 @@ pub fn detect_body_mode(headers: &[ParsedHeaderField], body: Option<&str>) -> Op
         .map(|h| h.value.to_lowercase());
 
     match ct.as_deref() {
-        Some(ct) if ct.contains("application/json") => Some("raw/json".to_string()),
-        Some(ct) if ct.contains("application/xml") || ct.contains("text/xml") => {
-            Some("raw/xml".to_string())
-        }
-        Some(ct) if ct.contains("text/html") => Some("raw/html".to_string()),
-        Some(ct) if ct.contains("application/x-www-form-urlencoded") => {
-            Some("form-urlencoded".to_string())
-        }
-        Some(ct) if ct.contains("multipart/form-data") => Some("form-multipart".to_string()),
-        _ => {
-            let trimmed = body.trim();
-            if (trimmed.starts_with('{') || trimmed.starts_with('['))
-                && serde_json::from_str::<serde_json::Value>(trimmed).is_ok()
-            {
-                Some("raw/json".to_string())
-            } else if trimmed.starts_with("<?xml") {
-                Some("raw/xml".to_string())
+        Some(ct) if ct.contains("json") => "raw/json",
+        Some(ct) if ct.contains("xml") => "raw/xml",
+        Some(ct) if ct.contains("text/html") => "raw/html",
+        Some(ct) if ct.contains("application/x-www-form-urlencoded") => "form-urlencoded",
+        Some(ct) if ct.contains("multipart/form-data") => "form-multipart",
+        Some(_) => "raw/text",
+        None => {
+            if body.map_or(true, |b| b.is_empty()) {
+                "none"
             } else {
-                Some("raw/text".to_string())
+                "raw/text"
             }
         }
     }

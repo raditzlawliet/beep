@@ -1,17 +1,17 @@
 <script lang="ts">
-    import type { ParsedFormField } from "$lib/types";
+    import type { BodyKind, ParsedFormField } from "$lib/types";
     import CodeEditor from "$lib/components/CodeEditor.svelte";
     import RequestUrlEncodedTab from "./RequestUrlEncodedTab.svelte";
     import RequestMultipartTab from "./RequestMultipartTab.svelte";
-    import type { BodyMode } from "$lib/components/RequestForm.svelte";
     import { BracesIcon, ChevronDownIcon, PaperclipIcon, LinkIcon, FileTextIcon, FileCodeIcon, XIcon, CheckIcon, CodeXmlIcon } from "@lucide/svelte";
 
     interface Props {
-        bodyMode: BodyMode;
+        bodyMode: BodyKind;
+        bodyDirective: BodyKind | null;
         rawBodyContent: string;
         formUrlEncoded: ParsedFormField[];
         formMultipart: ParsedFormField[];
-        onBodyModeChange: (mode: BodyMode) => void;
+        onBodyModeChange: (mode: BodyKind, updateContentType: boolean) => void;
         onRawBodyChange: (value: string) => void;
         onBeautify: () => Promise<string>;
         onFormUrlEncodedChange: (fields: ParsedFormField[]) => void;
@@ -20,6 +20,7 @@
 
     let {
         bodyMode,
+        bodyDirective,
         rawBodyContent,
         formUrlEncoded,
         formMultipart,
@@ -36,20 +37,26 @@
     );
 
     const selectedLabel = $derived(
-        // TODO: enable when multipart is implemented
-        // bodyMode === "form-multipart" ? "Multipart Form"
-        bodyMode === "form-urlencoded" ? "Form URL Encoded"
+        // TODO: Multipart disabled after implementing others related to multipart
+        bodyMode === "none" ? "No Body"
+        // : bodyMode === "form-multipart" ? "Multipart Form"
+        : bodyMode === "form-urlencoded" ? "Form URL Encoded"
         : bodyMode === "raw/json" ? "JSON"
         : bodyMode === "raw/xml" ? "XML"
         : bodyMode === "raw/html" ? "HTML"
-        : bodyMode === "raw/text" ? "Text"
-        : "No Body"
+        : "Text",
     );
 
     const selectedValue = $derived(bodyMode);
 
+    let updateContentType = $state(true);
+
+    $effect(() => {
+        updateContentType = bodyDirective === null;
+    });
+
     function select(val: string) {
-        onBodyModeChange(val as BodyMode);
+        onBodyModeChange(val as BodyKind, updateContentType);
         (document.activeElement as HTMLElement)?.blur();
     }
 </script>
@@ -58,8 +65,10 @@
     <div class="flex items-center p-0 px-2 min-h-4">
         <div class="dropdown">
             <button class="btn btn-ghost btn-xs font-normal gap-1 align-baseline" role="menu" tabindex="0">
-                {#if bodyMode === "form-multipart"}
-                    <PaperclipIcon class="w-3 h-3" />
+                {#if bodyMode === "none"}
+                    <XIcon class="w-3 h-3" />
+                <!-- {:else if bodyMode === "form-multipart"}
+                    <PaperclipIcon class="w-3 h-3" /> -->
                 {:else if bodyMode === "form-urlencoded"}
                     <LinkIcon class="w-3 h-3" />
                 {:else if bodyMode.startsWith("raw/")}
@@ -72,8 +81,6 @@
                     {:else}
                         <FileTextIcon class="w-3 h-3" />
                     {/if}
-                {:else}
-                    <XIcon class="w-3 h-3" />
                 {/if}
                 {selectedLabel}
                 <ChevronDownIcon class="w-3 h-3" />
@@ -83,14 +90,13 @@
                     <CheckIcon class="w-3 h-3 ml-auto {selectedValue === val ? '' : 'invisible'}" />
                 {/snippet}
                 <li class="menu-title p-0 px-2 text-xs">Form</li>
-                <!-- TODO: enable when multipart is implemented
-                <li>
+                <!-- TODO: enable when multipart is implemented -->
+                <!-- <li>
                     <button onclick={() => select("form-multipart")}>
                         <PaperclipIcon class="w-3.5 h-3.5" /> Multipart Form
                         {@render item("form-multipart")}
                     </button>
-                </li>
-                -->
+                </li> -->
                 <li>
                     <button onclick={() => select("form-urlencoded")}>
                         <LinkIcon class="w-3.5 h-3.5" /> Form URL Encoded
@@ -132,6 +138,20 @@
             </ul>
         </div>
 
+        <label class="label cursor-pointer gap-1 px-2 py-0 text-xs opacity-70">
+            <input
+                type="checkbox"
+                class="checkbox checkbox-xs"
+                checked={updateContentType}
+                onchange={(event) => {
+                    const checked = (event.target as HTMLInputElement).checked;
+                    updateContentType = checked;
+                    onBodyModeChange(bodyMode, checked);
+                }}
+            />
+            <span>Update Content-Type</span>
+        </label>
+
         <div class="flex-1"></div>
         {#if bodyMode.startsWith("raw/") && (bodyType === "json" || bodyType === "html" || bodyType === "xml")}
             <button class="btn btn-xs btn-ghost text-accent"
@@ -142,6 +162,11 @@
         {/if}
     </div>
 
+    {#if bodyMode === "none"}
+        <div class="flex-1 flex items-center justify-center text-base-content/30 text-sm">
+            No body will be sent
+        </div>
+    {/if}
     {#if bodyMode.startsWith("raw/")}
         <CodeEditor
             value={rawBodyContent}

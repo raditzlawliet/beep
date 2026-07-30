@@ -1,7 +1,7 @@
 <script lang="ts">
-    import type { ParsedRequest, HttpMethod, HttpVersion, HeaderField } from "$lib/types";
+    import type { BodyKind, ParsedRequest, HttpMethod, HttpVersion, HeaderField } from "$lib/types";
     import { methodTextColor } from "$lib/types";
-    import { parseHttpVersion } from "$lib/http-file-utils";
+    import { effectiveBodyKind, parseHttpVersion } from "$lib/http-file-utils";
     import { jsonrepair } from "jsonrepair";
     import { format } from "prettier/standalone";
     import * as htmlParser from "prettier/plugins/html";
@@ -33,8 +33,7 @@
         activeTab = (initialTab as Tab) || "params";
     });
 
-    export type BodyMode = "none" | "raw/json" | "raw/xml" | "raw/html" | "raw/text" | "form-urlencoded" | "form-multipart";
-    let bodyMode = $state<BodyMode>("none");
+    const bodyMode = $derived(effectiveBodyKind(request.headers, request.body_directive, request.body));
 
     // Derived: raw body type extracted from combined bodyMode.
     const bodyType = $derived(
@@ -56,9 +55,6 @@
     let _lastSyncedRawBody: string | null | undefined = $state(undefined);
     $effect(() => {
         const rb = request.body;
-        bodyMode = (request.body_mode as BodyMode) ||
-            (request.body ? "raw/text" : "none");
-
         // TODO not tested yet, since this review suggestion and the edge-case.
         // Editing raw body, then something triggers a re-parse that restores a slightly different version.
         if (rb === _lastSyncedRawBody) return;
@@ -178,8 +174,49 @@
     }
 
     function handleSend() {
-        onSend({ ...request, body_mode: bodyMode,
+        onSend({ ...request,
             body: bodyMode.startsWith("raw/") ? rawBodyContent : request.body });
+    }
+
+    const contentTypeForKind: Record<BodyKind, string> = {
+        "none": "",
+        "raw/json": "application/json",
+        "raw/xml": "application/xml",
+        "raw/html": "text/html",
+        "raw/text": "text/plain",
+        "form-urlencoded": "application/x-www-form-urlencoded",
+        "form-multipart": "multipart/form-data",
+    };
+
+    function changeBodyKind(kind: BodyKind, updateContentType: boolean) {
+        if (kind === "none") {
+            const cleared: Partial<ParsedRequest> = { body: null, form_urlencoded: [], form_multipart: [] };
+            if (updateContentType) {
+                cleared.headers = request.headers.filter(
+                    (h) => h.key.trim().toLowerCase() !== "content-type",
+                );
+                cleared.body_directive = null;
+            } else {
+                cleared.body_directive = "none";
+            }
+            emitUpdate(cleared);
+            return;
+        }
+        if (!updateContentType) {
+            emitUpdate({ body_directive: kind });
+            return;
+        }
+        const value = contentTypeForKind[kind];
+        let updated = false;
+        const headers = request.headers.map((header) => {
+            if (!updated && header.enabled && !header.auto && header.key.trim().toLowerCase() === "content-type") {
+                updated = true;
+                return { ...header, value };
+            }
+            return header;
+        });
+        if (!updated) headers.push({ key: "Content-Type", value, enabled: true, auto: false });
+        emitUpdate({ headers, body_directive: null });
     }
 </script>
 
@@ -282,7 +319,7 @@
                             class="w-1.5 h-1.5 rounded-full bg-accent inline-block"
                         ></span>
                     {/if}
-                    {#if tab === "body" && bodyMode !== "none"}
+                    {#if tab === "body" && (request.body || request.form_urlencoded.length || request.form_multipart.length)}
                         <span
                             class="w-1.5 h-1.5 rounded-full bg-accent inline-block"
                         ></span>
@@ -315,6 +352,7 @@
                         emitUpdate({ headers });
                     }}
                     onFocusAuth={() => { activeTab = "auth"; onTabChange?.("auth"); }}
+                    onFocusBody={() => { activeTab = "body"; onTabChange?.("body"); }}
                 />
             {:else if activeTab === "auth"}
                 <RequestAuthTab
@@ -324,15 +362,13 @@
                     }}
                 />
             {:else if activeTab === "body"}
-                <RequestBodyTab
+                    <RequestBodyTab
                     {bodyMode}
+                    bodyDirective={request.body_directive}
                     {rawBodyContent}
                     formUrlEncoded={request.form_urlencoded ?? []}
                     formMultipart={request.form_multipart ?? []}
-                    onBodyModeChange={(mode) => {
-                        bodyMode = mode;
-                        emitUpdate({ body_mode: mode });
-                    }}
+                    onBodyModeChange={changeBodyKind}
                     onRawBodyChange={(v) => {
                         rawBodyContent = v;
                         emitUpdate({ body: v });
