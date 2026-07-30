@@ -376,7 +376,7 @@
                                         {@const selected = rows[i].contentType === ct}
                                         <li>
                                             <button
-                                                class="w-full text-left px-2 py-0.5 text-xs font-mono hover:bg-base-300 flex items-center gap-1 {selected ? 'bg-base-300' : ''} {ctHighlight === j ? 'outline outline-1 outline-primary' : ''}"
+                                                class="w-full text-left px-2 py-0.5 text-xs font-mono hover:bg-base-300 flex items-center gap-1 {selected ? 'bg-base-300' : ''} {ctHighlight === j ? 'outline outline-primary' : ''}"
                                                 onmousedown={() => selectCt(ct)}
                                             >
                                                 <span class="flex-1">{ct}</span>
@@ -389,7 +389,7 @@
                                     {#if ctFilter && !CONTENT_TYPES.includes(ctFilter)}
                                         <li>
                                             <button
-                                                class="w-full text-left px-2 py-0.5 text-xs font-mono hover:bg-base-300 flex items-center gap-1 bg-base-300 {ctHighlight === filteredCt.length ? 'outline outline-1 outline-primary' : ''}"
+                                                class="w-full text-left px-2 py-0.5 text-xs font-mono hover:bg-base-300 flex items-center gap-1 bg-base-300 {ctHighlight === filteredCt.length ? 'outline outline-primary' : ''}"
                                                 onmousedown={() => selectCt(ctFilter)}
                                             >
                                                 <span class="flex-1">{ctFilter}</span>
