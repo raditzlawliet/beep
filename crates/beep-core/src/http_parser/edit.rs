@@ -54,7 +54,9 @@ fn detect_changed_sections(old: &ParsedRequest, new: &ParsedRequest) -> ChangedS
     let new_multiline: Vec<_> = new.query_params.iter().filter(|q| !q.is_inline).collect();
 
     ChangedSections {
-        pre_or_title: old.title != new.title || old.pre_script != new.pre_script,
+        pre_or_title: old.title != new.title
+            || old.pre_script != new.pre_script
+            || old.pre_script_external != new.pre_script_external,
         request_line: old.method != new.method
             || old.url != new.url
             || old.http_version != new.http_version
@@ -67,7 +69,8 @@ fn detect_changed_sections(old: &ParsedRequest, new: &ParsedRequest) -> ChangedS
             || old.form_urlencoded != new.form_urlencoded
             || old.form_multipart != new.form_multipart
             || old.multipart_boundary != new.multipart_boundary
-            || old.post_script != new.post_script,
+            || old.post_script != new.post_script
+            || old.post_script_external != new.post_script_external,
     }
 }
 
@@ -216,6 +219,7 @@ pub fn apply_request_update(content: &str, request_idx: usize, updated: &ParsedR
                 &updated.form_urlencoded,
                 &updated.form_multipart,
                 updated.post_script.as_deref(),
+                updated.post_script_external,
                 updated.multipart_boundary.as_deref(),
             ),
             nl,

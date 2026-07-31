@@ -137,14 +137,17 @@ fn parse_request_block(block: &str, base: usize) -> ParsedRequest {
 
     // Pre-request script
     let mut pre_script: Option<String> = None;
+    let mut pre_script_external = false;
     let mut request_line_idx: Option<usize> = None;
 
     while i < lines.len() {
         let trimmed = lines[i].trim();
         if trimmed.starts_with('<') {
-            let script_content = extract_script_block(&lines, &mut i, trimmed);
-            if pre_script.is_none() {
-                pre_script = script_content;
+            if let Some((content, external)) = extract_script_block(&lines, &mut i, trimmed) {
+                if pre_script.is_none() {
+                    pre_script = Some(content);
+                    pre_script_external = external;
+                }
             }
             i += 1;
         } else if trimmed.is_empty() || trimmed.starts_with("//") {
@@ -318,6 +321,7 @@ fn parse_request_block(block: &str, base: usize) -> ParsedRequest {
     let mut body_lines: Vec<&str> = Vec::new();
     let mut body_region_end = body_region_start;
     let mut post_script: Option<String> = None;
+    let mut post_script_external = false;
 
     if let Some(bs) = body_line_start {
         let mut j = bs;
@@ -327,9 +331,11 @@ fn parse_request_block(block: &str, base: usize) -> ParsedRequest {
                 j += 1;
                 continue;
             }
-            if trimmed.starts_with("> {") || trimmed.starts_with("> .") {
-                let script_content = extract_script_block(&lines, &mut j, trimmed);
-                post_script = script_content;
+            if trimmed.starts_with("> ") {
+                if let Some((content, external)) = extract_script_block(&lines, &mut j, trimmed) {
+                    post_script = Some(content);
+                    post_script_external = external;
+                }
                 j += 1;
                 continue;
             }
@@ -390,7 +396,9 @@ fn parse_request_block(block: &str, base: usize) -> ParsedRequest {
         form_multipart,
         multipart_boundary,
         pre_script,
+        pre_script_external,
         post_script,
+        post_script_external,
         http_version,
         block_region: Region::new(base, block_end),
         request_line_region,
@@ -686,13 +694,13 @@ pub fn effective_body_kind<'a>(
 }
 
 // TODO script is only parsed, need implementation executor or validator
-fn extract_script_block(lines: &[&str], idx: &mut usize, first_line: &str) -> Option<String> {
+fn extract_script_block(
+    lines: &[&str],
+    idx: &mut usize,
+    first_line: &str,
+) -> Option<(String, bool)> {
     let first = first_line.trim();
     let after_lt = &first[1..].trim();
-
-    if after_lt.starts_with("./") || after_lt.starts_with(".\\") {
-        return Some(after_lt.to_string());
-    }
 
     if after_lt.starts_with("{%") {
         let mut script = after_lt[2..].to_string();
@@ -700,23 +708,33 @@ fn extract_script_block(lines: &[&str], idx: &mut usize, first_line: &str) -> Op
             if let Some(end) = script.find("%}") {
                 script = script[..end].trim().to_string();
             }
-            return Some(script);
+            return Some((script, false));
         }
         *idx += 1;
         while *idx < lines.len() {
             let line = lines[*idx];
             if line.trim().contains("%}") {
                 if let Some(end) = line.find("%}") {
-                    script.push('\n');
-                    script.push_str(&line[..end].trim());
+                    let trailing = line[..end].trim();
+                    if !trailing.is_empty() {
+                        script.push('\n');
+                        script.push_str(trailing);
+                    }
                 }
                 break;
             }
-            script.push('\n');
+            if !script.is_empty() {
+                script.push('\n');
+            }
             script.push_str(line);
             *idx += 1;
         }
-        return Some(script);
+        return Some((script.trim().to_string(), false));
+    }
+
+    // Not {% treat as file path (relative or absolute)
+    if !after_lt.is_empty() {
+        return Some((after_lt.to_string(), true));
     }
 
     None

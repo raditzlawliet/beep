@@ -595,7 +595,7 @@
         reqError = null;
         const sendTabId = activeTabId;
         try {
-            await request.send(req, fileVars);
+            await request.send(req, fileVars, basePath);
             // Save response to the active tab so each tab has its own response.
             const tab = findTab(sendTabId);
             if (tab) tab.lastResult = request.result;
@@ -783,6 +783,11 @@
     let activeTab = $derived(findTab(activeTabId));
     let activeFileName = $derived(activeTab?.label ?? null);
     let hasActiveHttpTab = $derived(isHttpTab(activeTab));
+    let basePath = $derived(
+        activeTab?.filePath
+            ? activeTab.filePath.replace(/[/\\][^/\\]*$/, "")
+            : project.path
+    );
     let hasActiveFileTab = $derived(activeTab?.type === "file");
 
     $effect(() => {
@@ -895,9 +900,7 @@
                     {sending}
                     {reqError}
                     result={activeTab?.lastResult ?? null}
-                    basePath={activeTab.filePath
-                        ? activeTab.filePath.replace(/[/\\][^/\\]*$/, "")
-                        : project.path}
+                    basePath={basePath}
                     onContentChange={handleContentChange}
                     onTabStateChange={handleTabStateChange}
                     onSend={handleSend}

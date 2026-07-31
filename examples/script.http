@@ -1,0 +1,17 @@
+@token = original
+
+### Overrides via pre-script
+< {%
+req.setMethod("POST");
+req.setUrl("https://httpbingo.org/post");
+req.vars.set("token", "changed");
+%}
+GET https://httpbingo.org/get
+Content-Type: multipart/form-data
+Authorization: Bearer {{token}}
+
+### Overrides via pre-script with file
+< ./pre-script.js
+GET https://httpbingo.org/get
+Content-Type: multipart/form-data
+Authorization: Bearer {{token}}

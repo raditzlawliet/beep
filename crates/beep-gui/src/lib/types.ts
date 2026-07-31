@@ -77,7 +77,9 @@ export interface ParsedRequest {
   form_multipart: ParsedFormField[];
   multipart_boundary: string | null;
   pre_script: string | null;
+  pre_script_external: boolean;
   post_script: string | null;
+  post_script_external: boolean;
   http_version: string | null;
   //
   block_region: ParsedRegion;
@@ -219,7 +221,9 @@ export function emptyParsedRequest(): ParsedRequest {
     form_multipart: [],
     multipart_boundary: null,
     pre_script: null,
+    pre_script_external: false,
     post_script: null,
+    post_script_external: false,
     http_version: null,
 
     //

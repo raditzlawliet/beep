@@ -420,12 +420,10 @@ In the example above, `page` and `limit` are sent. `sort` and `filter` are disab
 
 ## 8. Variables
 
-### 8.1 Overview
-
 Beep resolves variables at request time by walking a precedence chain; highest scope wins.
 
 ```md
-1. request.vars - highest, current request only
+1. req.vars - highest, current request only
 2. client.vars - session, entire app lifetime (in-memory)
 3. @var in .http file - file-level static
 4. .beep/vars.json - folder/project cascade, deepest wins
@@ -433,7 +431,7 @@ Beep resolves variables at request time by walking a precedence chain; highest s
 
 ---
 
-### 8.2 `request.vars` - Request Scope
+### 8.1 `req.vars` - Request Scope
 
 - **Set via:** pre-request script only
 - **Lives:** current request only, gone after request com<!--  -->pletes
@@ -456,7 +454,7 @@ Content-Type: application/json
 
 After this request completes, `{{timestamp}}` and `{{nonce}}` no longer exist.
 
-### 8.3 `client.vars` - Session Scope
+### 8.2 `client.vars` - Session Scope
 
 - **Set via:** pre or post-request script
 - **Lives:** entire app session, lost when app closes
@@ -479,7 +477,7 @@ GET https://api.example.com/me HTTP/1.1
 Authorization: Bearer {{token}}
 ```
 
-### 8.4 `@var` - File-Level Scope
+### 8.3 `@var` - File-Level Scope
 
 - **Set via:** declared at the top of a `.http` file
 - **Lives:** file load time
@@ -497,7 +495,7 @@ Authorization: Bearer {{token}}
 
 `@var` is read-only at runtime; scripts cannot overwrite it. If `client.vars` has the same key, `client.vars` wins.
 
-### 8.5 `.beep/vars.json` - Folder / Project Scope
+### 8.4 `.beep/vars.json` - Folder / Project Scope
 
 - **Set via:** JSON files with naming `vars.json` or `_vars.json`
 - **Lives:** always, loaded at project open
@@ -540,7 +538,7 @@ Always start with object.
 
 ---
 
-### 8.7 Variable Interpolation
+### 8.5 Variable Interpolation
 
 Use `{{variable}}` anywhere in a request - URL, headers, body. Resolved at request time.
 
@@ -559,7 +557,7 @@ X-Request-ID: {{$guid}}
 
 ---
 
-### 8.8 Dynamic Variables
+### 8.6 Dynamic Variables
 
 Built-in variables generated at request time. No setup required. Will be added more later as needed.
 
@@ -673,15 +671,16 @@ Content-Type: application/json
 > ./scripts/post-login.js
 ```
 
-### 9.1 Script Globals
+### 9.3 Script Globals
 
-Three globals are available in every script context:
+Three globals are available (following Bruno conventions):
 
-| Global     | Available  | Description                                     |
-| ---------- | ---------- | ----------------------------------------------- |
-| `client`   | pre + post | Session-level API                               |
-| `request`  | pre + post | Current request data and request-scoped vars    |
-| `response` | post only  | Response data. Throws if accessed in pre-script |
+| Global   | Available  | Description                                      |
+| -------- | ---------- | ------------------------------------------------ |
+| `client` | pre + post | Session-level API (vars, test, assert)           |
+| `req`    | pre + post | Current request CRUD (read + mutate before send) |
+| `res`    | post only  | Response data. Throws if accessed in pre-script  |
+| `beep`   | pre + post | Utility namespace (interpolate)                  |
 
 #### `client`
 
@@ -690,29 +689,46 @@ client.vars.set("key", value); // set session variable (cross-request, in-memory
 client.vars.get("key"); // get session variable
 client.vars.reset("key"); // reset to default value
 
-client.test("name", () => {}); // define named test
-client.assert(condition, "msg"); // assert inside a test
+client.test("name", () => {}); // define named test (API shell)
+client.assert(condition, "msg"); // assert inside a test (API shell)
 ```
 
-#### `request`
+#### `req`
 
 ```javascript
-request.vars.set("key", value); // set request-scoped variable (current request only)
-request.vars.get("key"); // get request-scoped variable
+// Variables
+req.vars.set("key", value); // set request-scoped variable
+req.vars.get("key"); // get request-scoped variable
 
-request.url; // current request URL (string)
-request.method; // HTTP method: "GET", "POST", etc.
-request.headers; // request headers (object)
-request.body; // request body (string or object)
+// Read methods
+req.getUrl(); // current request URL
+req.getMethod(); // HTTP method: "GET", "POST", etc.
+req.getHeader("Content-Type"); // get a header value by name (case-insensitive)
+
+// Read-only convenience (legacy)
+req.url; // current request URL (string)
+req.method; // HTTP method (string)
+req.headers; // request headers (object)
+req.body; // request body (string or null)
+
+// Mutation methods (pre-script only — override the final sent request, not the UI form):
+req.setUrl(newUrl); // override request URL
+req.setMethod(newMethod); // override HTTP method (e.g. "POST")
+req.setHeader(key, value); // add or override a request header
+req.setBody(body); // override request body as string
+req.deleteHeader(name); // remove a request header by name
+req.deleteHeaders(jsonArray); // remove multiple headers (pass JSON array string)
 ```
 
-#### `response` (post-script only)
+#### `res` (post-script only)
 
 ```javascript
-response.status; // HTTP status code (number): 200, 404, etc.
-response.body; // parsed body (object if JSON, string otherwise)
-response.headers; // response headers (object)
-response.time; // response time in milliseconds (number)
+res.status; // HTTP status code (number): 200, 404, etc.
+res.statusText; // human-readable status text: "OK", "Not Found", etc.
+res.body; // parsed body (object if JSON, string otherwise)
+res.headers; // response headers (object)
+res.time; // response time in milliseconds (number)
+res.size; // response size object { headers: number, body: number }
 ```
 
 ---

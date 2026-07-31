@@ -141,6 +141,7 @@ pub fn serialize_body_section(
     form_urlencoded: &[ParsedFormField],
     form_multipart: &[ParsedFormField],
     post_script: Option<&str>,
+    post_script_external: bool,
     multipart_boundary: Option<&str>,
 ) -> String {
     let mut out = String::new();
@@ -219,15 +220,15 @@ pub fn serialize_body_section(
             if !out.is_empty() && !out.ends_with("\n\n") {
                 out.push('\n');
             }
-            if post.contains('\n') {
+            if post_script_external {
+                out.push_str(&format!("> {}\n", post));
+            } else {
                 out.push_str("> {%\n");
                 for line in post.lines() {
                     out.push_str(line);
                     out.push('\n');
                 }
                 out.push_str("%}\n");
-            } else {
-                out.push_str(&format!("> {{%\n{}\n%}}\n", post));
             }
         }
     }
@@ -253,15 +254,15 @@ pub fn serialize_request_block(req: &ParsedRequest) -> String {
 
     // Pre-request script
     if let Some(ref pre) = req.pre_script {
-        if pre.contains('\n') {
+        if req.pre_script_external {
+            out.push_str(&format!("< {}\n", pre));
+        } else {
             out.push_str("< {%\n");
             for line in pre.lines() {
                 out.push_str(line);
                 out.push('\n');
             }
             out.push_str("%}\n");
-        } else {
-            out.push_str(&format!("< {{%\n{}\n%}}\n", pre));
         }
     }
 
@@ -293,6 +294,7 @@ pub fn serialize_request_block(req: &ParsedRequest) -> String {
         &req.form_urlencoded,
         &req.form_multipart,
         req.post_script.as_deref(),
+        req.post_script_external,
         req.multipart_boundary.as_deref(),
     );
     if !body_text.is_empty() {

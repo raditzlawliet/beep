@@ -19,6 +19,7 @@ pub use engine::{ExecuteInput, execute};
 pub use exec::http::{
     BodyEncoding, HttpExecutor, HttpResponse, HttpResult, SentRequest, Size, default_headers,
 };
+pub use exec::scripts::{RequestOverrides, ScriptOutput, run_post_script, run_pre_script};
 pub use executable::{ExecutableRequest, FormFieldType, ResolvedBody, ResolvedFormField};
 pub use history::{HistoryEntry, HistoryEntrySummary, RequestHistory};
 pub use http_parser::{

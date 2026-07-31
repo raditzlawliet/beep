@@ -60,7 +60,7 @@ fn read_dir_path_children(dir: &Path) -> Vec<ProjectNode> {
             });
         } else if let Some(ext) = path.extension() {
             let ext = ext.to_string_lossy().to_lowercase();
-            if ext == "json" || ext == "http" {
+            if ext == "json" || ext == "http" || ext == "js" {
                 nodes.push(ProjectNode {
                     name,
                     path: path.to_string_lossy().to_string(),
@@ -84,12 +84,46 @@ fn read_dir_path_children(dir: &Path) -> Vec<ProjectNode> {
 #[tauri::command]
 async fn execute_request(
     state: tauri::State<'_, AppState>,
-    payload: ParsedRequest,
+    mut payload: ParsedRequest,
     file_vars: Vec<beep_core::ParsedFileVariable>,
+    base_dir: Option<String>,
 ) -> Result<beep_core::HttpResult, String> {
+    // Resolve external script file references — read file content
+    if payload.pre_script_external {
+        if let Some(ref path) = payload.pre_script {
+            let content = read_external_script(path, base_dir.as_deref())?;
+            payload.pre_script = Some(content);
+            payload.pre_script_external = false;
+        }
+    }
+    if payload.post_script_external {
+        if let Some(ref path) = payload.post_script {
+            let content = read_external_script(path, base_dir.as_deref())?;
+            payload.post_script = Some(content);
+            payload.post_script_external = false;
+        }
+    }
+
     let mut ctx = ExecutionContext::new(state.history.clone());
     ctx.file_vars = file_vars;
     beep_core::execute(ExecuteInput::Parsed(payload), &mut ctx).await
+}
+
+fn read_external_script(path: &str, base_dir: Option<&str>) -> Result<String, String> {
+    let resolved = if path.starts_with("./") || path.starts_with(".\\") {
+        match base_dir {
+            Some(dir) => std::path::Path::new(dir).join(path),
+            None => {
+                return Err(format!(
+                    "Cannot resolve relative script path '{path}' without a project or file context"
+                ));
+            }
+        }
+    } else {
+        std::path::PathBuf::from(path)
+    };
+    std::fs::read_to_string(&resolved)
+        .map_err(|e| format!("Cannot read script file '{}': {e}", resolved.display()))
 }
 
 #[tauri::command]

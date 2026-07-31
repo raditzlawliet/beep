@@ -76,40 +76,55 @@ impl ExecutionContext {
     /// 2. `client_vars`    - session scope
     /// 3. `file_vars`      - @var declarations
     pub fn resolve(&self, input: &str) -> String {
-        let mut out = input.to_string();
-
-        let mut start = 0;
-        while let Some(begin) = out[start..].find("{{") {
-            let abs_begin = start + begin;
-            if let Some(end) = out[abs_begin + 2..].find("}}") {
-                let abs_end = abs_begin + 2 + end;
-                let key = &out[abs_begin + 2..abs_end];
-
-                let replacement = self
-                    .request_vars
-                    .get(key)
-                    .or_else(|| self.client_vars.get(key))
-                    .or_else(|| {
-                        self.file_vars
-                            .iter()
-                            .find(|v| v.key == key)
-                            .map(|v| v.value.as_str())
-                    })
-                    .map(|s| s.to_string());
-
-                if let Some(repl) = replacement {
-                    out.replace_range(abs_begin..abs_end + 2, &repl);
-                    start = abs_begin + repl.len();
-                } else {
-                    start = abs_end + 2;
-                }
-            } else {
-                break;
-            }
-        }
-
-        out
+        resolve_template(
+            input,
+            &self.request_vars,
+            &self.client_vars,
+            &self.file_vars,
+        )
     }
+}
+
+/// Resolve `{{variable}}` placeholders using the cascade:
+/// request_vars > client_vars > file_vars. Unknown variables left as-is.
+pub fn resolve_template(
+    input: &str,
+    request_vars: &VarStore,
+    client_vars: &VarStore,
+    file_vars: &[ParsedFileVariable],
+) -> String {
+    let mut out = input.to_string();
+
+    let mut start = 0;
+    while let Some(begin) = out[start..].find("{{") {
+        let abs_begin = start + begin;
+        if let Some(end) = out[abs_begin + 2..].find("}}") {
+            let abs_end = abs_begin + 2 + end;
+            let key = &out[abs_begin + 2..abs_end];
+
+            let replacement = request_vars
+                .get(key)
+                .or_else(|| client_vars.get(key))
+                .or_else(|| {
+                    file_vars
+                        .iter()
+                        .find(|v| v.key == key)
+                        .map(|v| v.value.as_str())
+                })
+                .map(|s| s.to_string());
+
+            if let Some(repl) = replacement {
+                out.replace_range(abs_begin..abs_end + 2, &repl);
+                start = abs_begin + repl.len();
+            } else {
+                start = abs_end + 2;
+            }
+        } else {
+            break;
+        }
+    }
+
+    out
 }
 
 // ---------------------------------------------------------------------------

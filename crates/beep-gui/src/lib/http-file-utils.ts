@@ -53,7 +53,9 @@ export function parsedToFormRequest(
       form_multipart: [],
       multipart_boundary: null,
       pre_script: null,
+      pre_script_external: false,
       post_script: null,
+      post_script_external: false,
       http_version: null,
       block_region: { start: 0, end: 0 },
       request_line_region: { start: 0, end: 0 },
@@ -138,6 +140,10 @@ export function formRequestToParsed(
         };
       }),
     multipart_boundary: form.multipart_boundary ?? null,
+    pre_script: form.pre_script,
+    pre_script_external: form.pre_script_external ?? false,
+    post_script: form.post_script,
+    post_script_external: form.post_script_external ?? false,
   };
 }
 
@@ -171,9 +177,33 @@ export function parsedRequestToContent(req: ParsedRequest): string {
     }
   }
 
+  if (req.pre_script) {
+    if (req.pre_script_external) {
+      lines.push("");
+      lines.push(`< ${req.pre_script}`);
+    } else {
+      lines.push("");
+      lines.push("< {%");
+      lines.push(req.pre_script);
+      lines.push("%}");
+    }
+  }
+
   if (req.body) {
     lines.push("");
     lines.push(req.body || "");
+  }
+
+  if (req.post_script) {
+    if (req.post_script_external) {
+      lines.push("");
+      lines.push(`> ${req.post_script}`);
+    } else {
+      lines.push("");
+      lines.push("> {%");
+      lines.push(req.post_script);
+      lines.push("%}");
+    }
   }
 
   return lines.join("\n") + "\n";

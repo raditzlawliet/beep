@@ -11,6 +11,8 @@
     import RequestAuthTab from "$lib/components/tabs/RequestAuthTab.svelte";
     import RequestBodyTab from "$lib/components/tabs/RequestBodyTab.svelte";
     import RequestSettingsTab from "$lib/components/tabs/RequestSettingsTab.svelte";
+    import RequestPreScriptTab from "$lib/components/tabs/RequestPreScriptTab.svelte";
+    import RequestPostScriptTab from "$lib/components/tabs/RequestPostScriptTab.svelte";
     import { showToast } from "$lib/toast.svelte";
 
     interface Props {
@@ -27,7 +29,7 @@
 
     let { request, loading, basePath, onSend, onUpdate, defaultHeaders, initialTab = "params", onTabChange, onUrlBlur }: Props = $props();
 
-    type Tab = "params" | "headers" | "auth" | "body" | "settings";
+    type Tab = "params" | "headers" | "auth" | "body" | "settings" | "pre-script" | "post-script";
     let activeTab = $state<Tab>("params");
 
     $effect(() => {
@@ -303,7 +305,7 @@
 
         <!-- tabs -->
         <div role="tablist" class="tabs tabs-bordered tabs-xs px-1">
-            {#each ["params", "auth", "headers", "body", "settings"] as tab}
+            {#each ["params", "auth", "headers", "body", "pre-script", "post-script", "settings"] as tab}
                 <button
                     role="tab"
                     class="tab capitalize gap-1.5 {activeTab === tab
@@ -341,6 +343,20 @@
                                 class="w-1.5 h-1.5 rounded-full bg-accent inline-block"
                             ></span>
                         {/if}
+                    {/if}
+
+                    {#if tab === "pre-script" && request.pre_script}
+                        <span
+                            data-testid="request-pre-script-tab-indicator"
+                            class="w-1.5 h-1.5 rounded-full bg-accent inline-block"
+                        ></span>
+                    {/if}
+
+                    {#if tab === "post-script" && request.post_script}
+                        <span
+                            data-testid="request-post-script-tab-indicator"
+                            class="w-1.5 h-1.5 rounded-full bg-accent inline-block"
+                        ></span>
                     {/if}
 
                     {#if tab === "settings" && httpVersion !== "Auto"}
@@ -405,6 +421,20 @@
                         emitUpdate({ multipart_boundary: boundary });
                     }}
                     onBeautify={beautify}
+                />
+            {:else if activeTab === "pre-script"}
+                <RequestPreScriptTab
+                    value={request.pre_script}
+                    external={request.pre_script_external ?? false}
+                    {basePath}
+                    onchange={(v, isExt) => emitUpdate({ pre_script: v, pre_script_external: isExt })}
+                />
+            {:else if activeTab === "post-script"}
+                <RequestPostScriptTab
+                    value={request.post_script}
+                    external={request.post_script_external ?? false}
+                    {basePath}
+                    onchange={(v, isExt) => emitUpdate({ post_script: v, post_script_external: isExt })}
                 />
             {:else if activeTab === "settings"}
                 <RequestSettingsTab
