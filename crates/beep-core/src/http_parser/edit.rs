@@ -208,22 +208,7 @@ pub fn apply_request_update(content: &str, request_idx: usize, updated: &ParsedR
 
     // 5. Body region (blank separator + body + post-script)
     if changed.body {
-        out.push_str(&normalize_newlines(
-            &serialize_body_section(
-                super::parser::effective_body_kind(
-                    &updated.headers,
-                    updated.body_directive.as_deref(),
-                    updated.body.as_deref(),
-                ),
-                updated.body.as_deref(),
-                &updated.form_urlencoded,
-                &updated.form_multipart,
-                updated.post_script.as_deref(),
-                updated.post_script_external,
-                updated.multipart_boundary.as_deref(),
-            ),
-            nl,
-        ));
+        out.push_str(&normalize_newlines(&serialize_body_section(updated), nl));
     } else {
         out.push_str(&content[old_req.body_region.start..old_req.body_region.end]);
     }

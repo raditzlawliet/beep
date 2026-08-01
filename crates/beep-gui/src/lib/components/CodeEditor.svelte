@@ -64,9 +64,9 @@
                 }
             }),
             EditorView.domEventHandlers({
-                blur: () => {
+                blur: (_event, editorView) => {
                     if (onblur) {
-                        (onblur(view?.state.doc.toString() ?? ""));
+                        onblur(editorView.state.doc.toString());
                     }
                 },
             }),

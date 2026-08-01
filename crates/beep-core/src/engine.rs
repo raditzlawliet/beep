@@ -58,6 +58,7 @@ pub async fn execute(
             pre_code,
             &mut ctx.client_vars,
             &mut ctx.request_vars,
+            &ctx.file_vars,
             &parsed.url,
             &parsed.method,
             &req_headers,
@@ -131,6 +132,7 @@ pub async fn execute(
             post_code,
             &mut ctx.client_vars,
             &mut ctx.request_vars,
+            &ctx.file_vars,
             &parsed.url,
             &parsed.method,
             &req_headers,
@@ -153,13 +155,7 @@ pub async fn execute(
 
     // Step 6: Record to history
     if let Ok(mut history) = ctx.history.lock() {
-        history.add_parsed(
-            parsed,
-            executable,
-            Some(result.clone()),
-            script_error,
-            None,
-        );
+        history.add_parsed(parsed, executable, Some(result.clone()), script_error, None);
     }
 
     Ok(result)
@@ -169,9 +165,7 @@ pub async fn execute(
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn collect_headers(
-    headers: &[crate::http_parser::ParsedHeaderField],
-) -> HashMap<String, String> {
+fn collect_headers(headers: &[crate::http_parser::ParsedHeaderField]) -> HashMap<String, String> {
     let mut map = HashMap::new();
     for h in headers {
         if h.enabled && !h.key.is_empty() {
@@ -231,7 +225,10 @@ mod tests {
             },
         ];
         let map = collect_headers(&headers);
-        assert_eq!(map.get("content-type").map(|s| s.as_str()), Some("application/json"));
+        assert_eq!(
+            map.get("content-type").map(|s| s.as_str()),
+            Some("application/json")
+        );
         assert!(map.get("accept").is_some());
         assert!(map.get("x-debug").is_none());
     }

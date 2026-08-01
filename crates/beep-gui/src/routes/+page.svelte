@@ -596,10 +596,7 @@
         const sendTabId = activeTabId;
         try {
             const tab = findTab(sendTabId);
-            const sourceFileDir = tab?.filePath
-                ? tab.filePath.replace(/[/\\][^/\\]*$/, "")
-                : project.path;
-            await request.send(req, fileVars, sourceFileDir ?? undefined);
+            await request.send(req, fileVars, basePath ?? undefined);
             // Save response to the active tab so each tab has its own response.
             if (tab) tab.lastResult = request.result;
         } catch (e) {

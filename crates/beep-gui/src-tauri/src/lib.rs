@@ -111,9 +111,10 @@ async fn execute_request(
 }
 
 fn read_external_script(path: &str, base_dir: Option<&str>) -> Result<String, String> {
-    let resolved = if path.starts_with("./") || path.starts_with(".\\") {
+    let normalized = path.replace('\\', "/");
+    let resolved = if normalized.starts_with("./") {
         match base_dir {
-            Some(dir) => std::path::Path::new(dir).join(path),
+            Some(dir) => std::path::Path::new(dir).join(normalized),
             None => {
                 return Err(format!(
                     "Cannot resolve relative script path '{path}' without a project or file context"

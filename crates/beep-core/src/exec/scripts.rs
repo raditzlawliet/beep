@@ -12,6 +12,8 @@
 //! - Same as pre-script, plus `res` with status/body/headers/time/size/statusText
 
 use crate::context::{VarStore, resolve_template};
+use crate::http_parser::ParsedFileVariable;
+use rquickjs::CatchResultExt;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -51,9 +53,10 @@ pub struct RequestOverrides {
 // ---------------------------------------------------------------------------
 
 struct ScriptContext {
-    client_vars: RefCell<VarStore>,
-    request_vars: RefCell<VarStore>,
-    request_overrides: RefCell<RequestOverrides>,
+    client_vars: Rc<RefCell<VarStore>>,
+    request_vars: Rc<RefCell<VarStore>>,
+    request_overrides: Rc<RefCell<RequestOverrides>>,
+    file_vars: Vec<ParsedFileVariable>,
     request_url: String,
     request_method: String,
     request_headers: HashMap<String, String>,
@@ -78,15 +81,21 @@ pub fn run_pre_script(
     code: &str,
     client_vars: &mut VarStore,
     request_vars: &mut VarStore,
+    file_vars: &[ParsedFileVariable],
     request_url: &str,
     request_method: &str,
     request_headers: &HashMap<String, String>,
     request_body: Option<&str>,
 ) -> (ScriptOutput, RequestOverrides) {
+    let cv = Rc::new(RefCell::new(client_vars.clone()));
+    let rv = Rc::new(RefCell::new(request_vars.clone()));
+    let ro = Rc::new(RefCell::new(RequestOverrides::default()));
+
     let sc = Rc::new(ScriptContext {
-        client_vars: RefCell::new(client_vars.clone()),
-        request_vars: RefCell::new(request_vars.clone()),
-        request_overrides: RefCell::new(RequestOverrides::default()),
+        client_vars: cv.clone(),
+        request_vars: rv.clone(),
+        request_overrides: ro.clone(),
+        file_vars: file_vars.to_vec(),
         request_url: request_url.to_string(),
         request_method: request_method.to_string(),
         request_headers: request_headers.clone(),
@@ -99,16 +108,12 @@ pub fn run_pre_script(
         response_size_body: None,
     });
 
-    let result = run_script(sc.clone(), code);
+    let result = run_script(sc, code);
 
-    // Copy mutated vars back to the caller
-    if let Ok(sc_ref) = Rc::try_unwrap(sc) {
-        *client_vars = sc_ref.client_vars.into_inner();
-        *request_vars = sc_ref.request_vars.into_inner();
-        return (result, sc_ref.request_overrides.into_inner());
-    }
-
-    (result, RequestOverrides::default())
+    // Always propagate mutations via independently cloned handles
+    *client_vars = cv.borrow().clone();
+    *request_vars = rv.borrow().clone();
+    (result, ro.borrow().clone())
 }
 
 /// Run a post-request script.
@@ -116,6 +121,7 @@ pub fn run_post_script(
     code: &str,
     client_vars: &mut VarStore,
     request_vars: &mut VarStore,
+    file_vars: &[ParsedFileVariable],
     request_url: &str,
     request_method: &str,
     request_headers: &HashMap<String, String>,
@@ -127,10 +133,14 @@ pub fn run_post_script(
     response_size_headers: u64,
     response_size_body: u64,
 ) -> ScriptOutput {
+    let cv = Rc::new(RefCell::new(client_vars.clone()));
+    let rv = Rc::new(RefCell::new(request_vars.clone()));
+
     let sc = Rc::new(ScriptContext {
-        client_vars: RefCell::new(client_vars.clone()),
-        request_vars: RefCell::new(request_vars.clone()),
-        request_overrides: RefCell::new(RequestOverrides::default()),
+        client_vars: cv.clone(),
+        request_vars: rv.clone(),
+        request_overrides: Rc::new(RefCell::new(RequestOverrides::default())),
+        file_vars: file_vars.to_vec(),
         request_url: request_url.to_string(),
         request_method: request_method.to_string(),
         request_headers: request_headers.clone(),
@@ -143,12 +153,10 @@ pub fn run_post_script(
         response_size_body: Some(response_size_body),
     });
 
-    let result = run_script(sc.clone(), code);
+    let result = run_script(sc, code);
 
-    if let Ok(sc_ref) = Rc::try_unwrap(sc) {
-        *client_vars = sc_ref.client_vars.into_inner();
-        *request_vars = sc_ref.request_vars.into_inner();
-    }
+    *client_vars = cv.borrow().clone();
+    *request_vars = rv.borrow().clone();
 
     result
 }
@@ -159,6 +167,7 @@ pub fn run_post_script(
 
 fn run_script(sc: Rc<ScriptContext>, code: &str) -> ScriptOutput {
     let console_logs: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
+    let script_err: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
 
     let rt = match rquickjs::Runtime::new() {
         Ok(rt) => rt,
@@ -170,6 +179,10 @@ fn run_script(sc: Rc<ScriptContext>, code: &str) -> ScriptOutput {
         }
     };
 
+    // Apply runtime limits before creating the context
+    rt.set_memory_limit(64 * 1024 * 1024);
+    // Interrupt handler deferred - see Step 1 notes
+
     let ctx = match rquickjs::Context::full(&rt) {
         Ok(ctx) => ctx,
         Err(e) => {
@@ -180,24 +193,32 @@ fn run_script(sc: Rc<ScriptContext>, code: &str) -> ScriptOutput {
         }
     };
 
-    ctx.with(|c| {
+    let setup_result: rquickjs::Result<()> = ctx.with(|c| {
         // --- console ---
         {
             let logs_log = console_logs.clone();
-            let obj = rquickjs::Object::new(c.clone()).unwrap();
-            let log_fn = rquickjs::Function::new(c.clone(), move |msg: String| {
-                logs_log.borrow_mut().push(msg);
-            })
-            .unwrap();
-            obj.set("log", log_fn).unwrap();
+            let obj = rquickjs::Object::new(c.clone())?;
+            let log_fn = rquickjs::Function::new(
+                c.clone(),
+                move |args: rquickjs::function::Rest<rquickjs::Coerced<String>>| {
+                    let line: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+                    logs_log.borrow_mut().push(line.join(" "));
+                },
+            )?;
+            obj.set("log", log_fn)?;
 
             let logs_err = console_logs.clone();
-            let error_fn = rquickjs::Function::new(c.clone(), move |msg: String| {
-                logs_err.borrow_mut().push(format!("[error] {msg}"));
-            })
-            .unwrap();
-            obj.set("error", error_fn).unwrap();
-            c.globals().set("console", obj).unwrap();
+            let error_fn = rquickjs::Function::new(
+                c.clone(),
+                move |args: rquickjs::function::Rest<rquickjs::Coerced<String>>| {
+                    let line: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+                    logs_err
+                        .borrow_mut()
+                        .push(format!("[error] {}", line.join(" ")));
+                },
+            )?;
+            obj.set("error", error_fn)?;
+            c.globals().set("console", obj)?;
         }
 
         // --- btoa ---
@@ -207,116 +228,80 @@ fn run_script(sc: Rc<ScriptContext>, code: &str) -> ScriptOutput {
                     use crate::exec::http::base64_encode;
                     base64_encode(s.as_bytes())
                 }
-            })
-            .unwrap();
-            c.globals().set("btoa", _btoa).unwrap();
+            })?;
+            c.globals().set("btoa", _btoa)?;
         }
 
         // --- client ---
         {
-            let client = rquickjs::Object::new(c.clone()).unwrap();
+            let client = rquickjs::Object::new(c.clone())?;
 
-            let vars_obj = rquickjs::Object::new(c.clone()).unwrap();
+            let vars_obj = rquickjs::Object::new(c.clone())?;
 
             let sc_cvg = sc.clone();
-            vars_obj
-                .set(
-                    "get",
-                    rquickjs::Function::new(c.clone(), move |key: String| -> Option<String> {
-                        let vars = sc_cvg.client_vars.borrow();
-                        vars.get(&key).map(|s| s.to_string())
-                    })
-                    .unwrap(),
-                )
-                .unwrap();
+            vars_obj.set(
+                "get",
+                rquickjs::Function::new(c.clone(), move |key: String| -> Option<String> {
+                    let vars = sc_cvg.client_vars.borrow();
+                    vars.get(&key).map(|s| s.to_string())
+                })?,
+            )?;
 
             let sc_cvs = sc.clone();
-            vars_obj
-                .set(
-                    "set",
-                    rquickjs::Function::new(c.clone(), move |key: String, value: String| {
-                        sc_cvs.client_vars.borrow_mut().set(key, value);
-                    })
-                    .unwrap(),
-                )
-                .unwrap();
+            vars_obj.set(
+                "set",
+                rquickjs::Function::new(c.clone(), move |key: String, value: String| {
+                    sc_cvs.client_vars.borrow_mut().set(key, value);
+                })?,
+            )?;
 
             let sc_cvr = sc.clone();
-            vars_obj
-                .set(
-                    "reset",
-                    rquickjs::Function::new(c.clone(), move |key: String| {
-                        let vars = sc_cvr.client_vars.borrow_mut();
-                        let _ = vars.get(&key);
-                        drop(vars);
-                    })
-                    .unwrap(),
-                )
-                .unwrap();
+            vars_obj.set(
+                "reset",
+                rquickjs::Function::new(c.clone(), move |key: String| {
+                    sc_cvr.client_vars.borrow_mut().remove(&key);
+                })?,
+            )?;
 
-            client.set("vars", vars_obj).unwrap();
+            client.set("vars", vars_obj)?;
 
-            client
-                .set(
-                    "test",
-                    rquickjs::Function::new(
-                        c.clone(),
-                        move |_name: String, _cb: rquickjs::Function| {},
-                    )
-                    .unwrap(),
-                )
-                .unwrap();
+            // client.test and client.assert intentionally excluded until implemented
 
-            client
-                .set(
-                    "assert",
-                    rquickjs::Function::new(c.clone(), move |_condition: bool, _msg: String| {})
-                        .unwrap(),
-                )
-                .unwrap();
-
-            c.globals().set("client", client).unwrap();
+            c.globals().set("client", client)?;
         }
 
         // --- req ---
         {
-            let req = rquickjs::Object::new(c.clone()).unwrap();
+            let req = rquickjs::Object::new(c.clone())?;
 
             // -- req.vars (get/set) --
-            let vars_obj = rquickjs::Object::new(c.clone()).unwrap();
+            let vars_obj = rquickjs::Object::new(c.clone())?;
 
             let sc_rvg = sc.clone();
-            vars_obj
-                .set(
-                    "get",
-                    rquickjs::Function::new(c.clone(), move |key: String| -> Option<String> {
-                        let vars = sc_rvg.request_vars.borrow();
-                        vars.get(&key).map(|s| s.to_string())
-                    })
-                    .unwrap(),
-                )
-                .unwrap();
+            vars_obj.set(
+                "get",
+                rquickjs::Function::new(c.clone(), move |key: String| -> Option<String> {
+                    let vars = sc_rvg.request_vars.borrow();
+                    vars.get(&key).map(|s| s.to_string())
+                })?,
+            )?;
 
             let sc_rvs = sc.clone();
-            vars_obj
-                .set(
-                    "set",
-                    rquickjs::Function::new(c.clone(), move |key: String, value: String| {
-                        sc_rvs.request_vars.borrow_mut().set(key, value);
-                    })
-                    .unwrap(),
-                )
-                .unwrap();
+            vars_obj.set(
+                "set",
+                rquickjs::Function::new(c.clone(), move |key: String, value: String| {
+                    sc_rvs.request_vars.borrow_mut().set(key, value);
+                })?,
+            )?;
 
-            req.set("vars", vars_obj).unwrap();
+            req.set("vars", vars_obj)?;
 
             // -- req.getUrl() --
             let sc_gu = sc.clone();
             req.set(
                 "getUrl",
-                rquickjs::Function::new(c.clone(), move || sc_gu.request_url.clone()).unwrap(),
-            )
-            .unwrap();
+                rquickjs::Function::new(c.clone(), move || sc_gu.request_url.clone())?,
+            )?;
 
             // -- req.setUrl(url) --
             let sc_su = sc.clone();
@@ -324,18 +309,15 @@ fn run_script(sc: Rc<ScriptContext>, code: &str) -> ScriptOutput {
                 "setUrl",
                 rquickjs::Function::new(c.clone(), move |url: String| {
                     sc_su.request_overrides.borrow_mut().url = Some(url);
-                })
-                .unwrap(),
-            )
-            .unwrap();
+                })?,
+            )?;
 
             // -- req.getMethod() --
             let sc_gm = sc.clone();
             req.set(
                 "getMethod",
-                rquickjs::Function::new(c.clone(), move || sc_gm.request_method.clone()).unwrap(),
-            )
-            .unwrap();
+                rquickjs::Function::new(c.clone(), move || sc_gm.request_method.clone())?,
+            )?;
 
             // -- req.setMethod(method) --
             let sc_sm = sc.clone();
@@ -343,10 +325,8 @@ fn run_script(sc: Rc<ScriptContext>, code: &str) -> ScriptOutput {
                 "setMethod",
                 rquickjs::Function::new(c.clone(), move |method: String| {
                     sc_sm.request_overrides.borrow_mut().method = Some(method.to_uppercase());
-                })
-                .unwrap(),
-            )
-            .unwrap();
+                })?,
+            )?;
 
             // -- req.getHeaders() --
             // -- req.getHeader(name) --
@@ -365,8 +345,11 @@ fn run_script(sc: Rc<ScriptContext>, code: &str) -> ScriptOutput {
                         {
                             return None;
                         }
-                        if let Some(v) = overrides.headers.get(&name) {
-                            return Some(v.clone());
+                        // Case-insensitive override lookup
+                        for (k, v) in &overrides.headers {
+                            if k.to_lowercase() == name_lower {
+                                return Some(v.clone());
+                            }
                         }
                     }
                     // Fall back to original headers
@@ -376,53 +359,70 @@ fn run_script(sc: Rc<ScriptContext>, code: &str) -> ScriptOutput {
                         }
                     }
                     None
-                });
-            if let Ok(f) = get_header {
-                req.set("getHeader", f).unwrap();
-            }
+                })?;
+            req.set("getHeader", get_header)?;
 
             // -- req.setHeader(key, value) --
             let sc_sh = sc.clone();
             req.set(
                 "setHeader",
                 rquickjs::Function::new(c.clone(), move |key: String, value: String| {
+                    let key_lower = key.to_lowercase();
                     let mut ov = sc_sh.request_overrides.borrow_mut();
                     ov.headers.insert(key, value);
-                })
-                .unwrap(),
-            )
-            .unwrap();
+                    // Cancel any previous delete of this header
+                    ov.deleted_headers.retain(|d| d.to_lowercase() != key_lower);
+                })?,
+            )?;
 
             // -- req.deleteHeader(name) --
             let sc_dh = sc.clone();
             req.set(
                 "deleteHeader",
                 rquickjs::Function::new(c.clone(), move |name: String| {
-                    sc_dh
-                        .request_overrides
-                        .borrow_mut()
-                        .deleted_headers
-                        .push(name);
-                })
-                .unwrap(),
-            )
-            .unwrap();
+                    let name_lower = name.to_lowercase();
+                    let mut ov = sc_dh.request_overrides.borrow_mut();
+                    ov.deleted_headers.push(name);
+                    // Remove from headers if previously set
+                    ov.headers.retain(|k, _| k.to_lowercase() != name_lower);
+                })?,
+            )?;
 
             // -- req.deleteHeaders(names) --
             let sc_dhs = sc.clone();
             req.set(
                 "deleteHeaders",
-                rquickjs::Function::new(c.clone(), move |names: String| {
-                    // Accept comma-separated or JSON array string
-                    let parsed: Vec<String> = serde_json::from_str(&names).unwrap_or_default();
+                rquickjs::Function::new(c.clone(), move |names: rquickjs::Value| {
+                    let mut parsed: Vec<String> = Vec::new();
+                    if let Some(arr) = names.as_array() {
+                        for item in arr.iter::<rquickjs::Value>() {
+                            if let Ok(v) = item {
+                                if let Some(s) = v.as_string() {
+                                    let s = s.to_string().unwrap_or_default();
+                                    for n in s.split(',') {
+                                        let trimmed = n.trim().to_string();
+                                        if !trimmed.is_empty() {
+                                            parsed.push(trimmed);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else if let Some(s) = names.as_string() {
+                        let s = s.to_string().unwrap_or_default();
+                        for n in s.split(',') {
+                            let trimmed = n.trim().to_string();
+                            if !trimmed.is_empty() {
+                                parsed.push(trimmed);
+                            }
+                        }
+                    }
                     let mut ov = sc_dhs.request_overrides.borrow_mut();
                     for n in parsed {
                         ov.deleted_headers.push(n);
                     }
-                })
-                .unwrap(),
-            )
-            .unwrap();
+                })?,
+            )?;
 
             // -- req.setBody(body) --
             let sc_sb = sc.clone();
@@ -430,86 +430,76 @@ fn run_script(sc: Rc<ScriptContext>, code: &str) -> ScriptOutput {
                 "setBody",
                 rquickjs::Function::new(c.clone(), move |body: String| {
                     sc_sb.request_overrides.borrow_mut().body = Some(body);
-                })
-                .unwrap(),
-            )
-            .unwrap();
+                })?,
+            )?;
 
-            // -- Read-only request convenience properties --
-            let sc_rd = sc.clone();
-            req.set(
-                "url",
-                rquickjs::Function::new(c.clone(), move || sc_rd.request_url.clone()).unwrap(),
-            )
-            .unwrap();
-            let sc_rm = sc.clone();
-            req.set(
-                "method",
-                rquickjs::Function::new(c.clone(), move || sc_rm.request_method.clone()).unwrap(),
-            )
-            .unwrap();
+            // -- Read-only request convenience properties (plain strings, override-aware) --
+            req.set("url", sc.request_url.clone())?;
+            req.set("method", sc.request_method.clone())?;
 
-            let headers_obj = rquickjs::Object::new(c.clone()).unwrap();
+            let headers_obj = rquickjs::Object::new(c.clone())?;
             for (k, v) in &sc.request_headers {
                 let _ = headers_obj.set(k.as_str(), v.as_str());
             }
-            req.set("headers", headers_obj).unwrap();
+            req.set("headers", headers_obj)?;
 
             if let Some(ref body) = sc.request_body {
-                req.set("body", body.as_str()).unwrap();
+                req.set("body", body.as_str())?;
             } else {
-                req.set("body", rquickjs::Value::new_null(c.clone()))
-                    .unwrap();
+                req.set("body", rquickjs::Value::new_null(c.clone()))?;
             }
 
-            c.globals().set("req", req).unwrap();
+            c.globals().set("req", req)?;
         }
 
         // --- res (post-script only) ---
         if sc.response_status.is_some() {
-            let res = rquickjs::Object::new(c.clone()).unwrap();
+            let res = rquickjs::Object::new(c.clone())?;
 
-            res.set("status", sc.response_status.unwrap() as i32)
-                .unwrap();
+            res.set("status", sc.response_status.unwrap() as i32)?;
 
-            // Auto-parse JSON body
+            // Auto-parse JSON body only when Content-Type is json
             let raw_body = sc.response_body.clone().unwrap_or_default();
-            let parsed: Result<rquickjs::Value, _> = c.json_parse(raw_body.clone());
-            if let Ok(p) = parsed {
-                res.set("body", p).unwrap();
+            let is_json = sc.response_headers.as_ref().is_some_and(|h| {
+                h.iter().any(|(k, v)| {
+                    k.to_lowercase().contains("content-type") && v.to_lowercase().contains("json")
+                })
+            });
+            if is_json {
+                let parsed: Result<rquickjs::Value, _> = c.json_parse(raw_body.clone());
+                if let Ok(p) = parsed {
+                    res.set("body", p)?;
+                } else {
+                    res.set("body", raw_body.as_str())?;
+                }
             } else {
-                res.set("body", raw_body.as_str()).unwrap();
+                res.set("body", raw_body.as_str())?;
             }
 
             let status_text = status_text(sc.response_status.unwrap());
-            res.set("statusText", status_text).unwrap();
+            res.set("statusText", status_text)?;
 
-            let headers_obj = rquickjs::Object::new(c.clone()).unwrap();
+            let headers_obj = rquickjs::Object::new(c.clone())?;
             if let Some(ref headers) = sc.response_headers {
                 for (k, v) in headers {
                     let _ = headers_obj.set(k.as_str(), v.as_str());
                 }
             }
-            res.set("headers", headers_obj).unwrap();
+            res.set("headers", headers_obj)?;
 
-            res.set("time", sc.response_time_ms.unwrap_or(0) as f64)
-                .unwrap();
+            res.set("time", sc.response_time_ms.unwrap_or(0) as f64)?;
 
-            let size_obj = rquickjs::Object::new(c.clone()).unwrap();
-            size_obj
-                .set("headers", sc.response_size_headers.unwrap_or(0) as f64)
-                .unwrap();
-            size_obj
-                .set("body", sc.response_size_body.unwrap_or(0) as f64)
-                .unwrap();
-            res.set("size", size_obj).unwrap();
+            let size_obj = rquickjs::Object::new(c.clone())?;
+            size_obj.set("headers", sc.response_size_headers.unwrap_or(0) as f64)?;
+            size_obj.set("body", sc.response_size_body.unwrap_or(0) as f64)?;
+            res.set("size", size_obj)?;
 
-            c.globals().set("res", res).unwrap();
+            c.globals().set("res", res)?;
         }
 
         // --- beep (utility namespace) ---
         {
-            let beep = rquickjs::Object::new(c.clone()).unwrap();
+            let beep = rquickjs::Object::new(c.clone())?;
 
             let sc_interp = sc.clone();
             beep.set(
@@ -517,28 +507,36 @@ fn run_script(sc: Rc<ScriptContext>, code: &str) -> ScriptOutput {
                 rquickjs::Function::new(c.clone(), move |input: String| {
                     let client = sc_interp.client_vars.borrow();
                     let request = sc_interp.request_vars.borrow();
-                    resolve_template(&input, &request, &client, &[])
-                })
-                .unwrap(),
-            )
-            .unwrap();
+                    resolve_template(&input, &request, &client, &sc_interp.file_vars)
+                })?,
+            )?;
 
-            c.globals().set("beep", beep).unwrap();
+            c.globals().set("beep", beep)?;
         }
 
         // --- Execute the script ---
-        match c.eval::<rquickjs::Value, _>(code) {
+        match c.eval::<rquickjs::Value, _>(code).catch(&c) {
             Ok(_) => {}
             Err(e) => {
-                console_logs.borrow_mut().push(format!("Script error: {e}"));
+                let msg = e.to_string();
+                console_logs
+                    .borrow_mut()
+                    .push(format!("Script error: {msg}"));
+                *script_err.borrow_mut() = Some(msg);
             }
         }
+
+        Ok(())
     });
 
     let logs = console_logs.borrow().clone();
+    let error = setup_result
+        .err()
+        .map(|e| format!("Failed to set up script globals: {e}"))
+        .or_else(|| script_err.borrow().clone());
     ScriptOutput {
         console: logs,
-        error: None,
+        error,
     }
 }
 
@@ -593,6 +591,7 @@ mod tests {
             code,
             &mut client,
             &mut request,
+            &[],
             "https://api.example.com/users",
             "GET",
             &HashMap::new(),
@@ -614,6 +613,7 @@ mod tests {
             code,
             &mut client,
             &mut request,
+            &[],
             "https://api.example.com/users",
             "GET",
             &HashMap::new(),
@@ -639,6 +639,7 @@ mod tests {
             code,
             &mut client,
             &mut request,
+            &[],
             "https://api.example.com/users",
             "GET",
             &HashMap::new(),
@@ -664,6 +665,7 @@ mod tests {
             code,
             &mut client,
             &mut request,
+            &[],
             "https://example.com",
             "GET",
             &headers,
@@ -693,6 +695,7 @@ mod tests {
             code,
             &mut client,
             &mut request,
+            &[],
             "https://example.com",
             "GET",
             &headers,
@@ -714,12 +717,13 @@ mod tests {
         headers.insert("x-b".into(), "2".into());
 
         let code = r#"
-            req.deleteHeaders('["X-A", "X-B"]');
+            req.deleteHeaders(["X-A", "X-B"]);
         "#;
         let (_out, ov) = run_pre_script(
             code,
             &mut client,
             &mut request,
+            &[],
             "https://example.com",
             "GET",
             &headers,
@@ -739,6 +743,7 @@ mod tests {
             code,
             &mut client,
             &mut request,
+            &[],
             "https://example.com",
             "POST",
             &HashMap::new(),
@@ -751,7 +756,8 @@ mod tests {
     fn test_res_body_parsed_json() {
         let mut client = VarStore::new();
         let mut request = VarStore::new();
-        let resp_headers: HashMap<String, String> = HashMap::new();
+        let mut resp_headers: HashMap<String, String> = HashMap::new();
+        resp_headers.insert("content-type".into(), "application/json".into());
         let code = r#"
             client.vars.set("token", res.body.token);
             console.log("status: " + res.status);
@@ -760,6 +766,7 @@ mod tests {
             code,
             &mut client,
             &mut request,
+            &[],
             "https://example.com",
             "POST",
             &HashMap::new(),
@@ -787,6 +794,7 @@ mod tests {
             code,
             &mut client,
             &mut request,
+            &[],
             "https://example.com",
             "GET",
             &HashMap::new(),
@@ -809,6 +817,7 @@ mod tests {
             r#"client.vars.set("secret", "key-42");"#,
             &mut client,
             &mut req1,
+            &[],
             "https://example.com",
             "GET",
             &HashMap::new(),
@@ -820,6 +829,7 @@ mod tests {
             r#"console.log("secret: " + client.vars.get("secret"));"#,
             &mut client,
             &mut req2,
+            &[],
             "https://example.com",
             "GET",
             &HashMap::new(),
@@ -842,6 +852,7 @@ mod tests {
             r#"console.log("hello"); console.log("world");"#,
             &mut client,
             &mut request,
+            &[],
             "https://example.com",
             "GET",
             &HashMap::new(),
@@ -858,6 +869,7 @@ mod tests {
             r#"console.log(btoa("hello"));"#,
             &mut client,
             &mut request,
+            &[],
             "https://example.com",
             "GET",
             &HashMap::new(),
@@ -895,15 +907,20 @@ mod tests {
         let mut client = VarStore::new();
         client.set("env".into(), "staging".into());
         let mut request = VarStore::new();
+        let file_vars = vec![ParsedFileVariable {
+            key: "region".into(),
+            value: "us-east".into(),
+        }];
 
         let (out, _) = run_pre_script(
             r#"
                 var url = beep.interpolate("https://{{env}}.example.com/api");
                 console.log(url);
-                req.vars.set("base", beep.interpolate("/v1/{{env}}"));
+                req.vars.set("base", beep.interpolate("/v1/{{env}}/{{region}}"));
             "#,
             &mut client,
             &mut request,
+            &file_vars,
             "https://example.com",
             "GET",
             &HashMap::new(),
@@ -917,7 +934,7 @@ mod tests {
         );
         assert_eq!(
             request.get("base"),
-            Some("/v1/staging".to_string()).as_deref()
+            Some("/v1/staging/us-east".to_string()).as_deref()
         );
     }
 }

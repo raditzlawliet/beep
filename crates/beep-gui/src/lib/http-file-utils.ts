@@ -153,6 +153,16 @@ export function parsedRequestToContent(req: ParsedRequest): string {
 
   lines.push(`### ${req.method} ${req.url}`);
 
+  if (req.pre_script) {
+    if (req.pre_script_external) {
+      lines.push(`< ${req.pre_script}`);
+    } else {
+      lines.push("< {%");
+      lines.push(req.pre_script);
+      lines.push("%}");
+    }
+  }
+
   const enabledParams = (req.query_params ?? []).filter(
     (q) => q.enabled && q.key,
   );
@@ -174,18 +184,6 @@ export function parsedRequestToContent(req: ParsedRequest): string {
       lines.push(`${h.key}: ${h.value}`);
     } else {
       lines.push(`//- ${h.key}: ${h.value}`);
-    }
-  }
-
-  if (req.pre_script) {
-    if (req.pre_script_external) {
-      lines.push("");
-      lines.push(`< ${req.pre_script}`);
-    } else {
-      lines.push("");
-      lines.push("< {%");
-      lines.push(req.pre_script);
-      lines.push("%}");
     }
   }
 

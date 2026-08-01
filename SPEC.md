@@ -441,8 +441,8 @@ Beep resolves variables at request time by walking a precedence chain; highest s
 ### Signed request
 < {%
     const ts = new Date().toISOString();
-    request.vars.set("timestamp", ts);
-    request.vars.set("nonce", crypto.randomUUID());
+    req.vars.set("timestamp", ts);
+    req.vars.set("nonce", crypto.randomUUID());
 %}
 POST https://api.example.com/orders HTTP/1.1
 X-Timestamp: {{timestamp}}
@@ -468,8 +468,8 @@ Content-Type: application/json
 {"username": "john", "password": "secret"}
 
 > {%
-    client.vars.set("token", response.body.token);
-    client.vars.set("userId", response.body.user.id);
+    client.vars.set("token", res.body.token);
+    client.vars.set("userId", res.body.user.id);
 %}
 
 ### Use token - client.vars persists across requests
@@ -599,8 +599,8 @@ Runs before the request is sent.
 < {%
     const ts = new Date().toISOString();
     const sig = `${ts}:${client.vars.get("secret")}`;
-    request.vars.set("timestamp", ts);
-    request.vars.set("signature", sig);
+    req.vars.set("timestamp", ts);
+    req.vars.set("signature", sig);
 %}
 POST https://api.example.com/orders HTTP/1.1
 Content-Type: application/json
@@ -644,15 +644,8 @@ Content-Type: application/json
 }
 
 > {%
-    client.vars.set("token", response.body.token);
-    client.vars.set("userId", response.body.user.id);
-
-    client.test("Status is 200", () => {
-        client.assert(response.status === 200, "Expected 200");
-    });
-    client.test("Token exists", () => {
-        client.assert(response.body.token !== undefined, "Token missing");
-    });
+    client.vars.set("token", res.body.token);
+    client.vars.set("userId", res.body.user.id);
 %}
 ```
 
@@ -673,11 +666,11 @@ Content-Type: application/json
 
 ### 9.3 Script Globals
 
-Three globals are available (following Bruno conventions):
+Four globals are available (following Bruno conventions):
 
 | Global   | Available  | Description                                      |
 | -------- | ---------- | ------------------------------------------------ |
-| `client` | pre + post | Session-level API (vars, test, assert)           |
+| `client` | pre + post | Session-level API (vars)                         |
 | `req`    | pre + post | Current request CRUD (read + mutate before send) |
 | `res`    | post only  | Response data. Throws if accessed in pre-script  |
 | `beep`   | pre + post | Utility namespace (interpolate)                  |
@@ -688,9 +681,6 @@ Three globals are available (following Bruno conventions):
 client.vars.set("key", value); // set session variable (cross-request, in-memory)
 client.vars.get("key"); // get session variable
 client.vars.reset("key"); // reset to default value
-
-client.test("name", () => {}); // define named test (API shell)
-client.assert(condition, "msg"); // assert inside a test (API shell)
 ```
 
 #### `req`
@@ -762,9 +752,7 @@ GET https://api.example.com/users HTTP/1.1
 Accept: application/json
 
 > {%
-    client.test("Status is 200", () => {
-        client.assert(response.status === 200, "Expected 200");
-    });
+    client.vars.set("key", res.body.key);
 %}
 >>! ./output/users.json
 ```
@@ -796,14 +784,9 @@ Content-Type: application/json
 }
 
 > {%
-    client.vars.set("token", response.body.token);
-    client.vars.set("userId", response.body.user.id);
-    client.vars.set("refreshToken", response.body.refresh_token);
-
-    client.test("Login success", () => {
-        client.assert(response.status === 200, "Expected 200");
-        client.assert(response.body.token !== undefined, "Token missing");
-    });
+    client.vars.set("token", res.body.token);
+    client.vars.set("userId", res.body.user.id);
+    client.vars.set("refreshToken", res.body.refresh_token);
 %}
 
 ###
@@ -816,7 +799,7 @@ Content-Type: application/json
 }
 
 > {%
-    client.vars.set("token", response.body.token);
+    client.vars.set("token", res.body.token);
 %}
 
 ###
@@ -839,9 +822,6 @@ Authorization: Bearer {{token}}
 }
 
 > {%
-    client.test("Password updated", () => {
-        client.assert(response.status === 200, "Expected 200");
-    });
 %}
 
 ###
@@ -870,3 +850,4 @@ Authorization: Bearer {{token}}
 | GraphQL `X-REQUEST-TYPE` | TBD    |
 | WebSocket                | TBD    |
 | gRPC                     | TBD    |
+| Test & Assert            | TBD    |

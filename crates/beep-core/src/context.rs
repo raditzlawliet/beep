@@ -33,6 +33,10 @@ impl VarStore {
         self.vars.insert(key, value);
     }
 
+    pub fn remove(&mut self, key: &str) -> Option<String> {
+        self.vars.remove(key)
+    }
+
     pub fn clear(&mut self) {
         self.vars.clear();
     }

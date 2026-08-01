@@ -133,42 +133,40 @@ fn strip_boundary_param(ct: &str) -> &str {
     }
 }
 
-/// Serialize body content for a given mode.
+/// Serialize body content for a given request.
 /// Returns empty string when there is no body and no post-script.
-pub fn serialize_body_section(
-    body_kind: &str,
-    body: Option<&str>,
-    form_urlencoded: &[ParsedFormField],
-    form_multipart: &[ParsedFormField],
-    post_script: Option<&str>,
-    post_script_external: bool,
-    multipart_boundary: Option<&str>,
-) -> String {
+pub fn serialize_body_section(req: &ParsedRequest) -> String {
+    let body_kind = super::parser::effective_body_kind(
+        &req.headers,
+        req.body_directive.as_deref(),
+        req.body.as_deref(),
+    );
     let mut out = String::new();
 
     match body_kind {
         "none" => {}
-        "form-urlencoded" if !form_urlencoded.is_empty() => {
+        "form-urlencoded" if !req.form_urlencoded.is_empty() => {
             // Mixing inline & multiline causing too much chaos... need to consider for later
-            let all_inline = form_urlencoded.iter().all(|f| f.is_inline && f.enabled);
+            let all_inline = req.form_urlencoded.iter().all(|f| f.is_inline && f.enabled);
             if all_inline {
                 // Single-line: key1=val1&key2=val2
-                let qs: Vec<String> = form_urlencoded
+                let qs: Vec<String> = req
+                    .form_urlencoded
                     .iter()
                     .map(|f| format!("{}={}", f.key, f.value))
                     .collect();
                 out.push_str(&format!("{}\n", qs.join("&")));
             } else {
                 // Multiline: one &key=value per line, disabled get //- &
-                for f in form_urlencoded {
+                for f in &req.form_urlencoded {
                     let prefix = if f.enabled { "" } else { "//- " };
                     out.push_str(&format!("{}&{}={}\n", prefix, f.key, f.value));
                 }
             }
         }
-        "form-multipart" if !form_multipart.is_empty() => {
-            let boundary = multipart_boundary.unwrap_or("boundary");
-            for f in form_multipart {
+        "form-multipart" if !req.form_multipart.is_empty() => {
+            let boundary = req.multipart_boundary.as_deref().unwrap_or("boundary");
+            for f in &req.form_multipart {
                 let p = if f.enabled { "" } else { "//- " };
                 out.push_str(&format!("{}--{}\n", p, boundary));
                 if f.field_type == "file" {
@@ -215,7 +213,7 @@ pub fn serialize_body_section(
             out.push_str(&format!("--{}--\n", boundary));
         }
         _ => {
-            if let Some(b) = body {
+            if let Some(b) = req.body.as_deref() {
                 if !b.is_empty() {
                     if b.ends_with('\n') {
                         out.push_str(b);
@@ -228,12 +226,12 @@ pub fn serialize_body_section(
     }
 
     // Post-request script, separated from body by empty line when body is present
-    if let Some(post) = post_script {
+    if let Some(post) = req.post_script.as_deref() {
         if !post.is_empty() {
             if !out.is_empty() && !out.ends_with("\n\n") {
                 out.push('\n');
             }
-            if post_script_external {
+            if req.post_script_external {
                 out.push_str(&format!("> {}\n", post));
             } else {
                 out.push_str("> {%\n");
@@ -297,19 +295,7 @@ pub fn serialize_request_block(req: &ParsedRequest) -> String {
     ));
 
     // Body + post-script
-    let body_text = serialize_body_section(
-        super::parser::effective_body_kind(
-            &req.headers,
-            req.body_directive.as_deref(),
-            req.body.as_deref(),
-        ),
-        req.body.as_deref(),
-        &req.form_urlencoded,
-        &req.form_multipart,
-        req.post_script.as_deref(),
-        req.post_script_external,
-        req.multipart_boundary.as_deref(),
-    );
+    let body_text = serialize_body_section(req);
     if !body_text.is_empty() {
         out.push_str(&body_text);
     }
