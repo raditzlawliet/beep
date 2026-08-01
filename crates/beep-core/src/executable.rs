@@ -67,4 +67,8 @@ pub struct ExecutableRequest {
     /// Custom multipart boundary. None = auto-generate.
     #[serde(default)]
     pub multipart_boundary: Option<String>,
+    /// Directory of the .http file that produced this request.
+    /// Used to resolve relative file paths in multipart file fields.
+    #[serde(default)]
+    pub source_file_dir: Option<String>,
 }

@@ -86,19 +86,19 @@ async fn execute_request(
     state: tauri::State<'_, AppState>,
     mut payload: ParsedRequest,
     file_vars: Vec<beep_core::ParsedFileVariable>,
-    base_dir: Option<String>,
+    source_file_dir: Option<String>,
 ) -> Result<beep_core::HttpResult, String> {
-    // Resolve external script file references — read file content
+    // Resolve external script file references � read file content
     if payload.pre_script_external {
         if let Some(ref path) = payload.pre_script {
-            let content = read_external_script(path, base_dir.as_deref())?;
+            let content = read_external_script(path, source_file_dir.as_deref())?;
             payload.pre_script = Some(content);
             payload.pre_script_external = false;
         }
     }
     if payload.post_script_external {
         if let Some(ref path) = payload.post_script {
-            let content = read_external_script(path, base_dir.as_deref())?;
+            let content = read_external_script(path, source_file_dir.as_deref())?;
             payload.post_script = Some(content);
             payload.post_script_external = false;
         }
@@ -106,6 +106,7 @@ async fn execute_request(
 
     let mut ctx = ExecutionContext::new(state.history.clone());
     ctx.file_vars = file_vars;
+    ctx.source_file_dir = source_file_dir;
     beep_core::execute(ExecuteInput::Parsed(payload), &mut ctx).await
 }
 

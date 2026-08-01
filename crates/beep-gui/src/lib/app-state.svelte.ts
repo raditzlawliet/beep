@@ -79,12 +79,12 @@ export const request = {
     return _result?.response ?? null;
   },
 
-  async send(req: ParsedRequest, fileVars: ParsedFileVariable[] = [], baseDir: string | null = null): Promise<HttpResult> {
+  async send(req: ParsedRequest, fileVars: ParsedFileVariable[] = [], sourceFileDir?: string): Promise<HttpResult> {
     try {
       const res = await invoke<HttpResult>("execute_request", {
         payload: req,
         fileVars,
-        baseDir,
+        sourceFileDir: sourceFileDir ?? null,
       });
       _result = res;
       history.refresh().catch(() => {});

@@ -19,6 +19,7 @@
         request: ParsedRequest;
         loading: boolean;
         basePath: string | null;
+        projectPath: string | null;
         onSend: (req: ParsedRequest) => void;
         onUpdate: (req: ParsedRequest) => void;
         defaultHeaders: [string, string][];
@@ -27,7 +28,7 @@
         onUrlBlur?: () => void;
     }
 
-    let { request, loading, basePath, onSend, onUpdate, defaultHeaders, initialTab = "params", onTabChange, onUrlBlur }: Props = $props();
+    let { request, loading, basePath, projectPath, onSend, onUpdate, defaultHeaders, initialTab = "params", onTabChange, onUrlBlur }: Props = $props();
 
     type Tab = "params" | "headers" | "auth" | "body" | "settings" | "pre-script" | "post-script";
     let activeTab = $state<Tab>("params");
@@ -406,6 +407,7 @@
                     formMultipart={request.form_multipart ?? []}
                     multipartBoundary={request.multipart_boundary}
                     {basePath}
+                    {projectPath}
                     onBodyModeChange={changeBodyKind}
                     onRawBodyChange={(v) => {
                         rawBodyContent = v;

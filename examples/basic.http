@@ -60,11 +60,10 @@ Content-Type: multipart/form-data
 Content-Disposition: form-data; name="a"
 
 1
-//- --boundary
-//- Content-Disposition: form-data; name="b"; filename="D:\work\github.com\raditzlawliet\beep\SPEC.md"
-//- Content-Type: application/octet-stream
-//- 
-//- < ./D:\work\github.com\raditzlawliet\beep\SPEC.md
+--boundary
+Content-Disposition: form-data; name="b"; filename="var.http"
+
+< ./var.http
 //- --boundary
 //- Content-Disposition: form-data; name="c"
 //- 
