@@ -8,10 +8,11 @@
     interface Props {
         initialValue: ParsedFormField[];
         basePath: string | null;
+        projectPath: string | null;
         onchange: (fields: ParsedFormField[]) => void;
     }
 
-    let { initialValue = [], basePath = null, onchange }: Props = $props();
+    let { initialValue = [], basePath = null, projectPath = null, onchange }: Props = $props();
 
     type Row = {
         key: string;
@@ -131,11 +132,13 @@
         ctTrigger = el;
     }
 
-    function closeCtDropdown() {
+    function closeCtDropdown(idx: number) {
         setTimeout(() => {
-            ctOpenIdx = null;
-            ctFilter = "";
-            ctTrigger = null;
+            if (ctOpenIdx === idx) {
+                ctOpenIdx = null;
+                ctFilter = "";
+                ctTrigger = null;
+            }
         }, 150);
     }
 
@@ -230,9 +233,24 @@
         // Normalize separators for comparison
         const normalizedBase = basePath.replace(/\\/g, "/").replace(/\/+$/, "");
         const normalizedAbs = absolutePath.replace(/\\/g, "/");
-        if (normalizedAbs.startsWith(normalizedBase + "/")) {
-            return "./" + normalizedAbs.slice(normalizedBase.length + 1);
+
+        // Try relative to basePath (directory of the .http file)
+        if (normalizedAbs.toLowerCase().startsWith(normalizedBase.toLowerCase() + "/")) {
+            return normalizedAbs.slice(normalizedBase.length + 1);
         }
+
+        // Try relative to project root (for files outside basePath but within project)
+        if (projectPath) {
+            const normalizedProject = projectPath.replace(/\\/g, "/").replace(/\/+$/, "");
+            if (normalizedAbs.toLowerCase().startsWith(normalizedProject.toLowerCase() + "/")) {
+                const relativeFromRoot = normalizedAbs.slice(normalizedProject.length + 1);
+                const baseRelative = normalizedBase.slice(normalizedProject.length).replace(/^\//, "");
+                const levels = baseRelative ? baseRelative.split("/").length : 0;
+                const prefix = "../".repeat(levels);
+                return prefix + relativeFromRoot;
+            }
+        }
+
         return absolutePath;
     }
 
@@ -361,7 +379,7 @@
                                         openCtDropdown(i, e.target as HTMLElement);
                                     }
                                 }}
-                                onblur={closeCtDropdown}
+                                onblur={() => closeCtDropdown(i)}
                                 oninput={(e) => handleCtFilter(e, i)}
                                 onkeydown={handleCtKeydown}
                             />

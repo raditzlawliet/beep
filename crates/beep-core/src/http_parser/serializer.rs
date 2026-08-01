@@ -124,7 +124,7 @@ fn format_multipart_ct(current: &str, boundary: Option<&str>) -> String {
 
 /// Remove `; boundary=...` from a Content-Type value, including the preceding `;`.
 fn strip_boundary_param(ct: &str) -> &str {
-    let lower = ct.to_lowercase();
+    let lower = ct.to_ascii_lowercase();
     if let Some(boundary_idx) = lower.find("boundary=") {
         let before = &ct[..boundary_idx].trim_end_matches(|c: char| c == ';' || c.is_whitespace());
         before
@@ -171,9 +171,13 @@ pub fn serialize_body_section(
                 let p = if f.enabled { "" } else { "//- " };
                 out.push_str(&format!("{}--{}\n", p, boundary));
                 if f.field_type == "file" {
+                    let display_name = std::path::Path::new(&f.value)
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or(&f.value);
                     out.push_str(&format!(
                         "{}Content-Disposition: form-data; name=\"{}\"; filename=\"{}\"\n",
-                        p, f.key, f.value
+                        p, f.key, display_name
                     ));
                     match &f.content_type {
                         Some(ct) => {
@@ -182,7 +186,16 @@ pub fn serialize_body_section(
                         None => {}
                     }
                     out.push_str(&format!("{}\n", p));
-                    out.push_str(&format!("{}< ./{}\n", p, f.value));
+                    let file_prefix = if f.value.starts_with("./")
+                        || f.value.starts_with("../")
+                        || f.value.starts_with('/')
+                        || (f.value.len() >= 2 && f.value.as_bytes()[1] == b':')
+                    {
+                        ""
+                    } else {
+                        "./"
+                    };
+                    out.push_str(&format!("{}< {}{}\n", p, file_prefix, f.value));
                 } else {
                     out.push_str(&format!(
                         "{}Content-Disposition: form-data; name=\"{}\"\n",

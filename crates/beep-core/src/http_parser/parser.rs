@@ -638,7 +638,7 @@ pub fn is_body_kind(kind: &str) -> bool {
 fn header_boundary(headers: &[ParsedHeaderField]) -> Option<String> {
     for h in headers {
         if h.key.eq_ignore_ascii_case("content-type") && h.enabled {
-            let lower = h.value.to_lowercase();
+            let lower = h.value.to_ascii_lowercase();
             if let Some(idx) = lower.find("boundary=") {
                 let after = &h.value[idx + "boundary=".len()..];
                 let end = after

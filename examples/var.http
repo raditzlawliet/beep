@@ -75,10 +75,9 @@ Content-Disposition: form-data; name="a"
 
 1
 --{{token}}
-Content-Disposition: form-data; name="b"; filename="D:\work\github.com\raditzlawliet\beep\SPEC.md"
-Content-Type: application/octet-stream
+Content-Disposition: form-data; name="b"; filename="README.md"
 
-< ./D:\work\github.com\raditzlawliet\beep\SPEC.md
+< ./README.md
 //- --{{token}}
 //- Content-Disposition: form-data; name="c"
 //- 

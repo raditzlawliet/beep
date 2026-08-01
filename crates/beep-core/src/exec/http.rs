@@ -195,10 +195,13 @@ impl HttpExecutor {
                 req_builder = req_builder.body(encoded);
             }
             ResolvedBody::FormMultipart(fields) => {
-                let (_mp_req, mp_body) =
-                    build_multipart_body(fields, request.multipart_boundary.as_deref())
-                        .await
-                        .map_err(|e| format!("Multipart build failed: {}", e))?;
+                let (_mp_req, mp_body) = build_multipart_body(
+                    fields,
+                    request.multipart_boundary.as_deref(),
+                    request.source_file_dir.as_deref(),
+                )
+                .await
+                .map_err(|e| format!("Multipart build failed: {}", e))?;
                 request_body_len = mp_body.len();
                 request_body_str = std::str::from_utf8(&mp_body).ok().map(|s| s.to_owned());
                 // Always inject Content-Type with boundary for multipart.
@@ -451,9 +454,26 @@ fn build_url_encoded_body(fields: &[ResolvedFormField]) -> String {
         .join("&")
 }
 
+/// Resolve a file path for multipart file fields.
+/// If the path is relative and a base directory is provided, join them.
+/// Otherwise return the path as-is.
+fn resolve_file_path(file_path: &str, source_file_dir: Option<&str>) -> String {
+    if let Some(base) = source_file_dir {
+        let p = std::path::Path::new(file_path);
+        if p.is_relative() {
+            return std::path::Path::new(base)
+                .join(p)
+                .to_string_lossy()
+                .into_owned();
+        }
+    }
+    file_path.to_string()
+}
+
 async fn build_multipart_body(
     fields: &[ResolvedFormField],
     custom_boundary: Option<&str>,
+    source_file_dir: Option<&str>,
 ) -> Result<(http::Request<()>, Vec<u8>), String> {
     let boundary = match custom_boundary {
         Some(b) if !b.is_empty() => b.to_string(),
@@ -487,8 +507,8 @@ async fn build_multipart_body(
         body.extend_from_slice(b"\"\r\n");
 
         if is_file && !field.value.is_empty() {
-            let file_path = &field.value;
-            let metadata = tokio::fs::metadata(file_path)
+            let file_path = resolve_file_path(&field.value, source_file_dir);
+            let metadata = tokio::fs::metadata(&file_path)
                 .await
                 .map_err(|e| format!("Cannot read file '{}': {}", file_path, e))?;
             let file_size = metadata.len();
@@ -499,17 +519,22 @@ async fn build_multipart_body(
                     MAX_FILE_SIZE / (1024 * 1024)
                 ));
             }
-            let file_data = tokio::fs::read(file_path)
+            let file_data = tokio::fs::read(&file_path)
                 .await
                 .map_err(|e| format!("Failed to read file '{}': {}", file_path, e))?;
 
-            let ct = match &field.content_type {
-                Some(ct) if !ct.is_empty() => &ct[..],
-                _ => "application/octet-stream",
-            };
-            body.extend_from_slice(b"Content-Type: ");
-            body.extend_from_slice(ct.as_bytes());
-            body.extend_from_slice(b"\r\n\r\n");
+            match &field.content_type {
+                Some(ct) if !ct.is_empty() => {
+                    body.extend_from_slice(b"Content-Type: ");
+                    body.extend_from_slice(ct.as_bytes());
+                    body.extend_from_slice(b"\r\n");
+                }
+                Some(_) => {
+                    body.extend_from_slice(b"Content-Type: application/octet-stream\r\n");
+                }
+                None => {}
+            }
+            body.extend_from_slice(b"\r\n");
             body.extend_from_slice(&file_data);
         } else {
             match &field.content_type {

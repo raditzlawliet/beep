@@ -36,6 +36,7 @@ pub fn compile(
         query_params,
         body,
         multipart_boundary,
+        source_file_dir: None,
     })
 }
 
@@ -61,6 +62,7 @@ pub fn compile_with_ctx(
         query_params,
         body,
         multipart_boundary,
+        source_file_dir: ctx.source_file_dir.clone(),
     })
 }
 

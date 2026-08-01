@@ -13,6 +13,7 @@
         formMultipart: ParsedFormField[];
         multipartBoundary: string | null;
         basePath: string | null;
+        projectPath: string | null;
         onBodyModeChange: (mode: BodyKind, updateContentType: boolean) => void;
         onRawBodyChange: (value: string) => void;
         onBeautify: () => Promise<string>;
@@ -29,6 +30,7 @@
         formMultipart,
         multipartBoundary,
         basePath,
+        projectPath,
         onBodyModeChange,
         onRawBodyChange,
         onBeautify,
@@ -229,6 +231,7 @@
             <RequestMultipartTab
                 initialValue={formMultipart}
                 {basePath}
+                {projectPath}
                 onchange={onFormMultipartChange}
             />
         </div>
