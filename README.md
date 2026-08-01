@@ -34,7 +34,7 @@ Compose and send HTTP requests.
 - **Authentication** - No Auth, Basic Auth, Bearer tokens
 - **Headers** - Fully control Headers
 - **Request Body Editor** - Edit request body with syntax highlighting
-- **Form Data Editor** - Edit form data tables
+- **URL Encoded & Multipart Form Data Editor** - Edit form data tables
 - **Disable/Enable** - Toggle headers, query params, and form fields individually and preserve state
 - **Request History** - Click-to-load history entries into form.
 - **Response Viewer** - View response headers and body
@@ -43,7 +43,6 @@ Compose and send HTTP requests.
 
 Features:
 
-- Request: Multipart Form Data editor
 - Request: Cookies
 - Request: Follow Redirects
 - Request: Test Scripts

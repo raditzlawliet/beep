@@ -65,3 +65,26 @@ Content-Type: text/plain
     "email": "email@example.com",
     "{{key}}": "extra-{{value}}"
 }
+
+### POST Multipart Form + Disabled + HTTP/2 + Var
+POST https://httpbingo.org/post HTTP/2
+Content-Type: multipart/form-data; boundary={{token}}
+
+--{{token}}
+Content-Disposition: form-data; name="a"
+
+1
+--{{token}}
+Content-Disposition: form-data; name="b"; filename="README.md"
+
+< ./README.md
+//- --{{token}}
+//- Content-Disposition: form-data; name="c"
+//- 
+//- 2
+--{{token}}
+Content-Disposition: form-data; name="d"
+
+3
+--{{token}}--
+

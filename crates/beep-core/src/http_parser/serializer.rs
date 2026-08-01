@@ -80,6 +80,7 @@ pub fn serialize_query_section(params: &[ParsedQueryField], has_inline: bool) ->
 pub fn serialize_headers_section(
     headers: &[ParsedHeaderField],
     body_directive: Option<&str>,
+    multipart_boundary: Option<&str>,
 ) -> String {
     if headers.is_empty() && body_directive.is_none() {
         return String::new();
@@ -92,7 +93,15 @@ pub fn serialize_headers_section(
                 return format!("//- @headerAuto {}\n", h.key);
             }
             let prefix = if h.enabled { "" } else { "//- " };
-            format!("{}{}: {}\n", prefix, h.key, h.value)
+            let value = if h.key.eq_ignore_ascii_case("content-type")
+                && h.enabled
+                && h.value.to_lowercase().starts_with("multipart/form-data")
+            {
+                format_multipart_ct(&h.value, multipart_boundary)
+            } else {
+                h.value.clone()
+            };
+            format!("{}{}: {}\n", prefix, h.key, value)
         })
         .collect::<Vec<_>>()
         .concat();
@@ -100,6 +109,28 @@ pub fn serialize_headers_section(
         out.push_str(&format!("// @body {kind}\n"));
     }
     out
+}
+
+/// Ensure multipart Content-Type has a boundary parameter.
+/// When `boundary` is `Some(val)`, write `content-type: multipart/form-data; boundary=val`.
+/// When `boundary` is `None` (auto), strip any existing boundary param.
+fn format_multipart_ct(current: &str, boundary: Option<&str>) -> String {
+    let base = strip_boundary_param(current);
+    match boundary {
+        Some(b) => format!("{}; boundary={}", base, b),
+        None => base.to_string(),
+    }
+}
+
+/// Remove `; boundary=...` from a Content-Type value, including the preceding `;`.
+fn strip_boundary_param(ct: &str) -> &str {
+    let lower = ct.to_ascii_lowercase();
+    if let Some(boundary_idx) = lower.find("boundary=") {
+        let before = &ct[..boundary_idx].trim_end_matches(|c: char| c == ';' || c.is_whitespace());
+        before
+    } else {
+        ct.trim_end()
+    }
 }
 
 /// Serialize body content for a given mode.
@@ -110,6 +141,7 @@ pub fn serialize_body_section(
     form_urlencoded: &[ParsedFormField],
     form_multipart: &[ParsedFormField],
     post_script: Option<&str>,
+    multipart_boundary: Option<&str>,
 ) -> String {
     let mut out = String::new();
 
@@ -134,24 +166,47 @@ pub fn serialize_body_section(
             }
         }
         "form-multipart" if !form_multipart.is_empty() => {
-            let boundary = "boundary";
+            let boundary = multipart_boundary.unwrap_or("boundary");
             for f in form_multipart {
                 let p = if f.enabled { "" } else { "//- " };
                 out.push_str(&format!("{}--{}\n", p, boundary));
                 if f.field_type == "file" {
+                    let display_name = std::path::Path::new(&f.value)
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or(&f.value);
                     out.push_str(&format!(
                         "{}Content-Disposition: form-data; name=\"{}\"; filename=\"{}\"\n",
-                        p, f.key, f.value
+                        p, f.key, display_name
                     ));
-                    if !f.content_type.is_empty() {
-                        out.push_str(&format!("{}Content-Type: {}\n", p, f.content_type));
+                    match &f.content_type {
+                        Some(ct) => {
+                            out.push_str(&format!("{}Content-Type: {}\n", p, ct));
+                        }
+                        None => {}
                     }
-                    out.push_str(&format!("{}< ./{}\n", p, f.value));
+                    out.push_str(&format!("{}\n", p));
+                    let file_prefix = if f.value.starts_with("./")
+                        || f.value.starts_with("../")
+                        || f.value.starts_with('/')
+                        || (f.value.len() >= 2 && f.value.as_bytes()[1] == b':')
+                    {
+                        ""
+                    } else {
+                        "./"
+                    };
+                    out.push_str(&format!("{}< {}{}\n", p, file_prefix, f.value));
                 } else {
                     out.push_str(&format!(
                         "{}Content-Disposition: form-data; name=\"{}\"\n",
                         p, f.key
                     ));
+                    match &f.content_type {
+                        Some(ct) => {
+                            out.push_str(&format!("{}Content-Type: {}\n", p, ct));
+                        }
+                        None => {}
+                    }
                     out.push_str(&format!("{}\n", p));
                     out.push_str(&format!("{}{}\n", p, f.value));
                 }
@@ -237,6 +292,7 @@ pub fn serialize_request_block(req: &ParsedRequest) -> String {
     out.push_str(&serialize_headers_section(
         &req.headers,
         req.body_directive.as_deref(),
+        req.multipart_boundary.as_deref(),
     ));
 
     // Body + post-script
@@ -250,6 +306,7 @@ pub fn serialize_request_block(req: &ParsedRequest) -> String {
         &req.form_urlencoded,
         &req.form_multipart,
         req.post_script.as_deref(),
+        req.multipart_boundary.as_deref(),
     );
     if !body_text.is_empty() {
         out.push_str(&body_text);

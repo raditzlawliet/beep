@@ -595,9 +595,12 @@
         reqError = null;
         const sendTabId = activeTabId;
         try {
-            await request.send(req, fileVars);
-            // Save response to the active tab so each tab has its own response.
             const tab = findTab(sendTabId);
+            const sourceFileDir = tab?.filePath
+                ? tab.filePath.replace(/[/\\][^/\\]*$/, "")
+                : project.path;
+            await request.send(req, fileVars, sourceFileDir ?? undefined);
+            // Save response to the active tab so each tab has its own response.
             if (tab) tab.lastResult = request.result;
         } catch (e) {
             reqError = typeof e === "string" ? e : (e as Error)?.message ?? String(e);
@@ -895,6 +898,10 @@
                     {sending}
                     {reqError}
                     result={activeTab?.lastResult ?? null}
+                    basePath={activeTab.filePath
+                        ? activeTab.filePath.replace(/[/\\][^/\\]*$/, "")
+                        : project.path}
+                    projectPath={project.path}
                     onContentChange={handleContentChange}
                     onTabStateChange={handleTabStateChange}
                     onSend={handleSend}

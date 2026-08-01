@@ -369,7 +369,12 @@ fn parse_request_block(block: &str, base: usize) -> ParsedRequest {
     };
 
     let body_kind = effective_body_kind(&headers, body_directive.as_deref(), body.as_deref());
-    let (form_urlencoded, form_multipart) = parse_body_fields(body.as_deref(), Some(body_kind));
+    let (form_urlencoded, form_multipart, _body_boundary) =
+        parse_body_fields(body.as_deref(), Some(body_kind));
+
+    // Boundary: from Content-Type header param only.
+    // No boundary param = auto (None). Body `--boundary` lines are a code detail.
+    let multipart_boundary = header_boundary(&headers);
 
     let block_end = base + block.len();
 
@@ -383,6 +388,7 @@ fn parse_request_block(block: &str, base: usize) -> ParsedRequest {
         body_directive,
         form_urlencoded,
         form_multipart,
+        multipart_boundary,
         pre_script,
         post_script,
         http_version,
@@ -445,16 +451,19 @@ pub fn strip_disable_marker(trimmed: &str) -> (&str, bool) {
 fn parse_body_fields(
     body: Option<&str>,
     body_kind: Option<&str>,
-) -> (Vec<ParsedFormField>, Vec<ParsedFormField>) {
+) -> (Vec<ParsedFormField>, Vec<ParsedFormField>, Option<String>) {
     let body = match body {
         Some(b) if !b.is_empty() => b,
-        _ => return (Vec::new(), Vec::new()),
+        _ => return (Vec::new(), Vec::new(), None),
     };
 
     match body_kind {
-        Some("form-urlencoded") => (parse_urlencoded_body(body), Vec::new()),
-        Some("form-multipart") => (Vec::new(), parse_multipart_body(body)),
-        _ => (Vec::new(), Vec::new()),
+        Some("form-urlencoded") => (parse_urlencoded_body(body), Vec::new(), None),
+        Some("form-multipart") => {
+            let (fields, boundary) = parse_multipart_body(body);
+            (Vec::new(), fields, boundary)
+        }
+        _ => (Vec::new(), Vec::new(), None),
     }
 }
 
@@ -496,7 +505,7 @@ fn parse_urlencoded_body(body: &str) -> Vec<ParsedFormField> {
                         enabled: !disabled,
                         is_inline,
                         field_type: "text".to_string(),
-                        content_type: String::new(),
+                        content_type: None,
                     });
                 }
             }
@@ -505,13 +514,15 @@ fn parse_urlencoded_body(body: &str) -> Vec<ParsedFormField> {
     fields
 }
 
-fn parse_multipart_body(body: &str) -> Vec<ParsedFormField> {
+fn parse_multipart_body(body: &str) -> (Vec<ParsedFormField>, Option<String>) {
     let first_line = body.lines().next().unwrap_or("").trim();
     let (first_content, _) = strip_disable_marker(first_line);
     if !first_content.starts_with("--") {
-        return Vec::new();
+        return (Vec::new(), None);
     }
     let boundary = &first_content[2..];
+    // Handle closing boundary --boundary-- which may appear at the end
+    let boundary_trimmed = boundary.strip_suffix("--").unwrap_or(boundary);
     let normalized = body.replace(&format!("//---{}", boundary), &format!("--{}", boundary));
 
     let mut fields = Vec::new();
@@ -528,7 +539,7 @@ fn parse_multipart_body(body: &str) -> Vec<ParsedFormField> {
 
         let mut name = String::new();
         let mut filename = String::new();
-        let mut content_type = String::new();
+        let mut content_type: Option<String> = None;
         let mut value = String::new();
         let mut field_type = "text".to_string();
         let mut in_headers = true;
@@ -558,7 +569,8 @@ fn parse_multipart_body(body: &str) -> Vec<ParsedFormField> {
                         }
                     }
                 } else if lower.starts_with("content-type:") {
-                    content_type = content["content-type:".len()..].trim().to_string();
+                    let ct_val = content["content-type:".len()..].trim().to_string();
+                    content_type = Some(ct_val);
                 }
             } else {
                 if !value.is_empty() {
@@ -572,7 +584,7 @@ fn parse_multipart_body(body: &str) -> Vec<ParsedFormField> {
             let final_value = if field_type == "file" {
                 filename
             } else {
-                value
+                value.trim_end().to_string()
             };
             fields.push(ParsedFormField {
                 key: name,
@@ -587,7 +599,7 @@ fn parse_multipart_body(body: &str) -> Vec<ParsedFormField> {
         }
     }
 
-    fields
+    (fields, Some(boundary_trimmed.to_string()))
 }
 
 fn parse_kv_pair_quoted(input: &str) -> Option<(&str, &str)> {
@@ -622,7 +634,26 @@ pub fn is_body_kind(kind: &str) -> bool {
     )
 }
 
-/// Resolve the Beep body representation without guessing from body text.
+/// Extract boundary from Content-Type header's `boundary=...` parameter.
+fn header_boundary(headers: &[ParsedHeaderField]) -> Option<String> {
+    for h in headers {
+        if h.key.eq_ignore_ascii_case("content-type") && h.enabled {
+            let lower = h.value.to_ascii_lowercase();
+            if let Some(idx) = lower.find("boundary=") {
+                let after = &h.value[idx + "boundary=".len()..];
+                let end = after
+                    .find(|c: char| c == ';' || c.is_whitespace())
+                    .unwrap_or(after.len());
+                let boundary = after[..end].trim();
+                if !boundary.is_empty() {
+                    return Some(boundary.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
 pub fn effective_body_kind<'a>(
     headers: &[ParsedHeaderField],
     directive: Option<&'a str>,

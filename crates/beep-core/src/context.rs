@@ -50,6 +50,8 @@ pub struct ExecutionContext {
     pub request_vars: VarStore,
     /// File-level @var declarations.
     pub file_vars: Vec<ParsedFileVariable>,
+    /// Directory of the source .http file, for resolving relative multipart file paths.
+    pub source_file_dir: Option<String>,
     /// Shared history handle.
     pub history: Arc<Mutex<RequestHistory>>,
 }
@@ -60,6 +62,7 @@ impl ExecutionContext {
             client_vars: VarStore::new(),
             request_vars: VarStore::new(),
             file_vars: Vec::new(),
+            source_file_dir: None,
             history,
         }
     }

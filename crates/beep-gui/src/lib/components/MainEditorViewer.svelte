@@ -21,6 +21,8 @@
         sending: boolean;
         reqError: string | null;
         result: HttpResult | null;
+        basePath: string | null;
+        projectPath: string | null;
         onContentChange: (newContent: string) => void;
         onTabStateChange: (state: Partial<Tab>) => void;
         onSend: (req: ParsedRequest, fileVars: ParsedFileVariable[]) => void;
@@ -33,6 +35,8 @@
         sending,
         reqError,
         result,
+        basePath,
+        projectPath,
         onContentChange,
         onTabStateChange,
         onSend,
@@ -419,6 +423,8 @@ async function handleVariablesUpdate(vars: ParsedFileVariable[]) {
                 initialTab={requestFormTab}
                 onTabChange={handleRequestFormTabChange}
                 onUrlBlur={handleUrlBlur}
+                {basePath}
+                {projectPath}
             />
         </div>
         <div role="presentation"

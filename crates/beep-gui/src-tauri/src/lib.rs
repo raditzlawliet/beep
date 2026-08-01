@@ -86,9 +86,11 @@ async fn execute_request(
     state: tauri::State<'_, AppState>,
     payload: ParsedRequest,
     file_vars: Vec<beep_core::ParsedFileVariable>,
+    source_file_dir: Option<String>,
 ) -> Result<beep_core::HttpResult, String> {
     let mut ctx = ExecutionContext::new(state.history.clone());
     ctx.file_vars = file_vars;
+    ctx.source_file_dir = source_file_dir;
     beep_core::execute(ExecuteInput::Parsed(payload), &mut ctx).await
 }
 

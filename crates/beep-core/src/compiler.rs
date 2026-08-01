@@ -23,6 +23,10 @@ pub fn compile(
     let headers = compile_headers(&parsed.headers, variables);
     let query_params = compile_query_params(&parsed.query_params, variables);
     let body = compile_body(parsed, variables);
+    let multipart_boundary = parsed
+        .multipart_boundary
+        .as_ref()
+        .map(|b| resolve(b, variables));
 
     Ok(ExecutableRequest {
         url,
@@ -31,6 +35,8 @@ pub fn compile(
         headers,
         query_params,
         body,
+        multipart_boundary,
+        source_file_dir: None,
     })
 }
 
@@ -46,6 +52,7 @@ pub fn compile_with_ctx(
     let headers = compile_headers_ctx(&parsed.headers, ctx);
     let query_params = compile_query_params_ctx(&parsed.query_params, ctx);
     let body = compile_body_ctx(parsed, ctx);
+    let multipart_boundary = parsed.multipart_boundary.as_ref().map(|b| ctx.resolve(b));
 
     Ok(ExecutableRequest {
         url,
@@ -54,6 +61,8 @@ pub fn compile_with_ctx(
         headers,
         query_params,
         body,
+        multipart_boundary,
+        source_file_dir: ctx.source_file_dir.clone(),
     })
 }
 
@@ -149,7 +158,7 @@ fn compile_body(parsed: &ParsedRequest, vars: &[ParsedFileVariable]) -> Resolved
                     key: resolve(&f.key, vars),
                     value: resolve(&f.value, vars),
                     field_type: FormFieldType::Text,
-                    content_type: String::new(),
+                    content_type: None,
                 })
                 .collect();
             if fields.is_empty() {
@@ -172,7 +181,7 @@ fn compile_body(parsed: &ParsedRequest, vars: &[ParsedFileVariable]) -> Resolved
                     } else {
                         FormFieldType::Text
                     },
-                    content_type: resolve(&f.content_type, vars),
+                    content_type: f.content_type.as_ref().map(|ct| resolve(ct, vars)),
                 })
                 .collect();
             if fields.is_empty() {
@@ -251,7 +260,7 @@ fn compile_body_ctx(parsed: &ParsedRequest, ctx: &ExecutionContext) -> ResolvedB
                     key: ctx.resolve(&f.key),
                     value: ctx.resolve(&f.value),
                     field_type: FormFieldType::Text,
-                    content_type: String::new(),
+                    content_type: None,
                 })
                 .collect();
             if fields.is_empty() {
@@ -274,7 +283,7 @@ fn compile_body_ctx(parsed: &ParsedRequest, ctx: &ExecutionContext) -> ResolvedB
                     } else {
                         FormFieldType::Text
                     },
-                    content_type: ctx.resolve(&f.content_type),
+                    content_type: f.content_type.as_ref().map(|ct| ctx.resolve(ct)),
                 })
                 .collect();
             if fields.is_empty() {
@@ -494,7 +503,7 @@ mod tests {
                     value: "{{name}}".into(),
                     enabled: true,
                     field_type: "text".into(),
-                    content_type: String::new(),
+                    content_type: None,
                     is_inline: true,
                 },
                 PF {
@@ -502,7 +511,7 @@ mod tests {
                     value: "{{role}}".into(),
                     enabled: true,
                     field_type: "text".into(),
-                    content_type: String::new(),
+                    content_type: None,
                     is_inline: true,
                 },
             ],
@@ -531,7 +540,7 @@ mod tests {
                 value: "{{path}}".into(),
                 enabled: true,
                 field_type: "file".into(),
-                content_type: "{{mime}}".into(),
+                content_type: Some("{{mime}}".into()),
                 is_inline: true,
             }],
             ..minimal("POST", "https://example.com")
@@ -546,7 +555,7 @@ mod tests {
                 assert_eq!(fields.len(), 1);
                 assert_eq!(fields[0].key, "file");
                 assert_eq!(fields[0].value, "/tmp/photo.png");
-                assert_eq!(fields[0].content_type, "image/png");
+                assert_eq!(fields[0].content_type, Some("image/png".into()));
             }
             _ => panic!("expected form-multipart body"),
         }
@@ -562,7 +571,7 @@ mod tests {
                 value: "hello".into(),
                 enabled: true,
                 field_type: "text".into(),
-                content_type: String::new(),
+                content_type: None,
                 is_inline: true,
             }],
             ..minimal("POST", "https://example.com")
@@ -574,6 +583,48 @@ mod tests {
             }
             _ => panic!("expected form-multipart body"),
         }
+    }
+
+    #[test]
+    fn multipart_boundary_variable_substitution() {
+        use crate::http_parser::ParsedFormField as PF;
+        let parsed = ParsedRequest {
+            body_directive: Some("form-multipart".into()),
+            multipart_boundary: Some("{{b}}".into()),
+            form_multipart: vec![PF {
+                key: "name".into(),
+                value: "alice".into(),
+                enabled: true,
+                field_type: "text".into(),
+                content_type: None,
+                is_inline: true,
+            }],
+            ..minimal("POST", "https://example.com")
+        };
+        let exe = compile(&parsed, &vars(&[("b", "myboundary42")])).unwrap();
+        assert_eq!(exe.multipart_boundary, Some("myboundary42".into()));
+    }
+
+    #[test]
+    fn multipart_boundary_auto_when_none() {
+        let parsed = ParsedRequest {
+            body_directive: Some("form-multipart".into()),
+            multipart_boundary: None,
+            ..minimal("POST", "https://example.com")
+        };
+        let exe = compile(&parsed, &[]).unwrap();
+        assert_eq!(exe.multipart_boundary, None);
+    }
+
+    #[test]
+    fn multipart_boundary_explicit() {
+        let parsed = ParsedRequest {
+            body_directive: Some("form-multipart".into()),
+            multipart_boundary: Some("xx".into()),
+            ..minimal("POST", "https://example.com")
+        };
+        let exe = compile(&parsed, &[]).unwrap();
+        assert_eq!(exe.multipart_boundary, Some("xx".into()));
     }
 
     // -----------------------------------------------------------------------
@@ -641,7 +692,7 @@ mod tests {
                     value: "1".into(),
                     enabled: true,
                     field_type: "text".into(),
-                    content_type: String::new(),
+                    content_type: None,
                     is_inline: true,
                 },
                 PF {
@@ -649,7 +700,7 @@ mod tests {
                     value: "2".into(),
                     enabled: false,
                     field_type: "text".into(),
-                    content_type: String::new(),
+                    content_type: None,
                     is_inline: true,
                 },
             ],

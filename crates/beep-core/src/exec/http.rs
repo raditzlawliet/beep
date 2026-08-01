@@ -158,6 +158,12 @@ impl HttpExecutor {
         // 3. user headers with no matching auto key are appended
         let merged = merge_headers(&request.headers);
         for field in &merged {
+            // Skip Content-Type for multipart — executor injects it with boundary.
+            if matches!(request.body, ResolvedBody::FormMultipart(_))
+                && field.key.eq_ignore_ascii_case("content-type")
+            {
+                continue;
+            }
             let name = HeaderName::from_bytes(field.key.as_bytes())
                 .map_err(|e| format!("Invalid header name '{}': {}", field.key, e))?;
             let resolved = resolve_basic_auth(field);
@@ -189,11 +195,27 @@ impl HttpExecutor {
                 req_builder = req_builder.body(encoded);
             }
             ResolvedBody::FormMultipart(fields) => {
-                let (_mp_req, mp_body) = build_multipart_body(fields)
-                    .await
-                    .map_err(|e| format!("Multipart build failed: {}", e))?;
+                let (_mp_req, mp_body) = build_multipart_body(
+                    fields,
+                    request.multipart_boundary.as_deref(),
+                    request.source_file_dir.as_deref(),
+                )
+                .await
+                .map_err(|e| format!("Multipart build failed: {}", e))?;
                 request_body_len = mp_body.len();
                 request_body_str = std::str::from_utf8(&mp_body).ok().map(|s| s.to_owned());
+                // Always inject Content-Type with boundary for multipart.
+                // Replaces any existing Content-Type header (reqwest .header() replaces).
+                if let Some(ct) = _mp_req.headers().get("content-type") {
+                    let ct_val = ct
+                        .to_str()
+                        .map_err(|e| format!("Invalid content-type: {}", e))?;
+                    let name = HeaderName::from_bytes(b"content-type")
+                        .map_err(|e| format!("Invalid header name: {}", e))?;
+                    let val = HeaderValue::from_str(ct_val)
+                        .map_err(|e| format!("Invalid header value: {}", e))?;
+                    req_builder = req_builder.header(name, val);
+                }
                 req_builder = req_builder.body(mp_body);
             }
         }
@@ -432,16 +454,37 @@ fn build_url_encoded_body(fields: &[ResolvedFormField]) -> String {
         .join("&")
 }
 
+/// Resolve a file path for multipart file fields.
+/// If the path is relative and a base directory is provided, join them.
+/// Otherwise return the path as-is.
+fn resolve_file_path(file_path: &str, source_file_dir: Option<&str>) -> String {
+    if let Some(base) = source_file_dir {
+        let p = std::path::Path::new(file_path);
+        if p.is_relative() {
+            return std::path::Path::new(base)
+                .join(p)
+                .to_string_lossy()
+                .into_owned();
+        }
+    }
+    file_path.to_string()
+}
+
 async fn build_multipart_body(
     fields: &[ResolvedFormField],
+    custom_boundary: Option<&str>,
+    source_file_dir: Option<&str>,
 ) -> Result<(http::Request<()>, Vec<u8>), String> {
-    let boundary = format!(
-        "----BeepFormBoundary{:x}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos()
-    );
+    let boundary = match custom_boundary {
+        Some(b) if !b.is_empty() => b.to_string(),
+        _ => format!(
+            "----BeepFormBoundary{:x}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ),
+    };
 
     let mut body = Vec::new();
 
@@ -464,8 +507,8 @@ async fn build_multipart_body(
         body.extend_from_slice(b"\"\r\n");
 
         if is_file && !field.value.is_empty() {
-            let file_path = &field.value;
-            let metadata = tokio::fs::metadata(file_path)
+            let file_path = resolve_file_path(&field.value, source_file_dir);
+            let metadata = tokio::fs::metadata(&file_path)
                 .await
                 .map_err(|e| format!("Cannot read file '{}': {}", file_path, e))?;
             let file_size = metadata.len();
@@ -476,20 +519,36 @@ async fn build_multipart_body(
                     MAX_FILE_SIZE / (1024 * 1024)
                 ));
             }
-            let file_data = tokio::fs::read(file_path)
+            let file_data = tokio::fs::read(&file_path)
                 .await
                 .map_err(|e| format!("Failed to read file '{}': {}", file_path, e))?;
 
-            let ct = if field.content_type.is_empty() {
-                "application/octet-stream"
-            } else {
-                &field.content_type
-            };
-            body.extend_from_slice(b"Content-Type: ");
-            body.extend_from_slice(ct.as_bytes());
-            body.extend_from_slice(b"\r\n\r\n");
+            match &field.content_type {
+                Some(ct) if !ct.is_empty() => {
+                    body.extend_from_slice(b"Content-Type: ");
+                    body.extend_from_slice(ct.as_bytes());
+                    body.extend_from_slice(b"\r\n");
+                }
+                Some(_) => {
+                    body.extend_from_slice(b"Content-Type: application/octet-stream\r\n");
+                }
+                None => {}
+            }
+            body.extend_from_slice(b"\r\n");
             body.extend_from_slice(&file_data);
         } else {
+            match &field.content_type {
+                Some(ct) if !ct.is_empty() => {
+                    body.extend_from_slice(b"Content-Type: ");
+                    body.extend_from_slice(ct.as_bytes());
+                    body.extend_from_slice(b"\r\n");
+                }
+                Some(_) => {
+                    // auto for text field: text/plain
+                    body.extend_from_slice(b"Content-Type: text/plain\r\n");
+                }
+                None => {}
+            }
             body.extend_from_slice(b"\r\n");
             body.extend_from_slice(field.value.as_bytes());
         }

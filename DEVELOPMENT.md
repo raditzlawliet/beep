@@ -148,7 +148,7 @@ Beep currently implements the features defined in the [HTTP/REST file format](./
 | 6.1 | JSON body                                            | ✅      | ✅       | ✅            |
 | 6.2 | XML body                                             | ✅      | ✅       | ✅            |
 | 6.3 | Form URL Encoded (single/multiline, disabled fields) | ✅      | ✅       | ✅            |
-| 6.4 | Multipart Form Data (with disabled fields)           | PROBLEM | ✅       | TEMP DISABLED |
+| 6.5 | Multipart Form Data (with disabled fields)           | ✅      | ✅       | ✅            |
 | 6.5 | Plain Text / Raw body                                | ✅      | ✅       | ✅            |
 | 6.6 | No Body                                              | ✅      | ✅       | ✅            |
 | 6.7 | Body from External File `< ./path`                   | TODO    | TODO     | TODO          |

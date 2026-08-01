@@ -56,7 +56,7 @@ export interface ParsedFormField {
   value: string;
   enabled: boolean;
   field_type: string;
-  content_type: string;
+  content_type: string | null;
   is_inline: boolean;
 }
 
@@ -75,6 +75,7 @@ export interface ParsedRequest {
   body_directive: BodyKind | null;
   form_urlencoded: ParsedFormField[];
   form_multipart: ParsedFormField[];
+  multipart_boundary: string | null;
   pre_script: string | null;
   post_script: string | null;
   http_version: string | null;
@@ -216,6 +217,7 @@ export function emptyParsedRequest(): ParsedRequest {
     body_directive: null,
     form_urlencoded: [],
     form_multipart: [],
+    multipart_boundary: null,
     pre_script: null,
     post_script: null,
     http_version: null,
