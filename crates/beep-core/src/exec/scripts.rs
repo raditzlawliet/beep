@@ -180,8 +180,9 @@ fn run_script(sc: Rc<ScriptContext>, code: &str) -> ScriptOutput {
     };
 
     // Apply runtime limits before creating the context
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
     rt.set_memory_limit(64 * 1024 * 1024);
-    // Interrupt handler deferred - see Step 1 notes
+    rt.set_interrupt_handler(Some(Box::new(move || std::time::Instant::now() > deadline)));
 
     let ctx = match rquickjs::Context::full(&rt) {
         Ok(ctx) => ctx,
@@ -303,14 +304,18 @@ fn run_script(sc: Rc<ScriptContext>, code: &str) -> ScriptOutput {
                 rquickjs::Function::new(c.clone(), move || sc_gu.request_url.clone())?,
             )?;
 
+            let is_pre_script = sc.response_status.is_none();
+
             // -- req.setUrl(url) --
-            let sc_su = sc.clone();
-            req.set(
-                "setUrl",
-                rquickjs::Function::new(c.clone(), move |url: String| {
-                    sc_su.request_overrides.borrow_mut().url = Some(url);
-                })?,
-            )?;
+            if is_pre_script {
+                let sc_su = sc.clone();
+                req.set(
+                    "setUrl",
+                    rquickjs::Function::new(c.clone(), move |url: String| {
+                        sc_su.request_overrides.borrow_mut().url = Some(url);
+                    })?,
+                )?;
+            }
 
             // -- req.getMethod() --
             let sc_gm = sc.clone();
@@ -320,13 +325,15 @@ fn run_script(sc: Rc<ScriptContext>, code: &str) -> ScriptOutput {
             )?;
 
             // -- req.setMethod(method) --
-            let sc_sm = sc.clone();
-            req.set(
-                "setMethod",
-                rquickjs::Function::new(c.clone(), move |method: String| {
-                    sc_sm.request_overrides.borrow_mut().method = Some(method.to_uppercase());
-                })?,
-            )?;
+            if is_pre_script {
+                let sc_sm = sc.clone();
+                req.set(
+                    "setMethod",
+                    rquickjs::Function::new(c.clone(), move |method: String| {
+                        sc_sm.request_overrides.borrow_mut().method = Some(method.to_uppercase());
+                    })?,
+                )?;
+            }
 
             // -- req.getHeaders() --
             // -- req.getHeader(name) --
@@ -363,75 +370,86 @@ fn run_script(sc: Rc<ScriptContext>, code: &str) -> ScriptOutput {
             req.set("getHeader", get_header)?;
 
             // -- req.setHeader(key, value) --
-            let sc_sh = sc.clone();
-            req.set(
-                "setHeader",
-                rquickjs::Function::new(c.clone(), move |key: String, value: String| {
-                    let key_lower = key.to_lowercase();
-                    let mut ov = sc_sh.request_overrides.borrow_mut();
-                    ov.headers.insert(key, value);
-                    // Cancel any previous delete of this header
-                    ov.deleted_headers.retain(|d| d.to_lowercase() != key_lower);
-                })?,
-            )?;
+            if is_pre_script {
+                let sc_sh = sc.clone();
+                req.set(
+                    "setHeader",
+                    rquickjs::Function::new(c.clone(), move |key: String, value: String| {
+                        let key_lower = key.to_lowercase();
+                        let mut ov = sc_sh.request_overrides.borrow_mut();
+                        ov.headers.insert(key, value);
+                        // Cancel any previous delete of this header
+                        ov.deleted_headers.retain(|d| d.to_lowercase() != key_lower);
+                    })?,
+                )?;
+            }
 
             // -- req.deleteHeader(name) --
-            let sc_dh = sc.clone();
-            req.set(
-                "deleteHeader",
-                rquickjs::Function::new(c.clone(), move |name: String| {
-                    let name_lower = name.to_lowercase();
-                    let mut ov = sc_dh.request_overrides.borrow_mut();
-                    ov.deleted_headers.push(name);
-                    // Remove from headers if previously set
-                    ov.headers.retain(|k, _| k.to_lowercase() != name_lower);
-                })?,
-            )?;
+            if is_pre_script {
+                let sc_dh = sc.clone();
+                req.set(
+                    "deleteHeader",
+                    rquickjs::Function::new(c.clone(), move |name: String| {
+                        let name_lower = name.to_lowercase();
+                        let mut ov = sc_dh.request_overrides.borrow_mut();
+                        ov.deleted_headers.push(name);
+                        // Remove from headers if previously set
+                        ov.headers.retain(|k, _| k.to_lowercase() != name_lower);
+                    })?,
+                )?;
+            }
 
             // -- req.deleteHeaders(names) --
-            let sc_dhs = sc.clone();
-            req.set(
-                "deleteHeaders",
-                rquickjs::Function::new(c.clone(), move |names: rquickjs::Value| {
-                    let mut parsed: Vec<String> = Vec::new();
-                    if let Some(arr) = names.as_array() {
-                        for item in arr.iter::<rquickjs::Value>() {
-                            if let Ok(v) = item {
-                                if let Some(s) = v.as_string() {
-                                    let s = s.to_string().unwrap_or_default();
-                                    for n in s.split(',') {
-                                        let trimmed = n.trim().to_string();
-                                        if !trimmed.is_empty() {
-                                            parsed.push(trimmed);
+            if is_pre_script {
+                let sc_dhs = sc.clone();
+                req.set(
+                    "deleteHeaders",
+                    rquickjs::Function::new(c.clone(), move |names: rquickjs::Value| {
+                        let mut parsed: Vec<String> = Vec::new();
+                        if let Some(arr) = names.as_array() {
+                            for item in arr.iter::<rquickjs::Value>() {
+                                if let Ok(v) = item {
+                                    if let Some(s) = v.as_string() {
+                                        let s = s.to_string().unwrap_or_default();
+                                        for n in s.split(',') {
+                                            let trimmed = n.trim().to_string();
+                                            if !trimmed.is_empty() {
+                                                parsed.push(trimmed);
+                                            }
                                         }
                                     }
                                 }
                             }
-                        }
-                    } else if let Some(s) = names.as_string() {
-                        let s = s.to_string().unwrap_or_default();
-                        for n in s.split(',') {
-                            let trimmed = n.trim().to_string();
-                            if !trimmed.is_empty() {
-                                parsed.push(trimmed);
+                        } else if let Some(s) = names.as_string() {
+                            let s = s.to_string().unwrap_or_default();
+                            for n in s.split(',') {
+                                let trimmed = n.trim().to_string();
+                                if !trimmed.is_empty() {
+                                    parsed.push(trimmed);
+                                }
                             }
                         }
-                    }
-                    let mut ov = sc_dhs.request_overrides.borrow_mut();
-                    for n in parsed {
-                        ov.deleted_headers.push(n);
-                    }
-                })?,
-            )?;
+                        let mut ov = sc_dhs.request_overrides.borrow_mut();
+                        for n in parsed {
+                            let n_lower = n.to_lowercase();
+                            ov.deleted_headers.push(n);
+                            // Remove from headers if previously set (match deleteHeader)
+                            ov.headers.retain(|k, _| k.to_lowercase() != n_lower);
+                        }
+                    })?,
+                )?;
+            }
 
             // -- req.setBody(body) --
-            let sc_sb = sc.clone();
-            req.set(
-                "setBody",
-                rquickjs::Function::new(c.clone(), move |body: String| {
-                    sc_sb.request_overrides.borrow_mut().body = Some(body);
-                })?,
-            )?;
+            if is_pre_script {
+                let sc_sb = sc.clone();
+                req.set(
+                    "setBody",
+                    rquickjs::Function::new(c.clone(), move |body: String| {
+                        sc_sb.request_overrides.borrow_mut().body = Some(body);
+                    })?,
+                )?;
+            }
 
             // -- Read-only request convenience properties (plain strings, override-aware) --
             req.set("url", sc.request_url.clone())?;
@@ -461,9 +479,8 @@ fn run_script(sc: Rc<ScriptContext>, code: &str) -> ScriptOutput {
             // Auto-parse JSON body only when Content-Type is json
             let raw_body = sc.response_body.clone().unwrap_or_default();
             let is_json = sc.response_headers.as_ref().is_some_and(|h| {
-                h.iter().any(|(k, v)| {
-                    k.to_lowercase().contains("content-type") && v.to_lowercase().contains("json")
-                })
+                h.iter()
+                    .any(|(k, v)| k == "content-type" && v.to_lowercase().contains("json"))
             });
             if is_json {
                 let parsed: Result<rquickjs::Value, _> = c.json_parse(raw_body.clone());
@@ -935,6 +952,27 @@ mod tests {
         assert_eq!(
             request.get("base"),
             Some("/v1/staging/us-east".to_string()).as_deref()
+        );
+    }
+
+    #[test]
+    fn test_script_throw_captured_in_error() {
+        let mut client = VarStore::new();
+        let mut request = VarStore::new();
+        let (out, _) = run_pre_script(
+            r#"throw new Error("boom");"#,
+            &mut client,
+            &mut request,
+            &[],
+            "https://example.com",
+            "GET",
+            &HashMap::new(),
+            None,
+        );
+        assert!(
+            out.error.as_deref().is_some_and(|e| e.contains("boom")),
+            "expected out.error to contain 'boom', got {:?}",
+            out.error
         );
     }
 }

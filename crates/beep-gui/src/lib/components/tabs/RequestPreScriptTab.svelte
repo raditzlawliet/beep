@@ -17,4 +17,6 @@
     {onchange}
     {basePath}
     debouncedChange={true}
+    description="Script will be run "
+    descriptionAccent="before request is sent."
 />

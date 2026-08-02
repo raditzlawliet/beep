@@ -16,5 +16,7 @@
     {external}
     {onchange}
     {basePath}
-    description={'Script will be run <span class="text-accent">after request is sent</span>.'}
+    debouncedChange={true}
+    description="Script will be run "
+    descriptionAccent="after request is sent."
 />

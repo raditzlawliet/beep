@@ -8,8 +8,10 @@
         external: boolean;
         onchange?: (value: string | null, isExternal: boolean) => void;
         basePath?: string | null;
-        /** Description shown below the file picker, e.g. "Script will be run before request is sent." */
+        /** Plain-text description shown below the file picker. */
         description?: string;
+        /** Highlighted accent text rendered in accent color after the description. */
+        descriptionAccent?: string;
         /** Emit on each input change with a debounce (true) or only on blur (false). */
         debouncedChange?: boolean;
     }
@@ -20,6 +22,7 @@
         onchange,
         basePath = null,
         description = "",
+        descriptionAccent = "",
         debouncedChange = false,
     }: Props = $props();
 
@@ -41,9 +44,19 @@
     let useExternalFile = $state(false);
     let scriptCode = $state("");
     let filePath = $state("");
-    let lastEmitted = $state<{ val: string | null; ext: boolean }>({ val: null, ext: false });
+    let lastEmitted: { val: string | null; ext: boolean } = { val: null, ext: false };
 
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+    // Clear pending debounce on destroy
+    $effect(() => {
+        return () => {
+            if (debounceTimer) {
+                clearTimeout(debounceTimer);
+                debounceTimer = null;
+            }
+        };
+    });
 
     $effect(() => {
         const ext = external;
@@ -91,8 +104,8 @@
                 filePath = resolvePath(selected);
                 emit();
             }
-        } catch (_) {
-            // User cancelled or platform error - silently ignore
+        } catch (e) {
+            console.error("Failed to open file dialog:", e);
         }
     }
 
@@ -101,6 +114,7 @@
         if (!debouncedChange) return;
         if (debounceTimer) clearTimeout(debounceTimer);
         debounceTimer = setTimeout(() => {
+            debounceTimer = null;
             emit();
         }, 500);
     }
@@ -138,7 +152,12 @@
         </div>
 
         {#if description}
-            <p class="text-xs text-base-content/50">{@html description}</p>
+            <p class="text-xs text-base-content/50">
+                {description}
+                {#if descriptionAccent}
+                    <span class="text-accent">{descriptionAccent}</span>
+                {/if}
+            </p>
         {/if}
     {:else}
         <div class="flex-1 min-h-0 border border-base-content/10 rounded-lg overflow-hidden">

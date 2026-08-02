@@ -265,7 +265,9 @@ pub fn serialize_request_block(req: &ParsedRequest) -> String {
 
     // Pre-request script
     if let Some(ref pre) = req.pre_script {
-        if req.pre_script_external {
+        if pre.is_empty() {
+            // skip empty pre-script
+        } else if req.pre_script_external {
             out.push_str(&format!("< {}\n", pre));
         } else {
             out.push_str("< {%\n");
