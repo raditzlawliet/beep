@@ -203,7 +203,10 @@ fn run_script(sc: Rc<ScriptContext>, code: &str) -> ScriptOutput {
                 c.clone(),
                 move |args: rquickjs::function::Rest<rquickjs::Coerced<String>>| {
                     let line: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-                    logs_log.borrow_mut().push(line.join(" "));
+                    let mut logs = logs_log.borrow_mut();
+                    if logs.len() < 1000 {
+                        logs.push(line.join(" "));
+                    }
                 },
             )?;
             obj.set("log", log_fn)?;
@@ -213,9 +216,10 @@ fn run_script(sc: Rc<ScriptContext>, code: &str) -> ScriptOutput {
                 c.clone(),
                 move |args: rquickjs::function::Rest<rquickjs::Coerced<String>>| {
                     let line: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-                    logs_err
-                        .borrow_mut()
-                        .push(format!("[error] {}", line.join(" ")));
+                    let mut logs = logs_err.borrow_mut();
+                    if logs.len() < 1000 {
+                        logs.push(format!("[error] {}", line.join(" ")));
+                    }
                 },
             )?;
             obj.set("error", error_fn)?;
@@ -377,6 +381,8 @@ fn run_script(sc: Rc<ScriptContext>, code: &str) -> ScriptOutput {
                     rquickjs::Function::new(c.clone(), move |key: String, value: String| {
                         let key_lower = key.to_lowercase();
                         let mut ov = sc_sh.request_overrides.borrow_mut();
+                        // Remove any existing entry with same key (different casing)
+                        ov.headers.retain(|k, _| k.to_lowercase() != key_lower);
                         ov.headers.insert(key, value);
                         // Cancel any previous delete of this header
                         ov.deleted_headers.retain(|d| d.to_lowercase() != key_lower);
@@ -451,7 +457,7 @@ fn run_script(sc: Rc<ScriptContext>, code: &str) -> ScriptOutput {
                 )?;
             }
 
-            // -- Read-only request convenience properties (plain strings, override-aware) --
+            // -- Read-only request convenience properties --
             req.set("url", sc.request_url.clone())?;
             req.set("method", sc.request_method.clone())?;
 
@@ -545,6 +551,19 @@ fn run_script(sc: Rc<ScriptContext>, code: &str) -> ScriptOutput {
 
         Ok(())
     });
+
+    // Drain any queued microtasks/promises after the script completes
+    while rt.is_job_pending() {
+        if let Err(e) = rt.execute_pending_job() {
+            let msg = e.to_string();
+            console_logs
+                .borrow_mut()
+                .push(format!("Script error: {msg}"));
+            if script_err.borrow().is_none() {
+                *script_err.borrow_mut() = Some(msg);
+            }
+        }
+    }
 
     let logs = console_logs.borrow().clone();
     let error = setup_result
@@ -747,6 +766,8 @@ mod tests {
             None,
         );
         assert_eq!(ov.deleted_headers.len(), 2);
+        assert!(ov.deleted_headers.iter().any(|h| h.to_lowercase() == "x-a"));
+        assert!(ov.deleted_headers.iter().any(|h| h.to_lowercase() == "x-b"));
     }
 
     #[test]
@@ -767,6 +788,111 @@ mod tests {
             None,
         );
         assert_eq!(ov.body, Some("{\"override\": true}".into()));
+    }
+
+    #[test]
+    fn test_post_script_mutation_gated() {
+        let mut client = VarStore::new();
+        let mut request = VarStore::new();
+        let resp_headers: HashMap<String, String> = HashMap::new();
+        let out = run_post_script(
+            r#"req.setUrl("https://evil.com");"#,
+            &mut client,
+            &mut request,
+            &[],
+            "https://example.com",
+            "GET",
+            &HashMap::new(),
+            None,
+            200,
+            "{}",
+            &resp_headers,
+            100,
+            0,
+            0,
+        );
+        assert!(
+            out.error.is_some(),
+            "expected post-script mutation to be gated (error populated), got: {:?}",
+            out.error
+        );
+    }
+
+    #[test]
+    fn test_header_cancel_delete_then_set() {
+        let mut client = VarStore::new();
+        let mut request = VarStore::new();
+        let code = r#"
+            req.deleteHeader("X-Foo");
+            req.setHeader("X-Foo", "bar");
+        "#;
+        let (_out, ov) = run_pre_script(
+            code,
+            &mut client,
+            &mut request,
+            &[],
+            "https://example.com",
+            "GET",
+            &HashMap::new(),
+            None,
+        );
+        // deleteHeader then setHeader: header should be set, not deleted
+        assert_eq!(ov.headers.get("X-Foo").map(|s| s.as_str()), Some("bar"));
+        assert!(
+            !ov.deleted_headers
+                .iter()
+                .any(|h| h.to_lowercase() == "x-foo")
+        );
+    }
+
+    #[test]
+    fn test_header_cancel_set_then_delete() {
+        let mut client = VarStore::new();
+        let mut request = VarStore::new();
+        let code = r#"
+            req.setHeader("X-Foo", "bar");
+            req.deleteHeader("X-Foo");
+        "#;
+        let (_out, ov) = run_pre_script(
+            code,
+            &mut client,
+            &mut request,
+            &[],
+            "https://example.com",
+            "GET",
+            &HashMap::new(),
+            None,
+        );
+        // setHeader then deleteHeader: header should be deleted, not set
+        assert!(
+            ov.deleted_headers
+                .iter()
+                .any(|h| h.to_lowercase() == "x-foo")
+        );
+        assert!(!ov.headers.iter().any(|(k, _)| k.to_lowercase() == "x-foo"));
+    }
+
+    #[test]
+    fn test_set_header_replaces_casing_variant() {
+        let mut client = VarStore::new();
+        let mut request = VarStore::new();
+        let code = r#"
+            req.setHeader("X-Foo", "first");
+            req.setHeader("x-foo", "second");
+        "#;
+        let (_out, ov) = run_pre_script(
+            code,
+            &mut client,
+            &mut request,
+            &[],
+            "https://example.com",
+            "GET",
+            &HashMap::new(),
+            None,
+        );
+        // Last setHeader wins; only one entry with the lowercased key
+        assert_eq!(ov.headers.get("x-foo").map(|s| s.as_str()), Some("second"));
+        assert_eq!(ov.headers.len(), 1);
     }
 
     #[test]
