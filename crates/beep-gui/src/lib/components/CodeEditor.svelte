@@ -16,13 +16,15 @@
     import { json } from "@codemirror/lang-json";
     import { html } from "@codemirror/lang-html";
     import { xml } from "@codemirror/lang-xml";
+    import { javascript } from "@codemirror/lang-javascript";
     import { syntaxHighlighting, bracketMatching } from "@codemirror/language";
     import { monokaiHighlight, monokaiTheme } from "./styles/monokai";
 
     interface Props {
         value: string;
-        language?: "text" | "json" | "html" | "xml";
+        language?: "text" | "json" | "html" | "xml" | "javascript";
         onchange?: (value: string) => void;
+        onblur?: (value: string) => void;
         class?: string;
         readonly?: boolean;
         wrapLines?: boolean;
@@ -32,6 +34,7 @@
         value,
         language = "text",
         onchange,
+        onblur,
         class: className = "",
         readonly = false,
         wrapLines = true,
@@ -42,7 +45,7 @@
 
     function createEditor(
         initialValue: string,
-        lang: "text" | "json" | "html" | "xml",
+        lang: "text" | "json" | "html" | "xml" | "javascript",
         wrap: boolean,
     ) {
         const extensions = [
@@ -60,6 +63,13 @@
                     onchange(update.state.doc.toString());
                 }
             }),
+            EditorView.domEventHandlers({
+                blur: (_event, editorView) => {
+                    if (onblur) {
+                        onblur(editorView.state.doc.toString());
+                    }
+                },
+            }),
             EditorView.theme({
                 "&": { height: "100%" },
                 ".cm-scroller": { overflow: "auto" },
@@ -72,6 +82,8 @@
             extensions.push(html());
         } else if (lang === "xml") {
             extensions.push(xml());
+        } else if (lang === "javascript") {
+            extensions.push(javascript());
         }
 
         const state = EditorState.create({

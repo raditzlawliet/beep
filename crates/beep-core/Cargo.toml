@@ -15,3 +15,4 @@ reqwest-middleware = "0.5"
 async-trait = "0.1"
 http = "1.4"
 tokio = { version = "1", features = ["fs"] }
+rquickjs = "0.12.2"

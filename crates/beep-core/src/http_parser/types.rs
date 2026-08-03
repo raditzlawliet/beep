@@ -135,8 +135,14 @@ pub struct ParsedRequest {
     pub multipart_boundary: Option<String>,
     /// Pre-request script content, if any.
     pub pre_script: Option<String>,
+    /// True when pre_script is an external file path (not inline {% %} code).
+    #[serde(default)]
+    pub pre_script_external: bool,
     /// Post-request script content, if any.
     pub post_script: Option<String>,
+    /// True when post_script is an external file path (not inline {% %} code).
+    #[serde(default)]
+    pub post_script_external: bool,
     /// HTTP version parsed from request line ("HTTP/1.1", "HTTP/2", etc.).
     #[serde(default)]
     pub http_version: Option<String>,

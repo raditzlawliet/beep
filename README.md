@@ -23,18 +23,20 @@ Beep supports project folder panels to organize and manage your HTTP requests.
 - Multi-request .http files with request selector dropdown
 - File-level variables (@key = value)
 - File overview panel (requests list + variables editor)
+- Run directly from Code (using |> play button) or Form
 
 ### HTTP Request
 
 Compose and send HTTP requests.
 
-- **HTTP Methods** - All standard HTTP methods (GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS)
+- **HTTP Methods** - All standard HTTP methods (GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS, Custom)
 - **HTTP Version** - HTTP/1.1 and HTTP/2
 - **Query Parameters** - Fully control Query Parameters
 - **Authentication** - No Auth, Basic Auth, Bearer tokens
 - **Headers** - Fully control Headers
-- **Request Body Editor** - Edit request body with syntax highlighting
-- **URL Encoded & Multipart Form Data Editor** - Edit form data tables
+- **Body Editor** - Edit request body with syntax highlighting
+- **URL Encoded & Multipart Form Data Editor** - Edit form data tables, Upload files, and toggle fields individually
+- **Pre and Post Scripts** - Run javascript code before and after request execution
 - **Disable/Enable** - Toggle headers, query params, and form fields individually and preserve state
 - **Request History** - Click-to-load history entries into form.
 - **Response Viewer** - View response headers and body
@@ -63,7 +65,6 @@ File Supports:
   - Syntax Highlighter
 - `.yml` - Run/Edit Open Collection Spec
 - Run/Convert cURL to Request (directly on `.http`)
-- Run directly from Code (using |> play button)
 - ...
 
 Request Supports:
