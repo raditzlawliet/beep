@@ -82,6 +82,16 @@
     let view: EditorView | undefined;
     let _skipCursorSync = false;
 
+    // CodeMirror joins lines with LF. Keep the file's own line ending so a CRLF file
+    // does not look edited on open (no false dirty / temp tab promotion).
+    function eolOf(text: string): string {
+        return text.includes("\r\n") ? "\r\n" : "\n";
+    }
+
+    function docText(state: EditorState): string {
+        return state.doc.sliceString(0, state.doc.length, eolOf(value));
+    }
+
     function createEditor(
         initialValue: string,
         lang: "text" | "json" | "html" | "xml" | "http",
@@ -118,7 +128,7 @@
             Prec.highest(keymap.of([{ key: "Mod-Enter", run: () => true }])),
             EditorView.updateListener.of((update) => {
                 if (update.docChanged && onchange) {
-                    onchange(update.state.doc.toString());
+                    onchange(docText(update.state));
                 }
                 // Track cursor position changes
                 if (update.selectionSet && oncursorchange) {
@@ -175,7 +185,7 @@
         if (!view) return;
 
         // Update content if changed
-        if (view.state.doc.toString() !== currentValue) {
+        if (docText(view.state) !== currentValue) {
             view.dispatch({
                 changes: {
                     from: 0,

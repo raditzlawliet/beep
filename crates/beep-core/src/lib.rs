@@ -5,16 +5,18 @@
 
 pub mod compiler;
 pub mod context;
+pub mod dynamic;
 pub mod engine;
 pub mod exec;
 pub mod executable;
 pub mod history;
 pub mod http_parser;
 pub mod types;
+pub mod vars_file;
 
 // Re-exports
 pub use compiler::{compile, compile_with_ctx};
-pub use context::ExecutionContext;
+pub use context::{ExecutionContext, VarStore};
 pub use engine::{ExecuteInput, execute};
 pub use exec::http::{
     BodyEncoding, HttpExecutor, HttpResponse, HttpResult, SentRequest, Size, default_headers,

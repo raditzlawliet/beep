@@ -81,6 +81,8 @@ export interface ParsedRequest {
   post_script: string | null;
   post_script_external: boolean;
   http_version: string | null;
+  /** Request-level `@key = value` declarations (between `###` and the request line). */
+  variables: ParsedFileVariable[];
   //
   block_region: ParsedRegion;
   request_line_region: ParsedRegion;
@@ -225,6 +227,7 @@ export function emptyParsedRequest(): ParsedRequest {
     post_script: null,
     post_script_external: false,
     http_version: null,
+    variables: [],
 
     //
     block_region: { start: 0, end: 0 },

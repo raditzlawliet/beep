@@ -85,6 +85,7 @@ export const request = {
         payload: req,
         fileVars,
         sourceFileDir: sourceFileDir ?? null,
+        projectRoot: _projectPath,
       });
       _result = res;
       history.refresh().catch(() => {});
@@ -92,6 +93,9 @@ export const request = {
     } catch (e) {
       _result = null;
       throw e;
+    } finally {
+      // Scripts may change client.vars even when the request fails.
+      session.refresh().catch(() => {});
     }
   },
 
@@ -140,6 +144,25 @@ export const history = {
   async delete(id: number) {
     await invoke("delete_history_entry", { id });
     _history = await invoke<HistoryEntrySummary[]>("get_history");
+  },
+};
+
+// session domain (client.vars, in-memory for the app lifetime)
+let _sessionVars = $state<ParsedFileVariable[]>([]);
+
+export const session = {
+  get vars() {
+    return _sessionVars;
+  },
+
+  async refresh(): Promise<ParsedFileVariable[]> {
+    _sessionVars = await invoke<ParsedFileVariable[]>("get_client_vars");
+    return _sessionVars;
+  },
+
+  async clear() {
+    await invoke("clear_client_vars");
+    _sessionVars = [];
   },
 };
 

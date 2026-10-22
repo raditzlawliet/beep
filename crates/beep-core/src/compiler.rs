@@ -2,7 +2,7 @@
 //!
 //! This is a pure transformation; no I/O, no network, no side effects.
 //! Variable interpolation happens here.
-use crate::context::ExecutionContext;
+use crate::context::{ExecutionContext, VarStore, resolve_template};
 use crate::executable::{ExecutableRequest, FormFieldType, ResolvedBody, ResolvedFormField};
 use crate::http_parser::{ParsedFileVariable, ParsedRequest, effective_body_kind};
 use crate::types::{HeaderField, HttpMethod, HttpVersion, QueryField};
@@ -11,64 +11,68 @@ use crate::types::{HeaderField, HttpMethod, HttpVersion, QueryField};
 // Public API
 // ---------------------------------------------------------------------------
 
-/// Compile a `ParsedRequest` into an `ExecutableRequest`
-/// by resolving `{{variable}}` references and selecting the concrete body encoding.
+/// Compile a `ParsedRequest` into an `ExecutableRequest` using a single variable scope.
+/// Same resolution rules as `compile_with_ctx` (nested, trimmed, `$dynamic`).
 pub fn compile(
     parsed: &ParsedRequest,
     variables: &[ParsedFileVariable],
 ) -> Result<ExecutableRequest, String> {
-    let method = parse_method(&parsed.method)?;
-    let http_version = parse_version(parsed.http_version.as_deref());
-    let url = resolve(&parsed.url, variables);
-    let headers = compile_headers(&parsed.headers, variables);
-    let query_params = compile_query_params(&parsed.query_params, variables);
-    let body = compile_body(parsed, variables);
-    let multipart_boundary = parsed
-        .multipart_boundary
-        .as_ref()
-        .map(|b| resolve(b, variables));
-
-    Ok(ExecutableRequest {
-        url,
-        method,
-        http_version,
-        headers,
-        query_params,
-        body,
-        multipart_boundary,
-        source_file_dir: None,
-    })
+    let store = VarStore::from_file_vars(variables);
+    compile_impl(parsed, &|s| resolve_template(s, &[&store]), None)
 }
 
-/// Compile using `ExecutionContext` for variable resolution with full cascade
-/// (request.vars > client.vars > file_vars).
+/// Compile using `ExecutionContext` for variable resolution with the full cascade
+/// (req.vars > client.vars > request @var > file @var > folder vars).
 pub fn compile_with_ctx(
     parsed: &ParsedRequest,
     ctx: &ExecutionContext,
 ) -> Result<ExecutableRequest, String> {
-    let method = parse_method(&parsed.method)?;
-    let http_version = parse_version(parsed.http_version.as_deref());
-    let url = ctx.resolve(&parsed.url);
-    let headers = compile_headers_ctx(&parsed.headers, ctx);
-    let query_params = compile_query_params_ctx(&parsed.query_params, ctx);
-    let body = compile_body_ctx(parsed, ctx);
-    let multipart_boundary = parsed.multipart_boundary.as_ref().map(|b| ctx.resolve(b));
-
-    Ok(ExecutableRequest {
-        url,
-        method,
-        http_version,
-        headers,
-        query_params,
-        body,
-        multipart_boundary,
-        source_file_dir: ctx.source_file_dir.clone(),
-    })
+    // Build the file scope once instead of per resolved string.
+    let file = VarStore::from_file_vars(&ctx.file_vars);
+    let scopes = [
+        &ctx.request_vars,
+        &ctx.client_vars,
+        &ctx.request_static_vars,
+        &file,
+        &ctx.folder_vars,
+    ];
+    compile_impl(
+        parsed,
+        &|s| resolve_template(s, &scopes),
+        ctx.source_file_dir.clone(),
+    )
 }
 
 // ---------------------------------------------------------------------------
 // Internals
 // ---------------------------------------------------------------------------
+
+type Resolve<'a> = &'a dyn Fn(&str) -> String;
+
+fn compile_impl(
+    parsed: &ParsedRequest,
+    resolve: Resolve,
+    source_file_dir: Option<String>,
+) -> Result<ExecutableRequest, String> {
+    let method = parse_method(&parsed.method)?;
+    let http_version = parse_version(parsed.http_version.as_deref());
+    let url = resolve(&parsed.url);
+    let headers = compile_headers(&parsed.headers, resolve);
+    let query_params = compile_query_params(&parsed.query_params, resolve);
+    let body = compile_body(parsed, resolve);
+    let multipart_boundary = parsed.multipart_boundary.as_deref().map(resolve);
+
+    Ok(ExecutableRequest {
+        url,
+        method,
+        http_version,
+        headers,
+        query_params,
+        body,
+        multipart_boundary,
+        source_file_dir,
+    })
+}
 
 fn parse_method(raw: &str) -> Result<HttpMethod, String> {
     let upper = raw.to_uppercase();
@@ -93,32 +97,18 @@ fn parse_version(raw: Option<&str>) -> HttpVersion {
 }
 
 // ---------------------------------------------------------------------------
-// Variable resolution
-// ---------------------------------------------------------------------------
-
-/// Replace every `{{key}}` in `input` with the matching variable value.
-/// Single-pass: replaced values are **not** re-scanned.
-fn resolve(input: &str, vars: &[ParsedFileVariable]) -> String {
-    let mut out = input.to_string();
-    for v in vars {
-        out = out.replace(&format!("{{{{{}}}}}", v.key), &v.value);
-    }
-    out
-}
-
-// ---------------------------------------------------------------------------
 // Sub-compilers
 // ---------------------------------------------------------------------------
 
 fn compile_headers(
     raw: &[crate::http_parser::ParsedHeaderField],
-    vars: &[ParsedFileVariable],
+    resolve: Resolve,
 ) -> Vec<HeaderField> {
     raw.iter()
         .filter(|h| !h.key.is_empty() && (h.enabled || h.auto))
         .map(|h| HeaderField {
-            key: resolve(&h.key, vars),
-            value: resolve(&h.value, vars),
+            key: resolve(&h.key),
+            value: resolve(&h.value),
             enabled: h.enabled,
             auto: h.auto,
         })
@@ -127,19 +117,19 @@ fn compile_headers(
 
 fn compile_query_params(
     raw: &[crate::http_parser::ParsedQueryField],
-    vars: &[ParsedFileVariable],
+    resolve: Resolve,
 ) -> Vec<QueryField> {
     raw.iter()
         .filter(|q| q.enabled && !q.key.is_empty())
         .map(|q| QueryField {
-            key: resolve(&q.key, vars),
-            value: resolve(&q.value, vars),
+            key: resolve(&q.key),
+            value: resolve(&q.value),
             enabled: true,
         })
         .collect()
 }
 
-fn compile_body(parsed: &ParsedRequest, vars: &[ParsedFileVariable]) -> ResolvedBody {
+fn compile_body(parsed: &ParsedRequest, resolve: Resolve) -> ResolvedBody {
     let mode = effective_body_kind(
         &parsed.headers,
         parsed.body_directive.as_deref(),
@@ -155,8 +145,8 @@ fn compile_body(parsed: &ParsedRequest, vars: &[ParsedFileVariable]) -> Resolved
                 .iter()
                 .filter(|f| f.enabled)
                 .map(|f| ResolvedFormField {
-                    key: resolve(&f.key, vars),
-                    value: resolve(&f.value, vars),
+                    key: resolve(&f.key),
+                    value: resolve(&f.value),
                     field_type: FormFieldType::Text,
                     content_type: None,
                 })
@@ -174,116 +164,14 @@ fn compile_body(parsed: &ParsedRequest, vars: &[ParsedFileVariable]) -> Resolved
                 .iter()
                 .filter(|f| f.enabled)
                 .map(|f| ResolvedFormField {
-                    key: resolve(&f.key, vars),
-                    value: resolve(&f.value, vars),
+                    key: resolve(&f.key),
+                    value: resolve(&f.value),
                     field_type: if f.field_type == "file" {
                         FormFieldType::File
                     } else {
                         FormFieldType::Text
                     },
-                    content_type: f.content_type.as_ref().map(|ct| resolve(ct, vars)),
-                })
-                .collect();
-            if fields.is_empty() {
-                ResolvedBody::None
-            } else {
-                ResolvedBody::FormMultipart(fields)
-            }
-        }
-
-        _ => {
-            // Raw kinds send the source body unchanged.
-            if let Some(ref body) = parsed.body {
-                let ct = match mode {
-                    "raw/json" => "application/json",
-                    "raw/xml" => "application/xml",
-                    "raw/html" => "text/html",
-                    "raw/text" => "text/plain",
-                    _ => "text/plain",
-                };
-                ResolvedBody::Raw {
-                    content: resolve(body, vars),
-                    content_type: ct.to_string(),
-                }
-            } else {
-                ResolvedBody::None
-            }
-        }
-    }
-}
-
-fn compile_headers_ctx(
-    raw: &[crate::http_parser::ParsedHeaderField],
-    ctx: &ExecutionContext,
-) -> Vec<HeaderField> {
-    raw.iter()
-        .filter(|h| !h.key.is_empty() && (h.enabled || h.auto))
-        .map(|h| HeaderField {
-            key: ctx.resolve(&h.key),
-            value: ctx.resolve(&h.value),
-            enabled: h.enabled,
-            auto: h.auto,
-        })
-        .collect()
-}
-
-fn compile_query_params_ctx(
-    raw: &[crate::http_parser::ParsedQueryField],
-    ctx: &ExecutionContext,
-) -> Vec<QueryField> {
-    raw.iter()
-        .filter(|q| q.enabled && !q.key.is_empty())
-        .map(|q| QueryField {
-            key: ctx.resolve(&q.key),
-            value: ctx.resolve(&q.value),
-            enabled: true,
-        })
-        .collect()
-}
-
-fn compile_body_ctx(parsed: &ParsedRequest, ctx: &ExecutionContext) -> ResolvedBody {
-    let mode = effective_body_kind(
-        &parsed.headers,
-        parsed.body_directive.as_deref(),
-        parsed.body.as_deref(),
-    );
-
-    match mode {
-        "none" => ResolvedBody::None,
-
-        "form-urlencoded" => {
-            let fields: Vec<ResolvedFormField> = parsed
-                .form_urlencoded
-                .iter()
-                .filter(|f| f.enabled)
-                .map(|f| ResolvedFormField {
-                    key: ctx.resolve(&f.key),
-                    value: ctx.resolve(&f.value),
-                    field_type: FormFieldType::Text,
-                    content_type: None,
-                })
-                .collect();
-            if fields.is_empty() {
-                ResolvedBody::None
-            } else {
-                ResolvedBody::FormUrlEncoded(fields)
-            }
-        }
-
-        "form-multipart" => {
-            let fields: Vec<ResolvedFormField> = parsed
-                .form_multipart
-                .iter()
-                .filter(|f| f.enabled)
-                .map(|f| ResolvedFormField {
-                    key: ctx.resolve(&f.key),
-                    value: ctx.resolve(&f.value),
-                    field_type: if f.field_type == "file" {
-                        FormFieldType::File
-                    } else {
-                        FormFieldType::Text
-                    },
-                    content_type: f.content_type.as_ref().map(|ct| ctx.resolve(ct)),
+                    content_type: f.content_type.as_deref().map(resolve),
                 })
                 .collect();
             if fields.is_empty() {
@@ -303,7 +191,7 @@ fn compile_body_ctx(parsed: &ParsedRequest, ctx: &ExecutionContext) -> ResolvedB
                     _ => "text/plain",
                 };
                 ResolvedBody::Raw {
-                    content: ctx.resolve(body),
+                    content: resolve(body),
                     content_type: ct.to_string(),
                 }
             } else {
@@ -773,6 +661,34 @@ mod tests {
         let parsed = minimal("GET", "https://example.com/{{missing}}");
         let exe = compile(&parsed, &vars(&[("host", "ignored")])).unwrap();
         assert_eq!(exe.url, "https://example.com/{{missing}}");
+    }
+
+    #[test]
+    fn compile_uses_scoped_resolver() {
+        let parsed = minimal("GET", "{{ baseUrl }}/users/{{$randomInt 7 8}}");
+        let exe = compile(
+            &parsed,
+            &vars(&[("baseUrl", "{{host}}/v1"), ("host", "https://x.io")]),
+        )
+        .unwrap();
+        assert_eq!(exe.url, "https://x.io/v1/users/7");
+    }
+
+    #[test]
+    fn compile_with_ctx_all_scopes() {
+        use crate::history::RequestHistory;
+        use std::sync::{Arc, Mutex};
+
+        let mut ctx = ExecutionContext::new(Arc::new(Mutex::new(RequestHistory::new())));
+        ctx.folder_vars.set("host".into(), "https://folder.io".into());
+        ctx.file_vars = vars(&[("baseUrl", "{{host}}/api"), ("id", "file")]);
+        ctx.request_static_vars.set("baseUrl".into(), "{{baseUrl}}/v2".into());
+        ctx.client_vars.set("id".into(), "client".into());
+        ctx.source_file_dir = Some("/tmp".into());
+
+        let exe = compile_with_ctx(&minimal("GET", "{{baseUrl}}/{{id}}"), &ctx).unwrap();
+        assert_eq!(exe.url, "https://folder.io/api/v2/client");
+        assert_eq!(exe.source_file_dir.as_deref(), Some("/tmp"));
     }
 
     // -----------------------------------------------------------------------

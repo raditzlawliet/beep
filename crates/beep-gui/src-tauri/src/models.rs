@@ -1,12 +1,14 @@
 use std::sync::{Arc, Mutex};
 
-use beep_core::RequestHistory;
+use beep_core::{RequestHistory, VarStore};
 use notify::RecommendedWatcher;
 use serde::Serialize;
 
 pub struct AppState {
     pub history: Arc<Mutex<RequestHistory>>,
     pub watcher: Mutex<Option<RecommendedWatcher>>,
+    /// Session variables (`client.vars`), shared by all requests for the app lifetime.
+    pub client_vars: Mutex<VarStore>,
 }
 
 #[allow(dead_code)]

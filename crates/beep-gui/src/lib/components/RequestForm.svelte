@@ -13,6 +13,7 @@
     import RequestSettingsTab from "$lib/components/tabs/RequestSettingsTab.svelte";
     import RequestPreScriptTab from "$lib/components/tabs/RequestPreScriptTab.svelte";
     import RequestPostScriptTab from "$lib/components/tabs/RequestPostScriptTab.svelte";
+    import RequestVarsTab from "$lib/components/tabs/RequestVarsTab.svelte";
     import { showToast } from "$lib/toast.svelte";
 
     interface Props {
@@ -30,7 +31,7 @@
 
     let { request, loading, basePath, projectPath, onSend, onUpdate, defaultHeaders, initialTab = "params", onTabChange, onUrlBlur }: Props = $props();
 
-    type Tab = "params" | "headers" | "auth" | "body" | "settings" | "pre-script" | "post-script";
+    type Tab = "params" | "headers" | "auth" | "body" | "vars" | "settings" | "pre-script" | "post-script";
     let activeTab = $state<Tab>("params");
 
     $effect(() => {
@@ -152,6 +153,7 @@
     // Tab badge indicators - derived directly from request data.
     const hasParams = $derived(request.query_params.filter((q) => q.enabled && q.key).length > 0);
     const headerCount = $derived(request.headers.filter((h) => h.enabled && h.key).length);
+    const varCount = $derived((request.variables ?? []).filter((v) => v.key).length);
     const hasAuth = $derived(
         request.headers.some((h) => !h.auto && h.enabled && h.key.toLowerCase() === "authorization"),
     );
@@ -306,7 +308,7 @@
 
         <!-- tabs -->
         <div role="tablist" class="tabs tabs-bordered tabs-xs px-1">
-            {#each ["params", "auth", "headers", "body", "pre-script", "post-script", "settings"] as tab}
+            {#each ["params", "auth", "headers", "body", "vars", "pre-script", "post-script", "settings"] as tab}
                 <button
                     role="tab"
                     class="tab capitalize gap-1.5 {activeTab === tab
@@ -344,6 +346,12 @@
                                 class="w-1.5 h-1.5 rounded-full bg-accent inline-block"
                             ></span>
                         {/if}
+                    {/if}
+
+                    {#if tab === "vars" && varCount > 0}
+                        <span
+                            data-testid="request-vars-tab-indicator"
+                            class="text-xs opacity-50">({varCount})</span>
                     {/if}
 
                     {#if tab === "pre-script" && request.pre_script}
@@ -423,6 +431,11 @@
                         emitUpdate({ multipart_boundary: boundary });
                     }}
                     onBeautify={beautify}
+                />
+            {:else if activeTab === "vars"}
+                <RequestVarsTab
+                    initialValue={request.variables ?? []}
+                    onchange={(variables) => emitUpdate({ variables })}
                 />
             {:else if activeTab === "pre-script"}
                 <RequestPreScriptTab

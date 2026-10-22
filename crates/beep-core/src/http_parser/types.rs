@@ -17,7 +17,7 @@ pub struct ParsedHeaderField {
     pub auto: bool,
 }
 
-/// A file-level variable declared with `@key = value`.
+/// A static variable declared with `@key = value` (file preamble or request block).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ParsedFileVariable {
     pub key: String,
@@ -146,6 +146,9 @@ pub struct ParsedRequest {
     /// HTTP version parsed from request line ("HTTP/1.1", "HTTP/2", etc.).
     #[serde(default)]
     pub http_version: Option<String>,
+    /// Request-level `@key = value` declarations (between `###` and the request line).
+    #[serde(default)]
+    pub variables: Vec<ParsedFileVariable>,
 
     // -----------------------------------------------------------------------
     // Region offsets. Absolute byte positions in the source file.

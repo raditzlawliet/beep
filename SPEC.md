@@ -17,6 +17,7 @@ A single `.http` file may contain **multiple requests**, separated by `###`. One
 
 ### [optional request title]
 [// optional comments]
+[request variables]
 [pre-request script]
 METHOD URL [HTTP/Version]
 [headers]
@@ -423,18 +424,23 @@ In the example above, `page` and `limit` are sent. `sort` and `filter` are disab
 Beep resolves variables at request time by walking a precedence chain; highest scope wins.
 
 ```md
-1. req.vars - highest, current request only
-2. client.vars - session, entire app lifetime (in-memory)
-3. @var in .http file - file-level static
-4. .beep/vars.json - folder/project cascade, deepest wins
+1. req.vars - script-set, current request only (highest)
+2. client.vars - script-set, session (in-memory)
+3. @var in request block - static, current request only
+4. @var in file preamble - static, file-level
+5. .beep/vars.json - folder/project cascade, deepest folder wins (lowest)
 ```
+
+Dynamic variables (`{{$guid}}` etc., see 8.7) are not part of the chain; they are generated on use.
+
+Script-set scopes (1, 2) sit above static scopes (3, 4, 5), so a script can always override a value declared in a file.
 
 ---
 
-### 8.1 `req.vars` - Request Scope
+### 8.1 `req.vars` - Request Scope (script)
 
-- **Set via:** pre-request script only
-- **Lives:** current request only, gone after request com<!--  -->pletes
+- **Set via:** pre-request script
+- **Lives:** current request only, cleared before each request
 - **Stored:** memory
 
 ```http
@@ -442,7 +448,7 @@ Beep resolves variables at request time by walking a precedence chain; highest s
 < {%
     const ts = new Date().toISOString();
     req.vars.set("timestamp", ts);
-    req.vars.set("nonce", crypto.randomUUID());
+    req.vars.set("nonce", beep.interpolate("{{$guid}}"));
 %}
 POST https://api.example.com/orders HTTP/1.1
 X-Timestamp: {{timestamp}}
@@ -454,10 +460,10 @@ Content-Type: application/json
 
 After this request completes, `{{timestamp}}` and `{{nonce}}` no longer exist.
 
-### 8.2 `client.vars` - Session Scope
+### 8.2 `client.vars` - Session Scope (script)
 
 - **Set via:** pre or post-request script
-- **Lives:** entire app session, lost when app closes
+- **Lives:** entire app session (shared across all files and projects), lost when app closes
 - **Stored:** memory only (for now)
 
 ```http
@@ -477,9 +483,31 @@ GET https://api.example.com/me HTTP/1.1
 Authorization: Bearer {{token}}
 ```
 
-### 8.3 `@var` - File-Level Scope
+### 8.3 `@var` in Request Block - Request Scope (static)
 
-- **Set via:** declared at the top of a `.http` file
+- **Set via:** `@key = value` lines inside a request block, after `###` and before the request line
+- **Lives:** current request only
+- **Stored:** in the file itself
+
+Request variables may be mixed with comments and the pre-request script, in any order, as long as they come before the request line.
+
+```http
+@baseUrl = https://api.example.com
+
+### Get one user
+@userId = 42
+@fields = id,name,email     // inline comment allowed
+GET {{baseUrl}}/users/{{userId}}?fields={{fields}} HTTP/1.1
+
+### Another request - userId and fields do not exist here
+GET {{baseUrl}}/users HTTP/1.1
+```
+
+A request `@var` overrides a file `@var` with the same key, for that request only. Scripts read it with `beep.interpolate("{{userId}}")`, and a pre-script `req.vars.set("userId", ...)` overrides it.
+
+### 8.4 `@var` in File Preamble - File Scope (static)
+
+- **Set via:** `@key = value` lines at the top of a `.http` file, before the first `###`
 - **Lives:** file load time
 - **Stored:** in the file itself
 
@@ -493,17 +521,23 @@ Content-Type: {{contentType}}
 Authorization: Bearer {{token}}
 ```
 
-`@var` is read-only at runtime; scripts cannot overwrite it. If `client.vars` has the same key, `client.vars` wins.
+Static `@var` values (8.3, 8.4) are read-only at runtime; scripts cannot overwrite them, only shadow them through a higher scope.
 
-### 8.4 `.beep/vars.json` - Folder / Project Scope
+#### `@var` line rules
 
-- **Set via:** JSON files with naming `vars.json` or `_vars.json`
-- **Lives:** always, loaded at project open
+- Format: `@key = value`. Key and value are trimmed.
+- Inline comment: ` //` (whitespace before `//`) starts a comment, so `https://` inside a value is safe.
+- Later declaration of the same key in the same scope wins.
+
+### 8.5 `.beep/vars.json` - Folder / Project Scope
+
+- **Set via:** JSON files inside a `.beep/` folder: `vars.json` and `*_vars.json` (e.g. `secret_vars.json`)
+- **Lives:** read fresh on every request, so edits apply immediately
 - **Stored:** in the file itself
 
 #### Folder cascade
 
-Beep walks from the `.http` file's directory up to the project root, collecting variable files. Deeper folder wins over shallower:
+Beep walks from the `.http` file's directory up to the project root, collecting `.beep/` variable files. Deeper folder wins over shallower:
 
 ```
 my-api/
@@ -520,27 +554,44 @@ my-api/
 
 If `host` is defined at both `collections/.beep/` and `my-api/.beep/`, the `collections/.beep/` value wins for any file inside `collections/`.
 
+- With a project open, the walk stops at the project root.
+- With no project open, only the `.http` file's own directory is read.
+- Untitled (unsaved) requests read no folder variables.
+
 #### Multiple files at same level
 
-Multiple `*_vars.json` files at the same level are loaded alphabetically. `vars.json` always loads last (canonical override file):
+All `*_vars.json` files in one `.beep/` folder are loaded alphabetically, then `vars.json` last (canonical override file). Later files win.
+
+```
+.beep/
+├── a_vars.json        - loaded 1st
+├── secret_vars.json   - loaded 2nd (good candidate for .gitignore)
+└── vars.json          - loaded last, wins on conflict
+```
 
 #### Format
 
-Always start with object.
+The root must be a JSON object.
 
 ```json
 {
   "host": "https://api.example.com",
   "version": "v1",
-  "timeout": "30"
+  "timeout": 30,
+  "debug": true
 }
 ```
 
+- String values are used as-is. Numbers and booleans are converted to text (`30`, `true`).
+- `null`, objects and arrays are ignored.
+- Values may reference other variables, e.g. `"baseUrl": "{{host}}/{{version}}"`.
+- Invalid JSON fails the request with an error naming the file.
+
 ---
 
-### 8.5 Variable Interpolation
+### 8.6 Variable Interpolation
 
-Use `{{variable}}` anywhere in a request - URL, headers, body. Resolved at request time.
+Use `{{variable}}` anywhere in a request - URL, query, headers, body, form fields. Resolved at request time.
 
 ```http
 ### Interpolation in URL, headers, and body
@@ -551,23 +602,30 @@ X-Request-ID: {{$guid}}
 
 {
     "owner_id": "{{userId}}",
-    "created_at": "{{$isoTimestamp}}"
+    "created_at": "{{$datetime iso8601}}"
 }
 ```
 
----
+Rules:
 
-### 8.6 Dynamic Variables
+- Whitespace inside braces is ignored: `{{ token }}` equals `{{token}}`.
+- Nested: a resolved value that contains `{{...}}` is resolved again, using the full precedence chain (max depth 10).
+- Self-reference: a variable that references its own name resolves it from the next lower scope, e.g. request `@baseUrl = {{baseUrl}}/v2` extends the file-level `baseUrl`.
+- Cycles (`@a = {{b}}`, `@b = {{a}}`) and unknown variables are left as-is in the sent request (e.g. `{{missing}}`).
 
-Built-in variables generated at request time. No setup required. Will be added more later as needed.
+### 8.7 Dynamic Variables
 
-| Variable                 | Alias       | Description                        |
-| ------------------------ | ----------- | ---------------------------------- |
-| `{{$guid}}`              | `{{$uuid}}` | Random UUID v4                     |
-| `{{$timestamp}}`         |             | Unix timestamp in seconds          |
-| `{{$datetime iso8601}}`  |             | ISO 8601 datetime string           |
-| `{{$randomInt min max}}` |             | Random integer between min and max |
-| `{{$processEnv VAR}}`    |             | OS-level environment variable      |
+Built-in variables generated at request time. No setup required. Names start with `$`. Each occurrence generates a new value. Will be added more later as needed.
+
+| Variable                 | Alias       | Description                                         |
+| ------------------------ | ----------- | --------------------------------------------------- |
+| `{{$guid}}`              | `{{$uuid}}` | Random UUID v4                                      |
+| `{{$timestamp}}`         |             | Unix timestamp in seconds                           |
+| `{{$datetime iso8601}}`  |             | ISO 8601 datetime string (UTC)                      |
+| `{{$randomInt min max}}` |             | Random integer, `min` inclusive, `max` exclusive    |
+| `{{$processEnv VAR}}`    |             | OS-level environment variable (empty if not set)    |
+
+Random values are for test data only; they are not cryptographically secure.
 
 ```http
 ### Dynamic variables
@@ -680,7 +738,7 @@ Four globals are available (following Bruno conventions):
 ```javascript
 client.vars.set("key", value); // set session variable (cross-request, in-memory)
 client.vars.get("key"); // get session variable
-client.vars.reset("key"); // reset to default value
+client.vars.reset("key"); // remove session variable
 ```
 
 #### `req`
@@ -830,9 +888,9 @@ POST {{baseUrl}}/auth/logout HTTP/1.1
 Authorization: Bearer {{token}}
 
 > {%
-    client.vars.clear("token");
-    client.vars.clear("userId");
-    client.vars.clear("refreshToken");
+    client.vars.reset("token");
+    client.vars.reset("userId");
+    client.vars.reset("refreshToken");
 %}
 ```
 
@@ -842,7 +900,7 @@ Authorization: Bearer {{token}}
 
 | Feature                  | Status |
 | ------------------------ | ------ |
-| Environment              | TBD    |
+| Environment [1]          | TBD    |
 | cURL import              | TBD    |
 | Persistence variables    | TBD    |
 | Cookies                  | TBD    |
@@ -851,3 +909,10 @@ Authorization: Bearer {{token}}
 | WebSocket                | TBD    |
 | gRPC                     | TBD    |
 | Test & Assert            | TBD    |
+
+[1] Environment (reserved design, not implemented):
+
+- Files: `.beep/env/<name>.json` (e.g. `dev.json`, `prod.json`) and `.beep/env/<name>.local.json` for secrets (gitignored, wins over `<name>.json`). Same folder cascade and format as `.beep/vars.json`.
+- Selected environment chosen in GUI (dropdown) or CLI (`--env dev`).
+- Precedence slot: below file `@var`, above `.beep/vars.json`:
+  `req.vars > client.vars > request @var > file @var > env (selected) > .beep/vars.json`
