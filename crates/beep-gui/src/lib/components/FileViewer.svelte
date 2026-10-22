@@ -1,5 +1,6 @@
 <script lang="ts">
     import FileEditor from "$lib/components/FileEditor.svelte";
+    import { languageFromName, sniffLanguage, type EditorLanguage } from "$lib/language-sniff";
 
     interface Props {
         fileName: string;
@@ -11,24 +12,19 @@
 
     let { fileName, content, onContentChange, initialCursorPos, oncursorchange }: Props = $props();
 
-    function detectLanguage(name: string, raw: string): "text" | "json" | "html" | "xml" | "http" {
-        const ext = name.split(".").pop()?.toLowerCase();
-        if (ext === "json") return "json";
-        if (ext === "html" || ext === "htm") return "html";
-        if (ext === "xml") return "xml";
-        if (ext === "http" || ext === "rest") return "http";
+    // Detect once per file: extension first, else sniff content. While still unknown,
+    // keep sniffing as the user types; lock on the first hit.
+    let language = $state<EditorLanguage>("text");
+    let _lockedFor: string | null = null;
 
-        const trimmed = raw.trim();
-        if ((trimmed.startsWith("{") || trimmed.startsWith("[")) && trimmed.length > 0) {
-            try {
-                JSON.parse(trimmed);
-                return "json";
-            } catch { /* not valid JSON */ }
-        }
-        return "text";
-    }
-
-    let language = $derived(detectLanguage(fileName, content));
+    $effect(() => {
+        const name = fileName;
+        const raw = content;
+        if (_lockedFor === name) return;
+        const lang = languageFromName(name) ?? sniffLanguage(raw);
+        language = lang ?? "text";
+        if (lang) _lockedFor = name;
+    });
 </script>
 
 <div class="flex flex-col h-full">
