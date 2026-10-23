@@ -198,8 +198,9 @@
         const pos = initialCursorPos;
         if (!view) return;
 
-        // Update content if changed
-        if (docText(view.state) !== currentValue) {
+        // Update content if changed. Compare with line endings normalized (the doc is
+        // always LF), so mixed / lone-CR endings alone never count as an edit.
+        if (view.state.doc.toString() !== currentValue.replace(/\r\n?/g, "\n")) {
             view.dispatch({
                 changes: {
                     from: 0,

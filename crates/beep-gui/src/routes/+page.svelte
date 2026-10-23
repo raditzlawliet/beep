@@ -958,7 +958,11 @@
         response={activeTab?.lastResult?.response ?? request.response}
         loading={sending}
         error={reqError}
-        language={activeTab?.type === "file" ? (activeTab.language ?? "text") : null}
+        language={activeTab?.type === "file"
+            ? (activeTab.language ?? "text")
+            : activeTab?.type === "http-file" && activeTab.viewMode === "code"
+              ? (activeTab.language ?? "http")
+              : null}
         onLanguageSelect={(lang) => {
             if (!activeTab) return;
             activeTab.language = lang;

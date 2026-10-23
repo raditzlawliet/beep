@@ -52,8 +52,8 @@
     let formRequest = $state<ParsedRequest>(parsedToFormRequest(undefined));
     let requestFormTab = $state<string>("params");
     let fileOverviewTab = $state<string>("requests");
-    // Only http-file tabs reach this viewer (.http/.rest, untitled, history), so always http.
-    const editorLanguage = "http";
+    // Only http-file tabs reach this viewer, so HTTP unless picked in the status bar (code mode).
+    let editorLanguage = $derived(tab.language ?? "http");
 
     // Run gutter dropdown
     let runDropdown = $state<{ requestIdx: number; x: number; y: number } | null>(null);

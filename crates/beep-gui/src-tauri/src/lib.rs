@@ -123,13 +123,32 @@ async fn execute_request(
     ctx.file_vars = file_vars;
     ctx.folder_vars = folder_vars;
     ctx.source_file_dir = source_file_dir;
-    ctx.client_vars = lock_client_vars(&state)?.clone();
+    let before = lock_client_vars(&state)?.clone();
+    ctx.client_vars = before.clone();
 
     let result = beep_core::execute(ExecuteInput::Parsed(payload), &mut ctx).await;
 
     // Keep script changes to client.vars even when the request itself failed.
-    *lock_client_vars(&state)? = ctx.client_vars;
+    // Apply only this request's own changes, so overlapping sends and a Clear
+    // made meanwhile are not overwritten by a stale snapshot.
+    let mut shared = lock_client_vars(&state)?;
+    merge_client_var_changes(&mut shared, &before, &ctx.client_vars);
+    drop(shared);
     result
+}
+
+/// Apply keys set/changed/removed between `before` and `after` onto `shared`.
+fn merge_client_var_changes(shared: &mut VarStore, before: &VarStore, after: &VarStore) {
+    for (key, _) in before.entries() {
+        if after.get(&key).is_none() {
+            shared.remove(&key);
+        }
+    }
+    for (key, value) in after.entries() {
+        if before.get(&key) != Some(value.as_str()) {
+            shared.set(key, value);
+        }
+    }
 }
 
 fn lock_client_vars<'a>(
