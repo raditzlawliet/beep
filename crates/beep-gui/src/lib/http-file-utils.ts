@@ -57,6 +57,7 @@ export function parsedToFormRequest(
       post_script: null,
       post_script_external: false,
       http_version: null,
+      variables: [],
       block_region: { start: 0, end: 0 },
       request_line_region: { start: 0, end: 0 },
       query_region: { start: 0, end: 0 },
@@ -102,6 +103,7 @@ export function formRequestToParsed(
             : true,
         };
       }),
+    variables: (form.variables ?? []).filter((v) => v.key),
     body: form.body,
     body_directive: form.body_directive ?? null,
     http_version: form.http_version,
@@ -161,6 +163,10 @@ export function parsedRequestToContent(req: ParsedRequest): string {
       lines.push(req.pre_script);
       lines.push("%}");
     }
+  }
+
+  for (const v of req.variables ?? []) {
+    lines.push(`@${v.key} = ${v.value}`);
   }
 
   const enabledParams = (req.query_params ?? []).filter(

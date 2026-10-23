@@ -138,28 +138,41 @@ TODO
 
 Beep currently implements the features defined in the [HTTP/REST file format](./SPEC.md). The checklist below summarizes the parts that have already been implemented across the parser/serializer, sender/executor, and GUI.
 
-| #   | Feature                                              | Parser | Executor | GUI     |
-| --- | ---------------------------------------------------- | ------ | -------- | ------- |
-| 2   | Comments `//` / `//-` disabled items preserved       | ✅     | -        | -       |
-| 3   | Request Separator `###` + optional title             | ✅     | -        | -       |
-| 4   | Request Line `METHOD URL [HTTP/Version]`             | ✅     | ✅       | ✅      |
-| 5   | Headers `Key: Value`                                 | ✅     | ✅       | ✅      |
-| 5.1 | Disabling Headers `//-`, excluded from sent request  | ✅     | ✅       | ✅      |
-| 6.1 | JSON body                                            | ✅     | ✅       | ✅      |
-| 6.2 | XML body                                             | ✅     | ✅       | ✅      |
-| 6.3 | Form URL Encoded (single/multiline, disabled fields) | ✅     | ✅       | ✅      |
-| 6.4 | Multipart Form Data (with disabled fields)           | ✅     | ✅       | ✅      |
-| 6.5 | Plain Text / Raw body                                | ✅     | ✅       | ✅      |
-| 6.6 | No Body                                              | ✅     | ✅       | ✅      |
-| 6.7 | Body from External File `< ./path`                   | TODO   | TODO     | TODO    |
-| 7.1 | Query String Inline                                  | ✅     | ✅       | ✅      |
-| 7.2 | Query String Multiline                               | ✅     | ✅       | ✅      |
-| 7.3 | Disabling Query Params `//-`                         | ✅     | ✅       | ✅      |
-| 8.4 | `@var` File-Level Scope                              | ✅     | ✅       | ✅      |
-| 8.5 | `.beep/vars.json` Folder cascade                     | TODO   | TODO     | TODO    |
-| 8.7 | Variable Interpolation `{{var}}`                     | -      | ✅       | ✅      |
-| 8.8 | Dynamic Variables `{{$guid}}` etc.                   | -      | TODO     | TODO    |
-| 9.1 | Pre-Request Script (`< {%` inline / `< ./file.js`)   | ✅     | ⚠️Basic  | ⚠️Basic |
-| 9.2 | Post-Request Script (`> {%` inline / `> ./file.js`)  | ✅     | ⚠️Basic  | ⚠️Basic |
-| 9.3 | Script Globals (`client`, `req`, `res`, `beep`)      | -      | ✅       | -       |
-| 10  | Response Redirect `>>` / `>>!`                       | TODO   | TODO     | TODO    |
+| #     | Feature                                                   | Parser | Executor | GUI     |
+| ----- | --------------------------------------------------------- | ------ | -------- | ------- |
+| 2     | Comments `//` / `//-` disabled items preserved            | ✅     | -        | -       |
+| 3     | Request Separator `###` + optional title                  | ✅     | -        | -       |
+| 4     | Request Line `METHOD URL [HTTP/Version]`                  | ✅     | ✅       | ✅      |
+| 5     | Headers `Key: Value`                                      | ✅     | ✅       | ✅      |
+| 5.1   | Disabling Headers `//-`, excluded from sent request       | ✅     | ✅       | ✅      |
+| 5.1.1 | Disabling Auto Headers `//- @headerAuto Key`              | ✅     | ✅       | ✅      |
+| 5.2   | Authorization (Basic auto-encode, Bearer)                 | ✅     | ✅       | ✅      |
+| 6.1   | `@body` Directive                                         | ✅     | ✅       | ✅      |
+| 6.2   | JSON body                                                 | ✅     | ✅       | ✅      |
+| 6.3   | XML body                                                  | ✅     | ✅       | ✅      |
+| 6.4   | Form URL Encoded (single/multiline, disabled fields)      | ✅     | ✅       | ✅      |
+| 6.5   | Multipart Form Data (with disabled fields)                | ✅     | ✅       | ✅      |
+| 6.6   | Plain Text / Raw body                                     | ✅     | ✅       | ✅      |
+| 6.7   | No Body                                                   | ✅     | ✅       | ✅      |
+| 6.8   | Body from External File `< ./path`                        | TODO   | TODO     | TODO    |
+| 7.1   | Query String Inline                                       | ✅     | ✅       | ✅      |
+| 7.2   | Query String Multiline                                    | ✅     | ✅       | ✅      |
+| 7.3   | Disabling Query Params `//-`                              | ✅     | ✅       | ✅      |
+| 8.1   | `req.vars` Request Scope (script)                         | -      | ✅       | ✅      |
+| 8.2   | `client.vars` Session Scope (persist across requests)     | -      | ✅       | ✅ [1]  |
+| 8.3   | `@var` in Request Block (static, request scope)           | ✅     | ✅       | ⚠️ [3]  |
+| 8.4   | `@var` File-Level Scope                                   | ✅     | ✅       | ✅      |
+| 8.5   | `.beep/vars.json` Folder cascade                          | -      | ✅       | ✅      |
+| 8.6   | Variable Interpolation `{{var}}` (trim, nested, cycles)   | -      | ✅       | ✅      |
+| 8.7   | Dynamic Variables `{{$guid}}` etc.                        | -      | ✅       | ✅      |
+| 9.1   | Pre-Request Script (`< {%` inline / `< ./file.js`)        | ✅     | ⚠️Basic  | ⚠️Basic |
+| 9.2   | Post-Request Script (`> {%` inline / `> ./file.js`)       | ✅     | ⚠️Basic  | ⚠️Basic |
+| 9.3   | Script Globals (`client`, `req`, `res`, `beep`)           | -      | ⚠️ [2]   | -       |
+| 10    | Response Redirect `>>` / `>>!`                            | TODO   | TODO     | TODO    |
+
+Notes:
+
+- [1] Kept app-wide in `AppState.client_vars` (in-memory). Read-only list + Clear in the File Variables panel.
+- [2] `client.test` / `client.assert` not implemented. No `crypto` global (e.g. `crypto.randomUUID()`).
+- [3] Works from code mode and is preserved by form edits; no form editor for request `@var` yet.
+- Scripts (9.1 / 9.2) "Basic": console output is not returned to the GUI; script errors are only visible when reopening the entry from history. CLI does not run scripts (no `.http` file input).

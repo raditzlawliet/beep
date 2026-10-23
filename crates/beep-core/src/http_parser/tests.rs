@@ -19,6 +19,7 @@ mod tests {
             post_script: None,
             post_script_external: false,
             http_version: None,
+            variables: vec![],
             block_region: Region::default(),
             request_line_region: Region::default(),
             query_region: Region::default(),
@@ -859,5 +860,86 @@ GET https://httpbingo.org/get?foo=bar&baz=qux HTTP/1.1
         });
         let result2 = apply_request_update(content, 0, &updated);
         assert!(result2.contains("Authorization: Bearer key_updated\nTheHeader: TheValue\n\n###"));
+    }
+
+    // ---------------------------------------------------------------------------
+    // Request-level @var
+    // ---------------------------------------------------------------------------
+
+    fn var(key: &str, value: &str) -> ParsedFileVariable {
+        ParsedFileVariable {
+            key: key.to_string(),
+            value: value.to_string(),
+        }
+    }
+
+    #[test]
+    fn test_parse_request_variables() {
+        let content = "@base = https://x.io\n\n### Get user\n// comment\n@userId = 42\n@fields = id,name   // inline comment\n< {%\n  @notAVar = 1\n%}\nGET {{base}}/users/{{userId}} HTTP/1.1\n\n### Other\nGET {{base}}/users HTTP/1.1\n";
+        let result = parse(content);
+        assert_eq!(result.variables, vec![var("base", "https://x.io")]);
+        assert_eq!(result.requests.len(), 2);
+
+        let r0 = &result.requests[0];
+        assert_eq!(r0.method, "GET");
+        assert_eq!(r0.url, "{{base}}/users/{{userId}}");
+        assert_eq!(r0.variables, vec![var("userId", "42"), var("fields", "id,name")]);
+        assert!(r0.pre_script.as_deref().unwrap().contains("@notAVar"));
+
+        assert!(result.requests[1].variables.is_empty());
+    }
+
+    #[test]
+    fn test_parse_request_variable_not_taken_as_request_line() {
+        let content = "###\n@x = 1\nPOST https://x.io HTTP/1.1\n";
+        let r = &parse(content).requests[0];
+        assert_eq!(r.method, "POST");
+        assert_eq!(r.variables, vec![var("x", "1")]);
+    }
+
+    #[test]
+    fn test_serialize_request_block_with_variables() {
+        let mut req = make_empty_parsed();
+        req.title = "T".into();
+        req.method = "GET".into();
+        req.url = "https://x.io/{{id}}".into();
+        req.variables = vec![var("id", "7")];
+        let text = serialize_request_block(&req);
+        assert!(text.starts_with("### T\n@id = 7\nGET https://x.io/{{id}}"), "{text}");
+
+        let reparsed = parse(&text);
+        assert_eq!(reparsed.requests[0].variables, vec![var("id", "7")]);
+    }
+
+    #[test]
+    fn test_surgical_update_request_variables() {
+        let content = "### A\n// keep me\n@old = 1\n< {%\n  console.log(1);\n%}\nGET https://x.io HTTP/1.1\nAccept: */*\n\n### B\nGET https://y.io HTTP/1.1\n";
+        let parsed = parse(content);
+        let mut updated = parsed.requests[0].clone();
+        updated.variables = vec![var("a", "1"), var("b", "{{a}}2")];
+        let result = apply_request_update(content, 0, &updated);
+        assert_eq!(
+            result,
+            "### A\n// keep me\n< {%\n  console.log(1);\n%}\n@a = 1\n@b = {{a}}2\nGET https://x.io HTTP/1.1\nAccept: */*\n\n### B\nGET https://y.io HTTP/1.1\n"
+        );
+
+        // Remove all
+        let parsed2 = parse(&result);
+        let mut cleared = parsed2.requests[0].clone();
+        cleared.variables.clear();
+        let result2 = apply_request_update(&result, 0, &cleared);
+        assert!(!result2.contains("@a ="));
+        assert!(result2.contains("// keep me\n< {%"));
+        assert_eq!(parse(&result2).requests[0].variables, vec![]);
+    }
+
+    #[test]
+    fn test_surgical_update_request_variables_crlf() {
+        let content = "### A\r\n@x = 1\r\nGET https://x.io HTTP/1.1\r\n";
+        let parsed = parse(content);
+        let mut updated = parsed.requests[0].clone();
+        updated.variables = vec![var("x", "2")];
+        let result = apply_request_update(content, 0, &updated);
+        assert_eq!(result, "### A\r\n@x = 2\r\nGET https://x.io HTTP/1.1\r\n");
     }
 }

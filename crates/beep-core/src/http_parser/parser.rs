@@ -18,21 +18,8 @@ pub fn parse(content: &str) -> ParsedHttpFile {
     };
 
     for line in preamble.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with('@') {
-            let rest = &trimmed[1..];
-            if let Some(eq_pos) = rest.find('=') {
-                let key = rest[..eq_pos].trim().to_string();
-                let value_raw = rest[eq_pos + 1..].trim();
-                // Strip trailing inline comment, but only // preceded by
-                // whitespace (avoids false match inside https:// or similar).
-                let value = if let Some(comment_pos) = value_raw.find(" //") {
-                    value_raw[..comment_pos].trim().to_string()
-                } else {
-                    value_raw.to_string()
-                };
-                variables.push(ParsedFileVariable { key, value });
-            }
+        if let Some(var) = parse_var_line(line.trim()) {
+            variables.push(var);
         }
     }
 
@@ -138,6 +125,7 @@ fn parse_request_block(block: &str, base: usize) -> ParsedRequest {
     // Pre-request script
     let mut pre_script: Option<String> = None;
     let mut pre_script_external = false;
+    let mut variables: Vec<ParsedFileVariable> = Vec::new();
     let mut request_line_idx: Option<usize> = None;
 
     while i < lines.len() {
@@ -148,6 +136,11 @@ fn parse_request_block(block: &str, base: usize) -> ParsedRequest {
                     pre_script = Some(content);
                     pre_script_external = external;
                 }
+            }
+            i += 1;
+        } else if trimmed.starts_with('@') {
+            if let Some(var) = parse_var_line(trimmed) {
+                variables.push(var);
             }
             i += 1;
         } else if trimmed.is_empty() || trimmed.starts_with("//") {
@@ -400,6 +393,7 @@ fn parse_request_block(block: &str, base: usize) -> ParsedRequest {
         post_script,
         post_script_external,
         http_version,
+        variables,
         block_region: Region::new(base, block_end),
         request_line_region,
         query_region,
@@ -411,6 +405,26 @@ fn parse_request_block(block: &str, base: usize) -> ParsedRequest {
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
+
+/// Parse a `@key = value` line. Strips a trailing ` //` comment (whitespace before
+/// `//`, so `https://` inside a value is safe). `None` when not a valid declaration.
+fn parse_var_line(trimmed: &str) -> Option<ParsedFileVariable> {
+    let rest = trimmed.strip_prefix('@')?;
+    let (key, value_raw) = rest.split_once('=')?;
+    let key = key.trim();
+    if key.is_empty() {
+        return None;
+    }
+    let value_raw = value_raw.trim();
+    let value = match value_raw.find(" //") {
+        Some(pos) => value_raw[..pos].trim(),
+        None => value_raw,
+    };
+    Some(ParsedFileVariable {
+        key: key.to_string(),
+        value: value.to_string(),
+    })
+}
 
 fn split_url_query(url: &str) -> (String, Vec<(String, String)>) {
     if let Some(q_pos) = url.find('?') {
@@ -693,7 +707,8 @@ pub fn effective_body_kind<'a>(
     }
 }
 
-// TODO script is only parsed, need implementation executor or validator
+/// Extract a script block starting at `first_line` (`< ...` or `> ...`).
+/// Returns `(content, is_external)`: inline `{% ... %}` code, or a file path when external.
 fn extract_script_block(
     lines: &[&str],
     idx: &mut usize,

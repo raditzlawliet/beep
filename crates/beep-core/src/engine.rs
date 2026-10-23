@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 
 use crate::compiler::compile_with_ctx;
-use crate::context::ExecutionContext;
+use crate::context::{ExecutionContext, VarStore};
 use crate::exec::http::HttpResult;
 use crate::exec::scripts::{run_post_script, run_pre_script};
 use crate::http_parser::{self, ParsedRequest};
@@ -45,8 +45,9 @@ pub async fn execute(
         ExecuteInput::Parsed(p) => p,
     };
 
-    // Step 2: Clear request vars + run pre-request script
+    // Step 2: Clear request vars, load request @var, run pre-request script
     ctx.clear_request_vars();
+    ctx.request_static_vars = VarStore::from_file_vars(&parsed.variables);
 
     let mut script_error: Option<String> = None;
 
@@ -54,11 +55,12 @@ pub async fn execute(
         let req_headers = collect_headers(&parsed.headers);
         let request_body = parsed.body.as_deref();
 
+        let static_scopes = ctx.static_scopes();
         let (out, overrides) = run_pre_script(
             pre_code,
             &mut ctx.client_vars,
             &mut ctx.request_vars,
-            &ctx.file_vars,
+            &static_scopes,
             &parsed.url,
             &parsed.method,
             &req_headers,
@@ -128,11 +130,12 @@ pub async fn execute(
         let resp_size_headers = result.response.size.headers;
         let resp_size_body = result.response.size.body;
 
+        let static_scopes = ctx.static_scopes();
         let out = run_post_script(
             post_code,
             &mut ctx.client_vars,
             &mut ctx.request_vars,
-            &ctx.file_vars,
+            &static_scopes,
             &parsed.url,
             &parsed.method,
             &req_headers,

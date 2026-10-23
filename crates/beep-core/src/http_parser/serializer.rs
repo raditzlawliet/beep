@@ -279,6 +279,11 @@ pub fn serialize_request_block(req: &ParsedRequest) -> String {
         }
     }
 
+    // Request variables, right before the request line
+    for v in &req.variables {
+        out.push_str(&format!("@{} = {}\n", v.key, v.value));
+    }
+
     // ParsedRequest line
     out.push_str(&serialize_request_line(req));
 

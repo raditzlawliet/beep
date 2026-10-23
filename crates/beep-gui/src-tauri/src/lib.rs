@@ -9,8 +9,9 @@ use notify::{Event, EventKind, RecursiveMode, Watcher};
 use tauri::Emitter;
 
 use beep_core::default_headers;
+use beep_core::vars_file::load_folder_vars;
 use beep_core::{
-    ExecuteInput, ExecutionContext, HistoryEntrySummary, ParsedRequest, RequestHistory,
+    ExecuteInput, ExecutionContext, HistoryEntrySummary, ParsedRequest, RequestHistory, VarStore,
 };
 
 use models::{AppConstants, AppState, FsChangePayload, FsContentChangePayload, ProjectNode};
@@ -87,6 +88,7 @@ async fn execute_request(
     mut payload: ParsedRequest,
     file_vars: Vec<beep_core::ParsedFileVariable>,
     source_file_dir: Option<String>,
+    project_root: Option<String>,
 ) -> Result<beep_core::HttpResult, String> {
     // Resolve external script file references � read file content
     if payload.pre_script_external {
@@ -104,10 +106,54 @@ async fn execute_request(
         }
     }
 
+    let folder_vars = match source_file_dir.as_deref() {
+        Some(dir) => {
+            let dir = dir.to_string();
+            let root = project_root.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                load_folder_vars(Path::new(&dir), root.as_deref().map(Path::new))
+            })
+            .await
+            .map_err(|e| e.to_string())??
+        }
+        None => VarStore::new(),
+    };
+
     let mut ctx = ExecutionContext::new(state.history.clone());
     ctx.file_vars = file_vars;
+    ctx.folder_vars = folder_vars;
     ctx.source_file_dir = source_file_dir;
-    beep_core::execute(ExecuteInput::Parsed(payload), &mut ctx).await
+    ctx.client_vars = lock_client_vars(&state)?.clone();
+
+    let result = beep_core::execute(ExecuteInput::Parsed(payload), &mut ctx).await;
+
+    // Keep script changes to client.vars even when the request itself failed.
+    *lock_client_vars(&state)? = ctx.client_vars;
+    result
+}
+
+fn lock_client_vars<'a>(
+    state: &'a tauri::State<'_, AppState>,
+) -> Result<std::sync::MutexGuard<'a, VarStore>, String> {
+    state.client_vars.lock().map_err(|e| e.to_string())
+}
+
+/// Session variables (`client.vars`), sorted by key.
+#[tauri::command]
+fn get_client_vars(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<beep_core::ParsedFileVariable>, String> {
+    Ok(lock_client_vars(&state)?
+        .entries()
+        .into_iter()
+        .map(|(key, value)| beep_core::ParsedFileVariable { key, value })
+        .collect())
+}
+
+#[tauri::command]
+fn clear_client_vars(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    lock_client_vars(&state)?.clear();
+    Ok(())
 }
 
 fn read_external_script(path: &str, base_dir: Option<&str>) -> Result<String, String> {
@@ -286,6 +332,7 @@ pub fn run() {
         .manage(AppState {
             history: Arc::new(Mutex::new(RequestHistory::new())),
             watcher: Mutex::new(None),
+            client_vars: Mutex::new(VarStore::new()),
         })
         .invoke_handler(tauri::generate_handler![
             get_app_constants,
@@ -297,6 +344,8 @@ pub fn run() {
             unwatch_project,
             //
             execute_request,
+            get_client_vars,
+            clear_client_vars,
             //
             get_history,
             get_history_entry,

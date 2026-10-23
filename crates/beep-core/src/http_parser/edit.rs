@@ -37,6 +37,8 @@ fn normalize_newlines(s: &str, target: &str) -> String {
 struct ChangedSections {
     /// Title or pre_script changed will triggers full-block fallback.
     pre_or_title: bool,
+    /// Request-level `@var` lines changed.
+    variables: bool,
     /// Method, url, http_version, or inline query_params changed.
     request_line: bool,
     /// Multiline query_params changed (is_inline == false).
@@ -57,6 +59,7 @@ fn detect_changed_sections(old: &ParsedRequest, new: &ParsedRequest) -> ChangedS
         pre_or_title: old.title != new.title
             || old.pre_script != new.pre_script
             || old.pre_script_external != new.pre_script_external,
+        variables: old.variables != new.variables,
         request_line: old.method != new.method
             || old.url != new.url
             || old.http_version != new.http_version
@@ -159,7 +162,12 @@ pub fn apply_request_update(content: &str, request_idx: usize, updated: &ParsedR
     }
 
     // Nothing changed at all, return original content
-    if !changed.request_line && !changed.query_region && !changed.headers && !changed.body {
+    if !changed.variables
+        && !changed.request_line
+        && !changed.query_region
+        && !changed.headers
+        && !changed.body
+    {
         return content.to_string();
     }
 
@@ -169,7 +177,12 @@ pub fn apply_request_update(content: &str, request_idx: usize, updated: &ParsedR
     out.push_str(&content[..old_req.block_region.start]);
 
     // 1. Pre area (title + everything between title and request line)
-    out.push_str(&content[old_req.block_region.start..old_req.request_line_region.start]);
+    let pre_area = &content[old_req.block_region.start..old_req.request_line_region.start];
+    if changed.variables {
+        out.push_str(&rewrite_pre_area_variables(pre_area, &updated.variables, nl));
+    } else {
+        out.push_str(pre_area);
+    }
 
     // 2. ParsedRequest line
     if changed.request_line {
@@ -221,6 +234,36 @@ pub fn apply_request_update(content: &str, request_idx: usize, updated: &ParsedR
         out.push_str(&content[old_req.block_region.end..]);
     }
 
+    out
+}
+
+/// Replace request-level `@var` lines in the pre area (title up to the request line).
+/// Removes existing `@` lines outside script blocks, then appends `vars` right before
+/// the request line. Comments, blank lines, and the pre-script are kept verbatim.
+fn rewrite_pre_area_variables(pre_area: &str, vars: &[ParsedFileVariable], nl: &str) -> String {
+    let mut out = String::with_capacity(pre_area.len());
+    let mut in_script = false;
+
+    for line in pre_area.split_inclusive('\n') {
+        let trimmed = line.trim();
+        if in_script {
+            if trimmed.contains("%}") {
+                in_script = false;
+            }
+        } else if trimmed.starts_with('<') {
+            in_script = trimmed.contains("{%") && !trimmed.contains("%}");
+        } else if trimmed.starts_with('@') {
+            continue;
+        }
+        out.push_str(line);
+    }
+
+    if !out.is_empty() && !out.ends_with('\n') {
+        out.push_str(nl);
+    }
+    for v in vars {
+        out.push_str(&format!("@{} = {}{nl}", v.key, v.value));
+    }
     out
 }
 

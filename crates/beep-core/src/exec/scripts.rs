@@ -12,7 +12,6 @@
 //! - Same as pre-script, plus `res` with status/body/headers/time/size/statusText
 
 use crate::context::{VarStore, resolve_template};
-use crate::http_parser::ParsedFileVariable;
 use rquickjs::CatchResultExt;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -56,7 +55,8 @@ struct ScriptContext {
     client_vars: Rc<RefCell<VarStore>>,
     request_vars: Rc<RefCell<VarStore>>,
     request_overrides: Rc<RefCell<RequestOverrides>>,
-    file_vars: Vec<ParsedFileVariable>,
+    /// Static scopes below client vars: request @var > file @var > folder vars.
+    static_scopes: Vec<VarStore>,
     request_url: String,
     request_method: String,
     request_headers: HashMap<String, String>,
@@ -81,7 +81,7 @@ pub fn run_pre_script(
     code: &str,
     client_vars: &mut VarStore,
     request_vars: &mut VarStore,
-    file_vars: &[ParsedFileVariable],
+    static_scopes: &[VarStore],
     request_url: &str,
     request_method: &str,
     request_headers: &HashMap<String, String>,
@@ -95,7 +95,7 @@ pub fn run_pre_script(
         client_vars: cv.clone(),
         request_vars: rv.clone(),
         request_overrides: ro.clone(),
-        file_vars: file_vars.to_vec(),
+        static_scopes: static_scopes.to_vec(),
         request_url: request_url.to_string(),
         request_method: request_method.to_string(),
         request_headers: request_headers.clone(),
@@ -121,7 +121,7 @@ pub fn run_post_script(
     code: &str,
     client_vars: &mut VarStore,
     request_vars: &mut VarStore,
-    file_vars: &[ParsedFileVariable],
+    static_scopes: &[VarStore],
     request_url: &str,
     request_method: &str,
     request_headers: &HashMap<String, String>,
@@ -140,7 +140,7 @@ pub fn run_post_script(
         client_vars: cv.clone(),
         request_vars: rv.clone(),
         request_overrides: Rc::new(RefCell::new(RequestOverrides::default())),
-        file_vars: file_vars.to_vec(),
+        static_scopes: static_scopes.to_vec(),
         request_url: request_url.to_string(),
         request_method: request_method.to_string(),
         request_headers: request_headers.clone(),
@@ -255,8 +255,8 @@ fn run_script(sc: Rc<ScriptContext>, code: &str) -> ScriptOutput {
             let sc_cvs = sc.clone();
             vars_obj.set(
                 "set",
-                rquickjs::Function::new(c.clone(), move |key: String, value: String| {
-                    sc_cvs.client_vars.borrow_mut().set(key, value);
+                rquickjs::Function::new(c.clone(), move |key: String, value: rquickjs::Value| {
+                    sc_cvs.client_vars.borrow_mut().set(key, js_value_to_string(value));
                 })?,
             )?;
 
@@ -294,8 +294,8 @@ fn run_script(sc: Rc<ScriptContext>, code: &str) -> ScriptOutput {
             let sc_rvs = sc.clone();
             vars_obj.set(
                 "set",
-                rquickjs::Function::new(c.clone(), move |key: String, value: String| {
-                    sc_rvs.request_vars.borrow_mut().set(key, value);
+                rquickjs::Function::new(c.clone(), move |key: String, value: rquickjs::Value| {
+                    sc_rvs.request_vars.borrow_mut().set(key, js_value_to_string(value));
                 })?,
             )?;
 
@@ -530,7 +530,9 @@ fn run_script(sc: Rc<ScriptContext>, code: &str) -> ScriptOutput {
                 rquickjs::Function::new(c.clone(), move |input: String| {
                     let client = sc_interp.client_vars.borrow();
                     let request = sc_interp.request_vars.borrow();
-                    resolve_template(&input, &request, &client, &sc_interp.file_vars)
+                    let mut scopes: Vec<&VarStore> = vec![&request, &client];
+                    scopes.extend(sc_interp.static_scopes.iter());
+                    resolve_template(&input, &scopes)
                 })?,
             )?;
 
@@ -579,6 +581,23 @@ fn run_script(sc: Rc<ScriptContext>, code: &str) -> ScriptOutput {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/// Convert a JS value for variable storage: strings as-is, null/undefined as empty,
+/// everything else via `JSON.stringify` (numbers, booleans, objects, arrays).
+fn js_value_to_string(value: rquickjs::Value) -> String {
+    if let Some(s) = value.as_string() {
+        return s.to_string().unwrap_or_default();
+    }
+    if value.is_undefined() || value.is_null() {
+        return String::new();
+    }
+    let ctx = value.ctx().clone();
+    ctx.json_stringify(value)
+        .ok()
+        .flatten()
+        .and_then(|s| s.to_string().ok())
+        .unwrap_or_default()
+}
 
 fn status_text(code: u16) -> &'static str {
     match code {
@@ -1030,18 +1049,13 @@ mod tests {
         let mut request = VarStore::new();
         request.set("token".into(), "abc123".into());
 
-        let result = resolve_template(
-            "https://{{host}}/v1?token={{token}}",
-            &request,
-            &client,
-            &[],
-        );
+        let result = resolve_template("https://{{host}}/v1?token={{token}}", &[&request, &client]);
         assert_eq!(result, "https://api.example.com/v1?token=abc123");
 
-        let result2 = resolve_template("Hello {{name}}!", &request, &client, &[]);
+        let result2 = resolve_template("Hello {{name}}!", &[&request, &client]);
         assert_eq!(result2, "Hello {{name}}!");
 
-        let result3 = resolve_template("plain text", &request, &client, &[]);
+        let result3 = resolve_template("plain text", &[&request, &client]);
         assert_eq!(result3, "plain text");
     }
 
@@ -1050,10 +1064,8 @@ mod tests {
         let mut client = VarStore::new();
         client.set("env".into(), "staging".into());
         let mut request = VarStore::new();
-        let file_vars = vec![ParsedFileVariable {
-            key: "region".into(),
-            value: "us-east".into(),
-        }];
+        let mut file_vars = VarStore::new();
+        file_vars.set("region".into(), "us-east".into());
 
         let (out, _) = run_pre_script(
             r#"
@@ -1063,7 +1075,7 @@ mod tests {
             "#,
             &mut client,
             &mut request,
-            &file_vars,
+            &[file_vars],
             "https://example.com",
             "GET",
             &HashMap::new(),
@@ -1079,6 +1091,67 @@ mod tests {
             request.get("base"),
             Some("/v1/staging/us-east".to_string()).as_deref()
         );
+    }
+
+    #[test]
+    fn test_vars_set_coerces_non_string_values() {
+        let mut client = VarStore::new();
+        let mut request = VarStore::new();
+        let mut headers = HashMap::new();
+        headers.insert("content-type".to_string(), "application/json".to_string());
+        let out = run_post_script(
+            r#"
+                client.vars.set("id", res.body.user.id);
+                client.vars.set("ok", res.body.ok);
+                client.vars.set("user", res.body.user);
+                client.vars.set("none", null);
+                req.vars.set("n", 1.5);
+            "#,
+            &mut client,
+            &mut request,
+            &[],
+            "https://example.com",
+            "POST",
+            &HashMap::new(),
+            None,
+            200,
+            r#"{"ok": true, "user": {"id": 42}}"#,
+            &headers,
+            10,
+            0,
+            0,
+        );
+        assert!(out.error.is_none(), "{:?}", out.error);
+        assert_eq!(client.get("id"), Some("42"));
+        assert_eq!(client.get("ok"), Some("true"));
+        assert_eq!(client.get("user"), Some(r#"{"id":42}"#));
+        assert_eq!(client.get("none"), Some(""));
+        assert_eq!(request.get("n"), Some("1.5"));
+    }
+
+    #[test]
+    fn test_interpolate_uses_static_scopes_in_order() {
+        let mut client = VarStore::new();
+        let mut request = VarStore::new();
+        let mut req_static = VarStore::new();
+        req_static.set("a".into(), "req-static".into());
+        let mut file = VarStore::new();
+        file.set("a".into(), "file".into());
+        file.set("b".into(), "{{host}}/x".into());
+        let mut folder = VarStore::new();
+        folder.set("host".into(), "h".into());
+
+        let (out, _) = run_pre_script(
+            r#"console.log(beep.interpolate("{{a}}|{{b}}"));"#,
+            &mut client,
+            &mut request,
+            &[req_static, file, folder],
+            "https://example.com",
+            "GET",
+            &HashMap::new(),
+            None,
+        );
+        assert!(out.console.iter().any(|l| l == "req-static|h/x"), "{:?}", out.console);
     }
 
     #[test]
