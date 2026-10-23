@@ -25,7 +25,8 @@ export function languageFromName(name: string): EditorLanguage | null {
   return null;
 }
 
-const HTTP_REQUEST_LINE = /^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+\S/;
+// Method + URL-like target (http(s) URL, /path or {{var}}), so prose like "get me" is not http.
+const HTTP_REQUEST_LINE = /^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+(https?:\/\/|\/|\{\{)/;
 
 /**
  * Guess the language from content. Returns null when there is not enough
@@ -55,10 +56,10 @@ export function sniffLanguage(raw: string): EditorLanguage | null {
     return null;
   }
 
-  // .http: a `###` separator or a request line among the first lines.
+  // .http: a request line among the first lines. A bare `###` is not enough
+  // (Markdown headings use it too).
   for (const line of text.split("\n", 20)) {
-    const t = line.trim();
-    if (t.startsWith("###") || HTTP_REQUEST_LINE.test(t)) return "http";
+    if (HTTP_REQUEST_LINE.test(line.trim())) return "http";
   }
   return null;
 }
