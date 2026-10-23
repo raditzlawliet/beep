@@ -1,34 +1,39 @@
 <script lang="ts">
     import FileEditor from "$lib/components/FileEditor.svelte";
+    import type { EditorLanguage } from "$lib/types";
+    import { languageFromName, sniffLanguage } from "$lib/language-sniff";
 
     interface Props {
         fileName: string;
         content: string;
+        /** Tab language; "text" = Plain Text. */
+        language: EditorLanguage;
+        /** User picked the language from the status bar - never guess again. */
+        languageManual?: boolean;
+        onLanguageDetected?: (lang: EditorLanguage) => void;
         onContentChange?: (newContent: string) => void;
         initialCursorPos?: number;
         oncursorchange?: (pos: number) => void;
     }
 
-    let { fileName, content, onContentChange, initialCursorPos, oncursorchange }: Props = $props();
+    let {
+        fileName,
+        content,
+        language,
+        languageManual = false,
+        onLanguageDetected,
+        onContentChange,
+        initialCursorPos,
+        oncursorchange,
+    }: Props = $props();
 
-    function detectLanguage(name: string, raw: string): "text" | "json" | "html" | "xml" | "http" {
-        const ext = name.split(".").pop()?.toLowerCase();
-        if (ext === "json") return "json";
-        if (ext === "html" || ext === "htm") return "html";
-        if (ext === "xml") return "xml";
-        if (ext === "http" || ext === "rest") return "http";
-
-        const trimmed = raw.trim();
-        if ((trimmed.startsWith("{") || trimmed.startsWith("[")) && trimmed.length > 0) {
-            try {
-                JSON.parse(trimmed);
-                return "json";
-            } catch { /* not valid JSON */ }
-        }
-        return "text";
-    }
-
-    let language = $derived(detectLanguage(fileName, content));
+    // Guess only while Plain Text and not picked by hand: extension first, else sniff.
+    // Still unknown -> try again as the user types. First hit sticks on the tab.
+    $effect(() => {
+        if (languageManual || language !== "text") return;
+        const lang = languageFromName(fileName) ?? sniffLanguage(content);
+        if (lang && lang !== "text") onLanguageDetected?.(lang);
+    });
 </script>
 
 <div class="flex flex-col h-full">

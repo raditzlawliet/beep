@@ -1,5 +1,6 @@
 <script lang="ts">
-    import type { HttpResponse } from "$lib/types";
+    import type { EditorLanguage, HttpResponse } from "$lib/types";
+    import { LANGUAGE_LABELS } from "$lib/language-sniff";
     import { HistoryIcon, FolderTree } from "@lucide/svelte";
     import StatusBadge from "$lib/components/StatusBadge.svelte";
     import HorizontalDivider from "./uis/HorizontalDivider.svelte";
@@ -14,6 +15,9 @@
         response: HttpResponse | null;
         loading: boolean;
         error: string | null;
+        /** Active file tab language; null hides the picker. */
+        language?: EditorLanguage | null;
+        onLanguageSelect?: (lang: EditorLanguage) => void;
     }
 
     let {
@@ -25,7 +29,17 @@
         response,
         loading,
         error,
+        language = null,
+        onLanguageSelect,
     }: Props = $props();
+
+    const LANGUAGES = Object.keys(LANGUAGE_LABELS) as EditorLanguage[];
+
+    function selectLanguage(lang: EditorLanguage) {
+        onLanguageSelect?.(lang);
+        // Close the focus-driven dropdown.
+        (document.activeElement as HTMLElement | null)?.blur();
+    }
 </script>
 
 <div
@@ -75,5 +89,32 @@
         </span>
     {:else}
         <span class="text-xs opacity-50">Ready</span>
+    {/if}
+    {#if language}
+        <div class="dropdown dropdown-top dropdown-end ml-auto">
+            <div
+                tabindex="0"
+                role="button"
+                class="btn btn-ghost btn-xs font-normal opacity-70 hover:opacity-100"
+                aria-label="Select Language"
+            >
+                {LANGUAGE_LABELS[language]}
+            </div>
+            <ul
+                tabindex="-1"
+                class="dropdown-content menu menu-xs bg-base-200 border border-base-content/10 rounded-box z-50 w-40 p-1 shadow-lg mb-1"
+            >
+                {#each LANGUAGES as lang (lang)}
+                    <li>
+                        <button
+                            class:menu-active={lang === language}
+                            onclick={() => selectLanguage(lang)}
+                        >
+                            {LANGUAGE_LABELS[lang]}
+                        </button>
+                    </li>
+                {/each}
+            </ul>
+        </div>
     {/if}
 </div>

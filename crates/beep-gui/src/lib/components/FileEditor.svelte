@@ -9,7 +9,8 @@
         GutterMarker,
         gutter,
     } from "@codemirror/view";
-    import { EditorState, Prec, StateEffect, StateField } from "@codemirror/state";
+    import { Compartment, EditorState, Prec, StateEffect, StateField } from "@codemirror/state";
+    import type { Extension } from "@codemirror/state";
     import {
         defaultKeymap,
         history,
@@ -18,8 +19,10 @@
     import { json } from "@codemirror/lang-json";
     import { html } from "@codemirror/lang-html";
     import { xml } from "@codemirror/lang-xml";
+    import { javascript } from "@codemirror/lang-javascript";
     import { syntaxHighlighting, bracketMatching } from "@codemirror/language";
     import { monokaiHighlight, monokaiTheme } from "./styles/monokai";
+    import { httpLanguage } from "./styles/http-lang";
     import RunGutterButton from "./RunGutterButton.svelte";
 
     // --- Run gutter ---
@@ -56,7 +59,7 @@
 
     interface Props {
         value: string;
-        language?: "text" | "json" | "html" | "xml" | "http";
+        language?: "text" | "json" | "html" | "xml" | "http" | "javascript";
         onchange?: (value: string) => void;
         oncursorchange?: (pos: number) => void;
         initialCursorPos?: number;
@@ -92,9 +95,26 @@
         return state.doc.sliceString(0, state.doc.length, eolOf(value));
     }
 
+    // Language lives in a compartment so a late switch (auto-detect) keeps cursor and undo.
+    const languageConf = new Compartment();
+
+    function languageExtension(lang: "text" | "json" | "html" | "xml" | "http" | "javascript"): Extension {
+        if (lang === "json") return json();
+        if (lang === "html") return html();
+        if (lang === "xml") return xml();
+        if (lang === "javascript") return javascript();
+        if (lang === "http") return httpLanguage();
+        return [];
+    }
+
+    $effect(() => {
+        const lang = language;
+        untrack(() => view)?.dispatch({ effects: languageConf.reconfigure(languageExtension(lang)) });
+    });
+
     function createEditor(
         initialValue: string,
-        lang: "text" | "json" | "html" | "xml" | "http",
+        lang: "text" | "json" | "html" | "xml" | "http" | "javascript",
         wrap: boolean,
     ) {
         const runGutter = gutter({
@@ -144,13 +164,7 @@
             }),
         ];
 
-        if (lang === "json") {
-            extensions.push(json());
-        } else if (lang === "html") {
-            extensions.push(html());
-        } else if (lang === "xml") {
-            extensions.push(xml());
-        }
+        extensions.push(languageConf.of(languageExtension(lang)));
 
         const state = EditorState.create({
             doc: initialValue,
@@ -169,7 +183,7 @@
         if (!container) return;
         const initVal = untrack(() => value);
 
-        view = createEditor(initVal, language, wrapLines);
+        view = createEditor(initVal, untrack(() => language), wrapLines);
 
         view.focus();
 
@@ -184,8 +198,9 @@
         const pos = initialCursorPos;
         if (!view) return;
 
-        // Update content if changed
-        if (docText(view.state) !== currentValue) {
+        // Update content if changed. Compare with line endings normalized (the doc is
+        // always LF), so mixed / lone-CR endings alone never count as an edit.
+        if (view.state.doc.toString() !== currentValue.replace(/\r\n?/g, "\n")) {
             view.dispatch({
                 changes: {
                     from: 0,

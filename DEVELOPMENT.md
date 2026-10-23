@@ -160,7 +160,7 @@ Beep currently implements the features defined in the [HTTP/REST file format](./
 | 7.3   | Disabling Query Params `//-`                              | ✅     | ✅       | ✅      |
 | 8.1   | `req.vars` Request Scope (script)                         | -      | ✅       | ✅      |
 | 8.2   | `client.vars` Session Scope (persist across requests)     | -      | ✅       | ✅ [1]  |
-| 8.3   | `@var` in Request Block (static, request scope)           | ✅     | ✅       | ⚠️ [3]  |
+| 8.3   | `@var` in Request Block (static, request scope)           | ✅     | ✅       | ✅ [3]  |
 | 8.4   | `@var` File-Level Scope                                   | ✅     | ✅       | ✅      |
 | 8.5   | `.beep/vars.json` Folder cascade                          | -      | ✅       | ✅      |
 | 8.6   | Variable Interpolation `{{var}}` (trim, nested, cycles)   | -      | ✅       | ✅      |
@@ -174,5 +174,5 @@ Notes:
 
 - [1] Kept app-wide in `AppState.client_vars` (in-memory). Read-only list + Clear in the File Variables panel.
 - [2] `client.test` / `client.assert` not implemented. No `crypto` global (e.g. `crypto.randomUUID()`).
-- [3] Works from code mode and is preserved by form edits; no form editor for request `@var` yet.
+- [3] Edit in code mode or the request form "Vars" tab; form edits rewrite only the `@` lines.
 - Scripts (9.1 / 9.2) "Basic": console output is not returned to the GUI; script errors are only visible when reopening the entry from history. CLI does not run scripts (no `.http` file input).
