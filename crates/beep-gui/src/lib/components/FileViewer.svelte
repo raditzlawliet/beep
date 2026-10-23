@@ -1,29 +1,38 @@
 <script lang="ts">
     import FileEditor from "$lib/components/FileEditor.svelte";
-    import { languageFromName, sniffLanguage, type EditorLanguage } from "$lib/language-sniff";
+    import type { EditorLanguage } from "$lib/types";
+    import { languageFromName, sniffLanguage } from "$lib/language-sniff";
 
     interface Props {
         fileName: string;
         content: string;
+        /** Tab language; "text" = Plain Text. */
+        language: EditorLanguage;
+        /** User picked the language from the status bar - never guess again. */
+        languageManual?: boolean;
+        onLanguageDetected?: (lang: EditorLanguage) => void;
         onContentChange?: (newContent: string) => void;
         initialCursorPos?: number;
         oncursorchange?: (pos: number) => void;
     }
 
-    let { fileName, content, onContentChange, initialCursorPos, oncursorchange }: Props = $props();
+    let {
+        fileName,
+        content,
+        language,
+        languageManual = false,
+        onLanguageDetected,
+        onContentChange,
+        initialCursorPos,
+        oncursorchange,
+    }: Props = $props();
 
-    // Detect once per file: extension first, else sniff content. While still unknown,
-    // keep sniffing as the user types; lock on the first hit.
-    let language = $state<EditorLanguage>("text");
-    let _lockedFor: string | null = null;
-
+    // Guess only while Plain Text and not picked by hand: extension first, else sniff.
+    // Still unknown -> try again as the user types. First hit sticks on the tab.
     $effect(() => {
-        const name = fileName;
-        const raw = content;
-        if (_lockedFor === name) return;
-        const lang = languageFromName(name) ?? sniffLanguage(raw);
-        language = lang ?? "text";
-        if (lang) _lockedFor = name;
+        if (languageManual || language !== "text") return;
+        const lang = languageFromName(fileName) ?? sniffLanguage(content);
+        if (lang && lang !== "text") onLanguageDetected?.(lang);
     });
 </script>
 

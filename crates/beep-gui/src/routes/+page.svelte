@@ -927,6 +927,11 @@
                     <FileViewer
                         fileName={activeTab.label}
                         content={activeTab.content ?? ""}
+                        language={activeTab.language ?? "text"}
+                        languageManual={activeTab.languageManual}
+                        onLanguageDetected={(lang) => {
+                            if (activeTab) activeTab.language = lang;
+                        }}
                         initialCursorPos={activeTab.cursorPos}
                         oncursorchange={(pos) => {
                             if (activeTab) activeTab.cursorPos = pos;
@@ -953,6 +958,12 @@
         response={activeTab?.lastResult?.response ?? request.response}
         loading={sending}
         error={reqError}
+        language={activeTab?.type === "file" ? (activeTab.language ?? "text") : null}
+        onLanguageSelect={(lang) => {
+            if (!activeTab) return;
+            activeTab.language = lang;
+            activeTab.languageManual = true;
+        }}
     />
 
     <TabSwitcherPopup

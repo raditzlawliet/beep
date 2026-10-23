@@ -1,4 +1,16 @@
-export type EditorLanguage = "text" | "json" | "html" | "xml" | "http" | "javascript";
+import type { EditorLanguage } from "$lib/types";
+
+export type { EditorLanguage };
+
+/** Display names for the status bar language picker, in menu order. */
+export const LANGUAGE_LABELS: Record<EditorLanguage, string> = {
+  text: "Plain Text",
+  http: "HTTP",
+  json: "JSON",
+  javascript: "JavaScript",
+  html: "HTML",
+  xml: "XML",
+};
 
 /** Language from a known file extension, or null when unknown / no extension. */
 export function languageFromName(name: string): EditorLanguage | null {

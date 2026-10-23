@@ -184,6 +184,7 @@ export interface ProjectNode {
 
 export type TabType = "http-file" | "file";
 export type ViewMode = "code" | "file" | "request";
+export type EditorLanguage = "text" | "json" | "html" | "xml" | "http" | "javascript";
 
 export interface Tab {
   id: string;
@@ -206,6 +207,9 @@ export interface Tab {
   lastResult?: HttpResult | null;
   // Timestamp of last activation (for MRU tab switcher ordering)
   lastActiveAt?: number;
+  // file tab: editor language (undefined = Plain Text) and whether the user picked it
+  language?: EditorLanguage;
+  languageManual?: boolean;
 }
 
 // --- Helpers ---
