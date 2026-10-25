@@ -20,6 +20,10 @@ export const monokaiHighlight = HighlightStyle.define([
   { tag: tags.propertyName, color: "#66D9EF" },
   { tag: tags.definition(tags.variableName), color: "#FD971F" },
   { tag: tags.url, color: "#E6DB74" },
+  { tag: [tags.bool, tags.null, tags.atom], color: "#AE81FF" },
+  { tag: tags.function(tags.propertyName), color: "#A6E22E" },
+  { tag: tags.attributeName, color: "#A6E22E" },
+  { tag: tags.tagName, color: "#F92672" },
 ]);
 
 export const monokaiTheme = EditorView.theme(
