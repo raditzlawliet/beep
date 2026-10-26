@@ -1,4 +1,5 @@
 <script lang="ts">
+    import VarInput from "$lib/components/VarInput.svelte";
     import type { ParsedRequest, ParsedFileVariable, HttpMethod } from "$lib/types";
     import MethodBadge from "$lib/components/MethodBadge.svelte";
     import AddRowButton from "$lib/components/buttons/AddRowButton.svelte";
@@ -55,7 +56,7 @@
 
 <div class="card rounded-none bg-base-100 flex-1 min-h-0">
     <div class="card-body p-0 flex flex-col min-h-0">
-    <div role="tablist" class="tabs tabs-bordered tabs-xs px-1 pt-1">
+    <div role="tablist" class="tabs tabs-xs px-1 pt-1">
         <button
             role="tab"
             class="tab gap-1.5 {subTab === 'requests' ? 'tab-active' : ''}"
@@ -123,12 +124,12 @@
                                     oninput={(e) => updateKey(i, (e.target as HTMLInputElement).value)} />
                             </td>
                             <td>
-                                <input class="input input-ghost input-xs w-full font-mono p-0"
+                                <VarInput class="input input-ghost input-xs w-full font-mono p-0"
                                     placeholder="Value" value={v.value}
-                                    oninput={(e) => updateValue(i, (e.target as HTMLInputElement).value)} />
+                                    oninput={(val) => updateValue(i, val)} />
                             </td>
                             <td>
-                                <DeleteRowButton onclick={() => removeVariable(i)} />
+                                <DeleteRowButton label="Delete variable" onclick={() => removeVariable(i)} />
                             </td>
                         </tr>
                     {/each}

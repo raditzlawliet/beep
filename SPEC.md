@@ -80,7 +80,7 @@ METHOD URL [HTTP/Version]
 ```
 
 - `METHOD` - any valid HTTP method: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, `OPTIONS`
-- `URL` - full URL, may include `{{variables}}`
+- `URL` - full URL, may include `{{variables}}`. Everything between the method and an optional trailing `HTTP/x` token, so spaces are kept (`?n={{$randomInt 1 9}}`, `?q=a b`). Query values are stored raw and percent-encoded at send time.
 - `HTTP/Version` - optional, defaults to `HTTP/1.1` if omitted
 
 ```http
@@ -627,6 +627,8 @@ Built-in variables generated at request time. No setup required. Names start wit
 
 Random values are for test data only; they are not cryptographically secure.
 
+**`$processEnv` permission (GUI).** An env value may hold a secret, and a shared `.http` file could send it anywhere. Before a send, the GUI lists every `$processEnv` name the request would read (URL, query, headers, body, form fields, nested `@var` / `vars.json` values, and script text) and asks **Allow / Cancel**. Allowed names are kept for the app session (in-memory). A name that is not allowed (e.g. only built at runtime by a script) resolves to an empty string and the send shows a warning. The CLI allows all names.
+
 ```http
 ### Dynamic variables
 POST https://api.example.com/items HTTP/1.1
@@ -748,10 +750,19 @@ client.vars.reset("key"); // remove session variable
 req.vars.set("key", value); // set request-scoped variable
 req.vars.get("key"); // get request-scoped variable
 
-// Read methods
-req.getUrl(); // current request URL
+// Read methods ({{vars}} resolved). Unknown vars stay as `{{name}}`.
+// Pre-script: resolved at call time over the live scopes (incl. req.vars set so far),
+//             with setUrl/setHeader/setBody/deleteHeader applied.
+// Post-script: the values really sent (URL includes query string, headers include auto headers).
+req.getUrl(); // e.g. "https://api.example.com/users"
 req.getMethod(); // HTTP method: "GET", "POST", etc.
-req.getHeader("Content-Type"); // get a header value by name (case-insensitive)
+req.getHeader("Authorization"); // header value by name (case-insensitive), or undefined
+req.getBody(); // body text, or undefined
+
+// Raw read methods: text as written ({{vars}} kept), with set*/delete* applied (pre-script).
+req.getRawUrl(); // e.g. "{{baseUrl}}/users"
+req.getRawHeader("Authorization"); // e.g. "Bearer {{token}}", or undefined
+req.getRawBody(); // body text as written, or undefined
 
 // Read-only convenience (legacy)
 req.url; // current request URL (string)

@@ -1,5 +1,6 @@
 import { createHotkey, createHotkeySequence } from "@tanstack/svelte-hotkeys";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { editorCursor } from "$lib/editor-cursor.svelte";
 
 // --- Send handler ref (for Ctrl+Enter)
 // MainEditorViewer sets this when its form request is ready.
@@ -136,6 +137,11 @@ export function registerHotkeys(handlers: HotkeyHandlers) {
       e.preventDefault();
       _sendHandler();
     }
+  });
+
+  // --- Go To Line/Column (only when a code editor is active)
+  createHotkey("Mod+G", (e) => {
+    if (editorCursor.openGoto()) e.preventDefault();
   });
 
   // --- View mode switch (Ctrl+1/2/3, only for http-file tabs)

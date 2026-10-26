@@ -5,6 +5,9 @@
     import StatusBadge from "$lib/components/StatusBadge.svelte";
     import HorizontalDivider from "./uis/HorizontalDivider.svelte";
     import { app } from "$lib/app-state.svelte";
+    import { varIndex } from "$lib/vars/var-index.svelte";
+    import { TriangleAlertIcon } from "@lucide/svelte";
+    import { editorCursor } from "$lib/editor-cursor.svelte";
 
     interface Props {
         onToggleHistoryFocus: () => void;
@@ -90,8 +93,42 @@
     {:else}
         <span class="text-xs opacity-50">Ready</span>
     {/if}
+    {#if varIndex.unknown.length > 0}
+        {@const unknown = varIndex.unknown}
+        <div class="tooltip tooltip-top ml-auto">
+            <span class="flex items-center gap-1 text-warning px-1">
+                <TriangleAlertIcon class="h-3 w-3" />
+                {unknown.length} unknown {unknown.length === 1 ? "var" : "vars"}
+            </span>
+            <div class="tooltip-content text-xs text-left">
+                <div class="opacity-70 mb-1">Sent as text:</div>
+                {#each unknown as key (key)}
+                    <div class="font-mono">{`{{${key}}}`}</div>
+                {/each}
+            </div>
+        </div>
+    {/if}
+    {#if editorCursor.current}
+        {@const cur = editorCursor.current}
+        <div class="tooltip tooltip-top" class:ml-auto={varIndex.unknown.length === 0}>
+            <button
+                class="btn btn-ghost btn-xs font-normal font-mono opacity-70 hover:opacity-100"
+                onclick={() => editorCursor.openGoto()}
+                aria-label="Go to Line/Column"
+            >
+                {cur.line}:{cur.col}
+            </button>
+            <div class="tooltip-content text-xs">
+                <span>Go to Line/Column</span>
+                <span class="opacity-50 ml-4">{app.modKey}+G</span>
+            </div>
+        </div>
+    {/if}
     {#if language}
-        <div class="dropdown dropdown-top dropdown-end ml-auto">
+        <div
+            class="dropdown dropdown-top dropdown-end"
+            class:ml-auto={varIndex.unknown.length === 0 && !editorCursor.current}
+        >
             <div
                 tabindex="0"
                 role="button"

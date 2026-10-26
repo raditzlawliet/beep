@@ -9,6 +9,8 @@
     import { listen } from "@tauri-apps/api/event";
     import { confirmUnsavedClose, confirmExternalOverwrite } from "$lib/dialog";
     import { SvelteSet } from "svelte/reactivity";
+    import { showToast } from "$lib/toast.svelte";
+    import { varIndex } from "$lib/vars/var-index.svelte";
     import TitleBar from "$lib/components/TitleBar.svelte";
     import StatusBar from "$lib/components/StatusBar.svelte";
     import HistorySidebar from "$lib/components/HistorySidebar.svelte";
@@ -19,6 +21,7 @@
     import WelcomeScreen from "$lib/components/WelcomeScreen.svelte";
     import MainEditorToolbar from "$lib/components/MainEditorToolbar.svelte";
     import TabSwitcherPopup from "$lib/components/TabSwitcherPopup.svelte";
+    import GoToLinePopup from "$lib/components/GoToLinePopup.svelte";
     import { registerHotkeys, setTabSwitcherToggle } from "$lib/hotkeys.svelte";
 
     // local UI state
@@ -141,10 +144,11 @@
     // -- External change handler
 
     async function handleExternalChange(filePath: string) {
+        // Only open file tabs care (also skips folder events, which cannot be read).
+        const tab = findTab(filePath);
+        if (!tab) return;
         try {
             const diskContent = await invoke<string>("read_file_content", { path: filePath });
-            const tab = findTab(filePath);
-            if (!tab) return;
             const hasEdits = tab.content !== tab.originalContent;
             if (!hasEdits) {
                 tab.content = diskContent;
@@ -590,15 +594,23 @@
 
     // -- Request / Send
 
+    // `.beep` folder vars changed on disk -> editor var index must reload.
+    function isVarsPath(path: string): boolean {
+        return /[/\\]\.beep([/\\]|$)/.test(path);
+    }
+
     async function handleSend(req: ParsedRequest, fileVars: ParsedFileVariable[] = []) {
         sending = true;
         reqError = null;
         const sendTabId = activeTabId;
         try {
             const tab = findTab(sendTabId);
-            await request.send(req, fileVars, basePath ?? undefined);
+            const res = await request.send(req, fileVars, basePath ?? undefined);
+            // null = user cancelled the $processEnv prompt, nothing sent.
+            if (!res) return;
             // Save response to the active tab so each tab has its own response.
-            if (tab) tab.lastResult = request.result;
+            if (tab) tab.lastResult = res;
+            if (res.warnings?.length) showToast("Warning", res.warnings.join("\n"));
         } catch (e) {
             reqError = typeof e === "string" ? e : (e as Error)?.message ?? String(e);
             history.refresh().catch(() => {});
@@ -703,6 +715,17 @@
             .finally(() => (histLoading = false));
     });
 
+    // Var popup: open a folder vars json file in a tab.
+    $effect(() => {
+        varIndex.setActions({
+            openFile: (path: string) => {
+                const name = path.split(/[/\\]/).pop() ?? path;
+                openFileTabPersistent({ name, path, is_dir: false });
+            },
+        });
+        return () => varIndex.setActions({ openFile: undefined });
+    });
+
     // -- Watch project
 
     $effect(() => {
@@ -711,9 +734,11 @@
         invoke("watch_project", { path: p });
         const unlistenChange = listen<{ parent_path: string; children: ProjectNode[] }>("fs-change", (event) => {
             project.applyNode(event.payload.parent_path, event.payload.children);
+            if (isVarsPath(event.payload.parent_path)) varIndex.refresh();
         });
         const unlistenContent = listen<{ path: string }>("fs-content-change", (event) => {
             handleExternalChange(event.payload.path);
+            if (isVarsPath(event.payload.path)) varIndex.refresh();
         });
         return () => {
             invoke("unwatch_project");
@@ -978,6 +1003,8 @@
         onSelect={(id) => { selectTab(id); tabSwitcherOpen = false; }}
         onClose={() => { tabSwitcherOpen = false; }}
     />
+
+    <GoToLinePopup />
 </div>
 
 <svelte:window

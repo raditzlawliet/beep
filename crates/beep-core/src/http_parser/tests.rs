@@ -56,6 +56,28 @@ Accept: application/json
     }
 
     #[test]
+    fn test_parse_request_line_url_with_spaces() {
+        let content = "
+### Spaces
+GET https://x.io/get?n={{$randomInt 1 9}}&q=a b HTTP/1.1
+";
+        let r = &parse(content).requests[0];
+        assert_eq!(r.method, "GET");
+        assert_eq!(r.http_version.as_deref(), Some("HTTP/1.1"));
+        let all: Vec<(&str, &str)> = r
+            .query_params
+            .iter()
+            .map(|q| (q.key.as_str(), q.value.as_str()))
+            .collect();
+        assert_eq!(all, vec![("n", "{{$randomInt 1 9}}"), ("q", "a b")]);
+
+        // No version: the whole rest is the url.
+        let r = &parse("###\nGET https://x.io/{{$randomInt 1 9}}\n").requests[0];
+        assert_eq!(r.url, "https://x.io/{{$randomInt 1 9}}");
+        assert_eq!(r.http_version, None);
+    }
+
+    #[test]
     fn test_parse_with_variables() {
         let content = "
 @baseUrl = https://api.example.com

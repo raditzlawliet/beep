@@ -34,7 +34,7 @@ setup-gui:
 # ── Run ─────────────────────────────────────────────────────────────────
 
 run-gui:
-	cd crates/beep-gui && npm run tauri dev
+	cd crates/beep-gui && npm run tauri:dev
 
 run-cli:
 	cargo run -p beep -- $(ARGS)

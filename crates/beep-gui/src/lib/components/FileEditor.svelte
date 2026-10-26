@@ -23,6 +23,8 @@
     import { syntaxHighlighting, bracketMatching } from "@codemirror/language";
     import { monokaiHighlight, monokaiTheme } from "./styles/monokai";
     import { httpLanguage } from "./styles/http-lang";
+    import { varExtensions } from "$lib/vars/var-extensions";
+    import { editorCursor, type GotoTarget } from "$lib/editor-cursor.svelte";
     import RunGutterButton from "./RunGutterButton.svelte";
 
     // --- Run gutter ---
@@ -34,7 +36,9 @@
             for (const e of tr.effects) {
                 if (e.is(setRunMarkers)) return new Set(e.value);
             }
-            return set;
+            // Keep markers on their lines until the reparse sends fresh ones.
+            if (!tr.docChanged || set.size === 0) return set;
+            return new Set([...set].map((pos) => tr.changes.mapPos(pos, 1)));
         },
     });
 
@@ -67,6 +71,8 @@
         wrapLines?: boolean;
         runMarkers?: number[];
         onRunMarkerClick?: (pos: number, event: MouseEvent) => void;
+        /** {{var}} highlight, autocomplete and hover (http-file code view). */
+        vars?: boolean;
     }
 
     let {
@@ -79,6 +85,7 @@
         wrapLines = true,
         runMarkers,
         onRunMarkerClick,
+        vars = false,
     }: Props = $props();
 
     let container: HTMLDivElement;
@@ -97,6 +104,12 @@
 
     // Language lives in a compartment so a late switch (auto-detect) keeps cursor and undo.
     const languageConf = new Compartment();
+    const varsConf = new Compartment();
+
+    $effect(() => {
+        const on = vars;
+        untrack(() => view)?.dispatch({ effects: varsConf.reconfigure(on ? varExtensions({ js: true }) : []) });
+    });
 
     function languageExtension(lang: "text" | "json" | "html" | "xml" | "http" | "javascript"): Extension {
         if (lang === "json") return json();
@@ -130,10 +143,14 @@
                 }
                 return null;
             },
+            // Redraw when markers are set without a doc change (gutter only reruns on doc/viewport).
+            lineMarkerChange: (update) =>
+                update.transactions.some((tr) => tr.effects.some((e) => e.is(setRunMarkers))),
             initialSpacer: null,
         });
 
         const extensions = [
+            varsConf.of(untrack(() => vars) ? varExtensions({ js: true }) : []),
             runMarkerField,
             runGutter,
             lineNumbers(),
@@ -147,6 +164,7 @@
             keymap.of([...defaultKeymap, ...historyKeymap]),
             Prec.highest(keymap.of([{ key: "Mod-Enter", run: () => true }])),
             EditorView.updateListener.of((update) => {
+                if (update.docChanged || update.selectionSet) publishCursor(update.state);
                 if (update.docChanged && onchange) {
                     onchange(docText(update.state));
                 }
@@ -179,15 +197,53 @@
         return editor;
     }
 
+    // Status bar line:col + Go To Line (Ctrl+G). Only the active tab's editor is mounted.
+    function publishCursor(state: EditorState) {
+        const head = state.selection.main.head;
+        const line = state.doc.lineAt(head);
+        editorCursor.set({ line: line.number, col: head - line.from + 1, lines: state.doc.lines });
+    }
+
+    const gotoTarget: GotoTarget = {
+        goto(lineNo, col, focus) {
+            if (!view) return;
+            const doc = view.state.doc;
+            const line = doc.line(Math.min(Math.max(lineNo, 1), doc.lines));
+            const c = Math.min(Math.max(col ?? 1, 1), line.length + 1);
+            const pos = line.from + c - 1;
+            view.dispatch({
+                selection: { anchor: pos },
+                effects: EditorView.scrollIntoView(pos, { y: "center" }),
+            });
+            if (focus) view.focus();
+        },
+        snapshot() {
+            return view ? { selection: view.state.selection, scrollTop: view.scrollDOM.scrollTop } : null;
+        },
+        restore(snap, focus) {
+            if (!view || !snap) return;
+            const s = snap as { selection: EditorState["selection"]; scrollTop: number };
+            view.dispatch({ selection: s.selection });
+            view.scrollDOM.scrollTop = s.scrollTop;
+            if (focus) view.focus();
+        },
+    };
+
     $effect(() => {
         if (!container) return;
         const initVal = untrack(() => value);
 
         view = createEditor(initVal, untrack(() => language), wrapLines);
+        publishCursor(view.state);
+        editorCursor.setTarget(gotoTarget);
 
         view.focus();
 
         return () => {
+            if (editorCursor.target === gotoTarget) {
+                editorCursor.setTarget(null);
+                editorCursor.set(null);
+            }
             view?.destroy();
             view = undefined;
         };

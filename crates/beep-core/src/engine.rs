@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use crate::compiler::compile_with_ctx;
 use crate::context::{ExecutionContext, VarStore};
 use crate::exec::http::HttpResult;
-use crate::exec::scripts::{run_post_script, run_pre_script};
+use crate::exec::scripts::{ScriptExtras, run_post_script_with, run_pre_script_with};
 use crate::http_parser::{self, ParsedRequest};
 
 // ---------------------------------------------------------------------------
@@ -56,7 +56,7 @@ pub async fn execute(
         let request_body = parsed.body.as_deref();
 
         let static_scopes = ctx.static_scopes();
-        let (out, overrides) = run_pre_script(
+        let (out, overrides) = run_pre_script_with(
             pre_code,
             &mut ctx.client_vars,
             &mut ctx.request_vars,
@@ -65,6 +65,10 @@ pub async fn execute(
             &parsed.method,
             &req_headers,
             request_body,
+            ScriptExtras {
+                env: ctx.env.clone(),
+                sent: None,
+            },
         );
 
         if let Some(err) = out.error {
@@ -116,7 +120,7 @@ pub async fn execute(
 
     // Step 4: Execute
     let executor = crate::exec::http::HttpExecutor::new();
-    let result = executor.execute(&executable).await?;
+    let mut result = executor.execute(&executable).await?;
 
     // Step 5: Run post-request script
     if let Some(ref post_code) = parsed.post_script {
@@ -131,7 +135,7 @@ pub async fn execute(
         let resp_size_body = result.response.size.body;
 
         let static_scopes = ctx.static_scopes();
-        let out = run_post_script(
+        let out = run_post_script_with(
             post_code,
             &mut ctx.client_vars,
             &mut ctx.request_vars,
@@ -146,6 +150,10 @@ pub async fn execute(
             result.response.elapsed_ms as u64,
             resp_size_headers,
             resp_size_body,
+            ScriptExtras {
+                env: ctx.env.clone(),
+                sent: Some(result.request.clone()),
+            },
         );
 
         if let Some(err) = out.error {
@@ -154,6 +162,14 @@ pub async fn execute(
                 None => format!("Post-script error: {err}"),
             });
         }
+    }
+
+    let denied = ctx.env.denied();
+    if !denied.is_empty() {
+        result.warnings.push(format!(
+            "$processEnv not allowed, sent empty: {}",
+            denied.join(", ")
+        ));
     }
 
     // Step 6: Record to history

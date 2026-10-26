@@ -83,7 +83,7 @@
                 <ul
                     class="dropdown-content menu menu-sm bg-base-200
                         rounded-box z-50 shadow-sm border border-base-content/10
-                        w-full max-h-60 overflow-y-auto overflow-x-hidden p-1 mt-0.5"
+                        w-full max-h-60 flex-nowrap overflow-y-auto overflow-x-hidden p-1 mt-0.5 [&>li]:shrink-0"
                     onkeydown={handleDropdownKeydown}
                     role="listbox"
                 >
@@ -113,7 +113,7 @@
 
     <!-- Mode tabs -->
     <div class="divider divider-horizontal w-1 m-0"></div>
-    <div class="tabs tabs-bordered tabs-xs">
+    <div class="tabs tabs-xs">
         <!-- TODO Wrapping button with div for tooltip causing layout broken on tabs,
         Now we use div under button (but this not the recommended approach) until best solution is found -->
         <button

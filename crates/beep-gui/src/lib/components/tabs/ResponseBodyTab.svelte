@@ -134,7 +134,7 @@
         class="flex items-center px-2 py-1 border-b border-base-300 bg-base-200/50"
     >
         <!-- Tabs -->
-        <div role="tablist" class="tabs tabs-bordered tabs-xs">
+        <div role="tablist" class="tabs tabs-xs">
             <div class="dropdown">
                 <button
                     role="tab"

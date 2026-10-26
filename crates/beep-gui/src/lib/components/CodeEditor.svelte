@@ -19,6 +19,7 @@
     import { javascript } from "@codemirror/lang-javascript";
     import { syntaxHighlighting, bracketMatching } from "@codemirror/language";
     import { monokaiHighlight, monokaiTheme } from "./styles/monokai";
+    import { varExtensions } from "$lib/vars/var-extensions";
 
     interface Props {
         value: string;
@@ -28,6 +29,8 @@
         class?: string;
         readonly?: boolean;
         wrapLines?: boolean;
+        /** {{var}} highlight, autocomplete and hover (request body, scripts). */
+        vars?: boolean;
     }
 
     let {
@@ -38,6 +41,7 @@
         class: className = "",
         readonly = false,
         wrapLines = true,
+        vars = false,
     }: Props = $props();
 
     let container: HTMLDivElement;
@@ -84,6 +88,10 @@
             extensions.push(xml());
         } else if (lang === "javascript") {
             extensions.push(javascript());
+        }
+
+        if (untrack(() => vars)) {
+            extensions.push(varExtensions({ js: lang === "javascript" }));
         }
 
         const state = EditorState.create({

@@ -1,4 +1,5 @@
 <script lang="ts">
+    import VarInput from "$lib/components/VarInput.svelte";
     import type { ParsedFileVariable } from "$lib/types";
     import DeleteRowButton from "$lib/components/buttons/DeleteRowButton.svelte";
     import AddRowButton from "$lib/components/buttons/AddRowButton.svelte";
@@ -70,12 +71,12 @@
                         oninput={(e) => updateRow(i, "key", (e.target as HTMLInputElement).value)} />
                 </td>
                 <td>
-                    <input class="input input-ghost input-xs w-full font-mono p-0"
+                    <VarInput class="input input-ghost input-xs w-full font-mono p-0"
                         placeholder="Value" value={row.value}
-                        oninput={(e) => updateRow(i, "value", (e.target as HTMLInputElement).value)} />
+                        oninput={(v) => updateRow(i, "value", v)} />
                 </td>
                 <td>
-                    <DeleteRowButton onclick={() => removeRow(i)} />
+                    <DeleteRowButton label="Delete variable" onclick={() => removeRow(i)} />
                 </td>
             </tr>
         {/each}

@@ -10,6 +10,8 @@ import type {
   HttpResult,
 } from "./types";
 import { emptyParsedRequest } from "./types";
+import { varIndex } from "./vars/var-index.svelte";
+import { confirmProcessEnv } from "./dialog";
 
 function mergeChildren(
   tree: ProjectNode[],
@@ -60,6 +62,7 @@ let _projectTree = $state<ProjectNode[]>([]);
 // Eagerly load constants at module init (SSR is disabled so invoke is safe).
 invoke<AppConstants>("get_app_constants").then((c) => {
   _constants = c;
+  varIndex.setDynamic(c.dynamic_vars ?? []);
 });
 
 // request domain
@@ -79,7 +82,18 @@ export const request = {
     return _result?.response ?? null;
   },
 
-  async send(req: ParsedRequest, fileVars: ParsedFileVariable[] = [], sourceFileDir?: string): Promise<HttpResult> {
+  // Returns null when the user cancels the $processEnv prompt (nothing sent).
+  async send(req: ParsedRequest, fileVars: ParsedFileVariable[] = [], sourceFileDir?: string): Promise<HttpResult | null> {
+    const envNames = await invoke<string[]>("find_process_env", {
+      payload: req,
+      fileVars,
+      sourceFileDir: sourceFileDir ?? null,
+      projectRoot: _projectPath,
+    });
+    if (envNames.length > 0) {
+      if (!(await confirmProcessEnv(envNames))) return null;
+      await invoke("allow_process_env", { names: envNames });
+    }
     try {
       const res = await invoke<HttpResult>("execute_request", {
         payload: req,
@@ -96,6 +110,7 @@ export const request = {
     } finally {
       // Scripts may change client.vars even when the request fails.
       session.refresh().catch(() => {});
+      varIndex.refresh().catch(() => {});
     }
   },
 

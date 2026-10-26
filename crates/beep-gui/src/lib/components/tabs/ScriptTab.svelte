@@ -164,6 +164,7 @@
             <CodeEditor
                 value={scriptCode}
                 language="javascript"
+                vars
                 readonly={false}
                 onchange={debouncedChange ? handleCodeChange : undefined}
                 onblur={(v) => {

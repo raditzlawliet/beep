@@ -1,4 +1,5 @@
 <script lang="ts">
+    import VarInput from "$lib/components/VarInput.svelte";
     import type { ParsedFormField } from "$lib/types";
     import { ChevronDownIcon, CheckIcon, PaperclipIcon, UploadIcon, XIcon } from "@lucide/svelte";
     import DeleteRowButton from "$lib/components/buttons/DeleteRowButton.svelte";
@@ -316,9 +317,9 @@
                         onchange={() => toggleRow(i)} />
                 </td>
                 <td class="flex items-center gap-1">
-                    <input class="input input-ghost input-xs flex-1 font-mono p-0"
+                    <VarInput class="input input-ghost input-xs flex-1 font-mono p-0"
                         placeholder="Key" value={row.key}
-                        oninput={(e) => updateRow(i, "key", (e.target as HTMLInputElement).value)} />
+                        oninput={(v) => updateRow(i, "key", v)} />
                     <div class="dropdown">
                         <button class="btn btn-ghost btn-xs font-normal gap-1 shrink-0" role="menu" tabindex="0">
                             {row.fieldType === "file" ? "File" : "Text"}
@@ -342,9 +343,9 @@
                 </td>
                 <td>
                     {#if row.fieldType === "text"}
-                        <input class="input input-ghost input-xs w-full font-mono p-0"
+                        <VarInput class="input input-ghost input-xs w-full font-mono p-0"
                             placeholder="Value" value={row.value}
-                            oninput={(e) => updateRow(i, "value", (e.target as HTMLInputElement).value)} />
+                            oninput={(v) => updateRow(i, "value", v)} />
                     {:else}
                         <div class="flex items-center gap-1">
                             {#if row.fileName}

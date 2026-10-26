@@ -11,7 +11,9 @@
 //! Post-script globals:
 //! - Same as pre-script, plus `res` with status/body/headers/time/size/statusText
 
-use crate::context::{VarStore, resolve_template};
+use crate::context::{VarStore, resolve_template_with};
+use crate::dynamic::EnvGuard;
+use crate::exec::http::SentRequest;
 use rquickjs::CatchResultExt;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -47,6 +49,14 @@ pub struct RequestOverrides {
     pub body: Option<String>,
 }
 
+/// Extra script inputs: `$processEnv` guard and, for post-scripts, the request as sent.
+#[derive(Debug, Clone, Default)]
+pub struct ScriptExtras {
+    pub env: EnvGuard,
+    /// Post-script: real sent request, used by `req.getUrl/getHeader/getBody()`.
+    pub sent: Option<SentRequest>,
+}
+
 // ---------------------------------------------------------------------------
 // Internal state
 // ---------------------------------------------------------------------------
@@ -67,6 +77,45 @@ struct ScriptContext {
     response_time_ms: Option<u64>,
     response_size_headers: Option<u64>,
     response_size_body: Option<u64>,
+    extras: ScriptExtras,
+}
+
+impl ScriptContext {
+    /// Resolve `{{vars}}` over the live script scopes (req.vars > client.vars > static).
+    fn interpolate(&self, input: &str) -> String {
+        let client = self.client_vars.borrow();
+        let request = self.request_vars.borrow();
+        let mut scopes: Vec<&VarStore> = vec![&request, &client];
+        scopes.extend(self.static_scopes.iter());
+        resolve_template_with(input, &scopes, Some(&self.extras.env))
+    }
+
+    /// Header value as the script sees it now (overrides, deletes, then original).
+    fn current_header(&self, name: &str) -> Option<String> {
+        let name_lower = name.to_lowercase();
+        let overrides = self.request_overrides.borrow();
+        if overrides.deleted_headers.iter().any(|d| d.to_lowercase() == name_lower) {
+            return None;
+        }
+        overrides
+            .headers
+            .iter()
+            .chain(self.request_headers.iter())
+            .find(|(k, _)| k.to_lowercase() == name_lower)
+            .map(|(_, v)| v.clone())
+    }
+
+    /// URL as written, or the `setUrl` override.
+    fn current_url(&self) -> String {
+        let url = self.request_overrides.borrow().url.clone();
+        url.unwrap_or_else(|| self.request_url.clone())
+    }
+
+    /// Body as written, or the `setBody` override.
+    fn current_body(&self) -> Option<String> {
+        let body = self.request_overrides.borrow().body.clone();
+        body.or_else(|| self.request_body.clone())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -87,6 +136,32 @@ pub fn run_pre_script(
     request_headers: &HashMap<String, String>,
     request_body: Option<&str>,
 ) -> (ScriptOutput, RequestOverrides) {
+    run_pre_script_with(
+        code,
+        client_vars,
+        request_vars,
+        static_scopes,
+        request_url,
+        request_method,
+        request_headers,
+        request_body,
+        ScriptExtras::default(),
+    )
+}
+
+/// `run_pre_script` with extras (`$processEnv` guard).
+#[allow(clippy::too_many_arguments)]
+pub fn run_pre_script_with(
+    code: &str,
+    client_vars: &mut VarStore,
+    request_vars: &mut VarStore,
+    static_scopes: &[VarStore],
+    request_url: &str,
+    request_method: &str,
+    request_headers: &HashMap<String, String>,
+    request_body: Option<&str>,
+    extras: ScriptExtras,
+) -> (ScriptOutput, RequestOverrides) {
     let cv = Rc::new(RefCell::new(client_vars.clone()));
     let rv = Rc::new(RefCell::new(request_vars.clone()));
     let ro = Rc::new(RefCell::new(RequestOverrides::default()));
@@ -106,6 +181,7 @@ pub fn run_pre_script(
         response_time_ms: None,
         response_size_headers: None,
         response_size_body: None,
+        extras,
     });
 
     let result = run_script(sc, code);
@@ -133,6 +209,44 @@ pub fn run_post_script(
     response_size_headers: u64,
     response_size_body: u64,
 ) -> ScriptOutput {
+    run_post_script_with(
+        code,
+        client_vars,
+        request_vars,
+        static_scopes,
+        request_url,
+        request_method,
+        request_headers,
+        request_body,
+        response_status,
+        response_body,
+        response_headers,
+        response_time_ms,
+        response_size_headers,
+        response_size_body,
+        ScriptExtras::default(),
+    )
+}
+
+/// `run_post_script` with extras (`$processEnv` guard, sent request).
+#[allow(clippy::too_many_arguments)]
+pub fn run_post_script_with(
+    code: &str,
+    client_vars: &mut VarStore,
+    request_vars: &mut VarStore,
+    static_scopes: &[VarStore],
+    request_url: &str,
+    request_method: &str,
+    request_headers: &HashMap<String, String>,
+    request_body: Option<&str>,
+    response_status: u16,
+    response_body: &str,
+    response_headers: &HashMap<String, String>,
+    response_time_ms: u64,
+    response_size_headers: u64,
+    response_size_body: u64,
+    extras: ScriptExtras,
+) -> ScriptOutput {
     let cv = Rc::new(RefCell::new(client_vars.clone()));
     let rv = Rc::new(RefCell::new(request_vars.clone()));
 
@@ -151,6 +265,7 @@ pub fn run_post_script(
         response_time_ms: Some(response_time_ms),
         response_size_headers: Some(response_size_headers),
         response_size_body: Some(response_size_body),
+        extras,
     });
 
     let result = run_script(sc, code);
@@ -301,13 +416,6 @@ fn run_script(sc: Rc<ScriptContext>, code: &str) -> ScriptOutput {
 
             req.set("vars", vars_obj)?;
 
-            // -- req.getUrl() --
-            let sc_gu = sc.clone();
-            req.set(
-                "getUrl",
-                rquickjs::Function::new(c.clone(), move || sc_gu.request_url.clone())?,
-            )?;
-
             let is_pre_script = sc.response_status.is_none();
 
             // -- req.setUrl(url) --
@@ -338,40 +446,6 @@ fn run_script(sc: Rc<ScriptContext>, code: &str) -> ScriptOutput {
                     })?,
                 )?;
             }
-
-            // -- req.getHeaders() --
-            // -- req.getHeader(name) --
-            let sc_gh = sc.clone();
-            let get_header =
-                rquickjs::Function::new(c.clone(), move |name: String| -> Option<String> {
-                    let name_lower = name.to_lowercase();
-                    // Check overrides first
-                    {
-                        let overrides = sc_gh.request_overrides.borrow();
-                        // Check deleted headers
-                        if overrides
-                            .deleted_headers
-                            .iter()
-                            .any(|d| d.to_lowercase() == name_lower)
-                        {
-                            return None;
-                        }
-                        // Case-insensitive override lookup
-                        for (k, v) in &overrides.headers {
-                            if k.to_lowercase() == name_lower {
-                                return Some(v.clone());
-                            }
-                        }
-                    }
-                    // Fall back to original headers
-                    for (k, v) in &sc_gh.request_headers {
-                        if k.to_lowercase() == name_lower {
-                            return Some(v.clone());
-                        }
-                    }
-                    None
-                })?;
-            req.set("getHeader", get_header)?;
 
             // -- req.setHeader(key, value) --
             if is_pre_script {
@@ -457,6 +531,67 @@ fn run_script(sc: Rc<ScriptContext>, code: &str) -> ScriptOutput {
                 )?;
             }
 
+            // -- req.getRawUrl/getRawHeader/getRawBody() --
+            // Text as written (`{{vars}}` kept), with setUrl/setHeader/setBody applied.
+            let sc_ru = sc.clone();
+            req.set(
+                "getRawUrl",
+                rquickjs::Function::new(c.clone(), move || sc_ru.current_url())?,
+            )?;
+            let sc_rh = sc.clone();
+            req.set(
+                "getRawHeader",
+                rquickjs::Function::new(c.clone(), move |name: String| {
+                    sc_rh.current_header(&name)
+                })?,
+            )?;
+            let sc_rb = sc.clone();
+            req.set(
+                "getRawBody",
+                rquickjs::Function::new(c.clone(), move || sc_rb.current_body())?,
+            )?;
+
+            // -- req.getUrl/getHeader/getBody() --
+            // Pre-script: resolved now over the live scopes (incl. req.vars set so far).
+            // Post-script: the values really sent. Unknown vars stay as `{{name}}`.
+            let sc_tu = sc.clone();
+            req.set(
+                "getUrl",
+                rquickjs::Function::new(c.clone(), move || -> String {
+                    if let Some(sent) = &sc_tu.extras.sent {
+                        return sent.url.clone();
+                    }
+                    sc_tu.interpolate(&sc_tu.current_url())
+                })?,
+            )?;
+
+            let sc_th = sc.clone();
+            req.set(
+                "getHeader",
+                rquickjs::Function::new(c.clone(), move |name: String| -> Option<String> {
+                    if let Some(sent) = &sc_th.extras.sent {
+                        let name_lower = name.to_lowercase();
+                        return sent
+                            .headers
+                            .iter()
+                            .find(|(k, _)| k.to_lowercase() == name_lower)
+                            .map(|(_, v)| v.clone());
+                    }
+                    sc_th.current_header(&name).map(|v| sc_th.interpolate(&v))
+                })?,
+            )?;
+
+            let sc_tb = sc.clone();
+            req.set(
+                "getBody",
+                rquickjs::Function::new(c.clone(), move || -> Option<String> {
+                    if let Some(sent) = &sc_tb.extras.sent {
+                        return sent.body.clone();
+                    }
+                    sc_tb.current_body().map(|b| sc_tb.interpolate(&b))
+                })?,
+            )?;
+
             // -- Read-only request convenience properties --
             req.set("url", sc.request_url.clone())?;
             req.set("method", sc.request_method.clone())?;
@@ -528,11 +663,7 @@ fn run_script(sc: Rc<ScriptContext>, code: &str) -> ScriptOutput {
             beep.set(
                 "interpolate",
                 rquickjs::Function::new(c.clone(), move |input: String| {
-                    let client = sc_interp.client_vars.borrow();
-                    let request = sc_interp.request_vars.borrow();
-                    let mut scopes: Vec<&VarStore> = vec![&request, &client];
-                    scopes.extend(sc_interp.static_scopes.iter());
-                    resolve_template(&input, &scopes)
+                    sc_interp.interpolate(&input)
                 })?,
             )?;
 
@@ -1091,6 +1222,125 @@ mod tests {
             request.get("base"),
             Some("/v1/staging/us-east".to_string()).as_deref()
         );
+    }
+
+    #[test]
+    fn test_get_pre_resolves_live_scopes_raw_keeps_text() {
+        let mut client = VarStore::new();
+        let mut request = VarStore::new();
+        let mut file_vars = VarStore::new();
+        file_vars.set("host".into(), "x.io".into());
+        let mut headers = HashMap::new();
+        headers.insert("authorization".to_string(), "Bearer {{token}}".to_string());
+
+        let (out, _) = run_pre_script(
+            r#"
+                req.vars.set("token", "t1");
+                console.log(req.getRawUrl());
+                console.log(req.getUrl());
+                console.log(req.getHeader("Authorization"));
+                console.log(req.getBody());
+                console.log(req.getRawHeader("Authorization"));
+                console.log(req.getRawBody());
+                req.setUrl("https://{{host}}/v2");
+                req.setHeader("Authorization", "Token {{token}}");
+                req.setBody("{{token}}!");
+                console.log(req.getRawUrl());
+                console.log(req.getUrl());
+                console.log(req.getRawHeader("authorization"));
+                console.log(req.getHeader("authorization"));
+                console.log(req.getRawBody());
+                console.log(req.getBody());
+                req.deleteHeader("Authorization");
+                console.log(req.getHeader("Authorization"));
+                console.log(req.getRawHeader("Authorization"));
+            "#,
+            &mut client,
+            &mut request,
+            &[file_vars],
+            "https://{{host}}/{{missing}}",
+            "POST",
+            &headers,
+            Some(r#"{"t":"{{token}}"}"#),
+        );
+
+        assert_eq!(out.error, None);
+        assert_eq!(
+            out.console,
+            vec![
+                "https://{{host}}/{{missing}}",
+                "https://x.io/{{missing}}",
+                "Bearer t1",
+                r#"{"t":"t1"}"#,
+                "Bearer {{token}}",
+                r#"{"t":"{{token}}"}"#,
+                "https://{{host}}/v2",
+                "https://x.io/v2",
+                "Token {{token}}",
+                "Token t1",
+                "{{token}}!",
+                "t1!",
+                "undefined",
+                "undefined",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_get_post_uses_sent_request_raw_uses_file() {
+        let mut client = VarStore::new();
+        let mut request = VarStore::new();
+        let sent = SentRequest {
+            url: "https://x.io/a?q=1".into(),
+            method: "GET".into(),
+            headers: vec![("X-Id".into(), "42".into())],
+            body: None,
+            http_version: String::new(),
+            size: None,
+        };
+        let out = run_post_script_with(
+            r#"
+                console.log(req.getUrl());
+                console.log(req.getHeader("x-id"));
+                console.log(req.getRawUrl());
+                console.log(typeof req.tryGetSubstitutedUrl);
+            "#,
+            &mut client,
+            &mut request,
+            &[],
+            "{{host}}/a",
+            "GET",
+            &HashMap::new(),
+            None,
+            200,
+            "",
+            &HashMap::new(),
+            1,
+            0,
+            0,
+            ScriptExtras { env: EnvGuard::allow_all(), sent: Some(sent) },
+        );
+        assert_eq!(out.console, vec!["https://x.io/a?q=1", "42", "{{host}}/a", "undefined"]);
+    }
+
+    #[test]
+    fn test_interpolate_respects_env_guard() {
+        let mut client = VarStore::new();
+        let mut request = VarStore::new();
+        let guard = EnvGuard::allow_only(Default::default());
+        let (out, _) = run_pre_script_with(
+            r#"console.log("[" + beep.interpolate("{{$processEnv PATH}}") + "]");"#,
+            &mut client,
+            &mut request,
+            &[],
+            "",
+            "GET",
+            &HashMap::new(),
+            None,
+            ScriptExtras { env: guard.clone(), sent: None },
+        );
+        assert_eq!(out.console, vec!["[]"]);
+        assert_eq!(guard.denied(), vec!["PATH"]);
     }
 
     #[test]

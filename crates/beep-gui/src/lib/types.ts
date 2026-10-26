@@ -133,6 +133,8 @@ export interface HttpResponse {
 export interface HttpResult {
   request: SentRequest;
   response: HttpResponse;
+  /** Non-fatal notes (e.g. denied $processEnv). */
+  warnings?: string[];
 }
 
 // --- History types (matches Rust history::*) ---
@@ -171,6 +173,25 @@ export interface AppConstants {
   version: string;
   platform: string;
   default_headers: [string, string][];
+  dynamic_vars: DynamicVarInfo[];
+}
+
+// --- Variable insight (matches Rust context::VarSource, DynamicVarInfo) ---
+
+export type VarScope = "client" | "request" | "file" | "folder";
+
+export interface VarSource {
+  key: string;
+  scope: VarScope;
+  value: string;
+  /** Folder vars file path. */
+  origin: string | null;
+}
+
+export interface DynamicVarInfo {
+  name: string;
+  usage: string;
+  description: string;
 }
 
 export interface ProjectNode {

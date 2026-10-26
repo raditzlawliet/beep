@@ -5,7 +5,9 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use crate::dynamic::resolve_dynamic;
+use serde::{Deserialize, Serialize};
+
+use crate::dynamic::{EnvGuard, resolve_dynamic_with};
 use crate::history::RequestHistory;
 use crate::http_parser::ParsedFileVariable;
 
@@ -85,6 +87,8 @@ pub struct ExecutionContext {
     pub folder_vars: VarStore,
     /// Directory of the source .http file, for resolving relative multipart file paths.
     pub source_file_dir: Option<String>,
+    /// `$processEnv` permission guard (default allows all).
+    pub env: EnvGuard,
     /// Shared history handle.
     pub history: Arc<Mutex<RequestHistory>>,
 }
@@ -98,6 +102,7 @@ impl ExecutionContext {
             file_vars: Vec::new(),
             folder_vars: VarStore::new(),
             source_file_dir: None,
+            env: EnvGuard::allow_all(),
             history,
         }
     }
@@ -130,7 +135,7 @@ impl ExecutionContext {
             return input.to_string();
         }
         let file = VarStore::from_file_vars(&self.file_vars);
-        resolve_template(
+        resolve_template_with(
             input,
             &[
                 &self.request_vars,
@@ -139,8 +144,52 @@ impl ExecutionContext {
                 &file,
                 &self.folder_vars,
             ],
+            Some(&self.env),
         )
     }
+}
+
+// ---------------------------------------------------------------------------
+// Var sources (editor insight)
+// ---------------------------------------------------------------------------
+
+/// Static scope a variable value comes from (script `req.vars` is runtime-only, not listed).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum VarScope {
+    Client,
+    Request,
+    File,
+    Folder,
+}
+
+/// One value of a variable in one scope. `origin` = folder vars file path.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VarSource {
+    pub key: String,
+    pub scope: VarScope,
+    pub value: String,
+    pub origin: Option<String>,
+}
+
+/// Every known variable value, highest precedence first (the first entry of a key wins).
+pub fn collect_var_sources(
+    client: &VarStore,
+    request: &[ParsedFileVariable],
+    file: &[ParsedFileVariable],
+    folder: &[VarSource],
+) -> Vec<VarSource> {
+    let mut out = Vec::new();
+    for (key, value) in client.entries() {
+        out.push(VarSource { key, scope: VarScope::Client, value, origin: None });
+    }
+    for (scope, vars) in [(VarScope::Request, request), (VarScope::File, file)] {
+        for (key, value) in VarStore::from_file_vars(vars).entries() {
+            out.push(VarSource { key, scope, value, origin: None });
+        }
+    }
+    out.extend(folder.iter().rev().cloned());
+    out
 }
 
 /// Max nesting depth when a variable value references other variables.
@@ -155,11 +204,21 @@ const MAX_DEPTH: usize = 10;
 ///   (e.g. request `@baseUrl = {{baseUrl}}/v2`).
 /// - Unknown variables and cycles are left as-is.
 pub fn resolve_template(input: &str, scopes: &[&VarStore]) -> String {
-    let mut stack: Vec<(String, usize)> = Vec::new();
-    resolve_inner(input, scopes, &mut stack)
+    resolve_template_with(input, scopes, None)
 }
 
-fn resolve_inner(input: &str, scopes: &[&VarStore], stack: &mut Vec<(String, usize)>) -> String {
+/// Like `resolve_template`, with a `$processEnv` guard (`None` allows all).
+pub fn resolve_template_with(input: &str, scopes: &[&VarStore], env: Option<&EnvGuard>) -> String {
+    let mut stack: Vec<(String, usize)> = Vec::new();
+    resolve_inner(input, scopes, env, &mut stack)
+}
+
+fn resolve_inner(
+    input: &str,
+    scopes: &[&VarStore],
+    env: Option<&EnvGuard>,
+    stack: &mut Vec<(String, usize)>,
+) -> String {
     let mut out = String::with_capacity(input.len());
     let mut rest = input;
 
@@ -170,7 +229,7 @@ fn resolve_inner(input: &str, scopes: &[&VarStore], stack: &mut Vec<(String, usi
         };
         out.push_str(&rest[..begin]);
         let placeholder = &rest[begin..begin + 2 + end + 2];
-        match lookup(after[..end].trim(), scopes, stack) {
+        match lookup(after[..end].trim(), scopes, env, stack) {
             Some(value) => out.push_str(&value),
             None => out.push_str(placeholder),
         }
@@ -181,12 +240,17 @@ fn resolve_inner(input: &str, scopes: &[&VarStore], stack: &mut Vec<(String, usi
     out
 }
 
-fn lookup(key: &str, scopes: &[&VarStore], stack: &mut Vec<(String, usize)>) -> Option<String> {
+fn lookup(
+    key: &str,
+    scopes: &[&VarStore],
+    env: Option<&EnvGuard>,
+    stack: &mut Vec<(String, usize)>,
+) -> Option<String> {
     if key.is_empty() {
         return None;
     }
     if let Some(expr) = key.strip_prefix('$') {
-        return resolve_dynamic(expr.trim());
+        return resolve_dynamic_with(expr.trim(), env);
     }
 
     // Key already being resolved: only look below the scope that defined it.
@@ -209,7 +273,7 @@ fn lookup(key: &str, scopes: &[&VarStore], stack: &mut Vec<(String, usize)>) -> 
     }
 
     stack.push((key.to_string(), idx));
-    let value = resolve_inner(raw, scopes, stack);
+    let value = resolve_inner(raw, scopes, env, stack);
     stack.pop();
     Some(value)
 }
@@ -279,6 +343,33 @@ mod tests {
             ctx.resolve("{{a}} {{b}} {{c}} {{d}} {{e}}"),
             "req client req-static file folder"
         );
+    }
+
+    #[test]
+    fn test_collect_var_sources_order() {
+        let client = store(&[("a", "client")]);
+        let req = vec![ParsedFileVariable { key: "a".into(), value: "req".into() }];
+        let file = vec![
+            ParsedFileVariable { key: "a".into(), value: "file1".into() },
+            ParsedFileVariable { key: "a".into(), value: "file2".into() },
+        ];
+        let folder = vec![
+            VarSource { key: "a".into(), scope: VarScope::Folder, value: "root".into(), origin: Some("r".into()) },
+            VarSource { key: "a".into(), scope: VarScope::Folder, value: "deep".into(), origin: Some("d".into()) },
+        ];
+        let got: Vec<String> = collect_var_sources(&client, &req, &file, &folder)
+            .into_iter()
+            .map(|v| v.value)
+            .collect();
+        assert_eq!(got, vec!["client", "req", "file2", "deep", "root"]);
+    }
+
+    #[test]
+    fn test_resolve_env_guard_denies() {
+        let s = store(&[("token", "{{$processEnv BEEP_TEST_SECRET}}")]);
+        let guard = EnvGuard::allow_only(Default::default());
+        assert_eq!(resolve_template_with("x={{token}}", &[&s], Some(&guard)), "x=");
+        assert_eq!(guard.denied(), vec!["BEEP_TEST_SECRET"]);
     }
 
     #[test]

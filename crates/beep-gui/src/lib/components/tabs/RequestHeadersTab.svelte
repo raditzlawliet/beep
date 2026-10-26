@@ -1,4 +1,5 @@
 <script lang="ts">
+    import VarInput from "$lib/components/VarInput.svelte";
     import { ExternalLinkIcon, EyeIcon, EyeOffIcon } from "@lucide/svelte";
     import type { HeaderField } from "$lib/types";
     import DeleteRowButton from "$lib/components/buttons/DeleteRowButton.svelte";
@@ -185,24 +186,24 @@
                     <div class="w-full flex items-center gap-1">
                         {#if overridden}
                             <div class="tooltip tooltip-top">
-                                <input
+                                <VarInput
                                     class="input input-ghost input-xs flex-1 font-mono p-0"
                                     placeholder="Key"
                                     value={row.key}
                                     disabled={isAuto}
-                                    oninput={(e) => updateRow(i, "key", (e.target as HTMLInputElement).value)}
+                                    oninput={(v) => updateRow(i, "key", v)}
                                 />
                                 <div class="tooltip-content text-xs">
                                     <span>This header is overridden by your custom header</span>
                                 </div>
                             </div>
                         {:else}
-                            <input
+                            <VarInput
                                 class="input input-ghost input-xs flex-1 font-mono p-0"
                                 placeholder="Key"
                                 value={row.key}
                                 disabled={isAuto}
-                                oninput={(e) => updateRow(i, "key", (e.target as HTMLInputElement).value)}
+                                oninput={(v) => updateRow(i, "key", v)}
                             />
                         {/if}
                         <!-- Auth now encourge user to focus on Auth tab instead of inline editing. -->
@@ -236,13 +237,12 @@
                                 <span>This header is overridden by your custom header</span>
                             </div>
                         {/if}
-                        <input
-                            class="input input-ghost input-xs w-full font-mono p-0"
-                            class:line-through={overridden}
+                        <VarInput
+                            class="input input-ghost input-xs w-full font-mono p-0 {overridden ? 'line-through' : ''}"
                             placeholder="Value"
                             value={row.value}
                             disabled={isAuto}
-                            oninput={(e) => updateRow(i, "value", (e.target as HTMLInputElement).value)}
+                            oninput={(v) => updateRow(i, "value", v)}
                         />
                     </div>
                 </td>

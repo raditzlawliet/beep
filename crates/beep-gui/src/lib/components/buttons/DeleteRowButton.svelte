@@ -3,14 +3,17 @@
 
     interface Props {
         onclick: () => void;
+        /** Tooltip + aria label. */
+        label?: string;
     }
 
-    let { onclick }: Props = $props();
+    let { onclick, label = "Delete row" }: Props = $props();
 </script>
 
 <button
-    class="btn btn-ghost btn-xs opacity-0 group-hover:opacity-100"
+    class="btn btn-ghost btn-xs opacity-0 group-hover:opacity-100 tooltip tooltip-left"
     {onclick}
-    aria-label="Delete row">
+    aria-label={label}>
     <TrashIcon class="w-3 h-3" />
+    <div class="tooltip-content text-xs">{label}</div>
 </button>

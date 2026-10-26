@@ -27,6 +27,19 @@ export function effectiveBodyKind(
   return body ? "raw/text" : "none";
 }
 
+/** encodeURIComponent, but `{{var}}` spans stay as-is so they still resolve. */
+export function encodeQueryPart(s: string): string {
+  return s
+    .split(/(\{\{[^{}]*\}\})/)
+    .map((part, i) => (i % 2 === 1 ? part : encodeURIComponent(part)))
+    .join("");
+}
+
+/** `key=value&...` for query params, keeping `{{var}}` spans readable. */
+export function buildQueryString(params: { key: string; value: string }[]): string {
+  return params.map((q) => `${encodeQueryPart(q.key)}=${encodeQueryPart(q.value)}`).join("&");
+}
+
 export function parseHttpVersion(v: string | null | undefined): HttpVersion {
   if (!v) return "Auto";
   const upper = v.toUpperCase();
@@ -174,7 +187,7 @@ export function parsedRequestToContent(req: ParsedRequest): string {
   );
   const urlWithQuery =
     enabledParams.length > 0
-      ? `${req.url}?${enabledParams.map((q) => `${encodeURIComponent(q.key)}=${encodeURIComponent(q.value)}`).join("&")}`
+      ? `${req.url}?${buildQueryString(enabledParams)}`
       : req.url;
   lines.push(`${req.method} ${urlWithQuery}`);
 

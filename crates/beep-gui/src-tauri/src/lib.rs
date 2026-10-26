@@ -1,6 +1,7 @@
 mod commands;
 mod models;
 
+use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -9,12 +10,16 @@ use notify::{Event, EventKind, RecursiveMode, Watcher};
 use tauri::Emitter;
 
 use beep_core::default_headers;
-use beep_core::vars_file::load_folder_vars;
+use beep_core::context::resolve_template_with;
+use beep_core::vars_file::{load_folder_var_sources, load_folder_vars};
 use beep_core::{
-    ExecuteInput, ExecutionContext, HistoryEntrySummary, ParsedRequest, RequestHistory, VarStore,
+    DYNAMIC_VARS, EnvGuard, ExecuteInput, ExecutionContext, HistoryEntrySummary,
+    ParsedFileVariable, ParsedRequest, RequestHistory, VarSource, VarStore, collect_var_sources,
 };
 
-use models::{AppConstants, AppState, FsChangePayload, FsContentChangePayload, ProjectNode};
+use models::{
+    AppConstants, AppState, DynamicVarInfo, FsChangePayload, FsContentChangePayload, ProjectNode,
+};
 
 // directories excluded from tree and watcher
 const SKIP_DIRS: &[&str] = &[
@@ -90,39 +95,14 @@ async fn execute_request(
     source_file_dir: Option<String>,
     project_root: Option<String>,
 ) -> Result<beep_core::HttpResult, String> {
-    // Resolve external script file references � read file content
-    if payload.pre_script_external {
-        if let Some(ref path) = payload.pre_script {
-            let content = read_external_script(path, source_file_dir.as_deref())?;
-            payload.pre_script = Some(content);
-            payload.pre_script_external = false;
-        }
-    }
-    if payload.post_script_external {
-        if let Some(ref path) = payload.post_script {
-            let content = read_external_script(path, source_file_dir.as_deref())?;
-            payload.post_script = Some(content);
-            payload.post_script_external = false;
-        }
-    }
-
-    let folder_vars = match source_file_dir.as_deref() {
-        Some(dir) => {
-            let dir = dir.to_string();
-            let root = project_root.clone();
-            tauri::async_runtime::spawn_blocking(move || {
-                load_folder_vars(Path::new(&dir), root.as_deref().map(Path::new))
-            })
-            .await
-            .map_err(|e| e.to_string())??
-        }
-        None => VarStore::new(),
-    };
+    resolve_external_scripts(&mut payload, source_file_dir.as_deref())?;
+    let folder_vars = load_folder(&source_file_dir, &project_root).await?;
 
     let mut ctx = ExecutionContext::new(state.history.clone());
     ctx.file_vars = file_vars;
     ctx.folder_vars = folder_vars;
     ctx.source_file_dir = source_file_dir;
+    ctx.env = env_guard(&state)?;
     let before = lock_client_vars(&state)?.clone();
     ctx.client_vars = before.clone();
 
@@ -151,6 +131,122 @@ fn merge_client_var_changes(shared: &mut VarStore, before: &VarStore, after: &Va
     }
 }
 
+/// Inline the content of external pre/post script files (`< ./file.js`).
+fn resolve_external_scripts(payload: &mut ParsedRequest, dir: Option<&str>) -> Result<(), String> {
+    if payload.pre_script_external {
+        if let Some(ref path) = payload.pre_script {
+            payload.pre_script = Some(read_external_script(path, dir)?);
+            payload.pre_script_external = false;
+        }
+    }
+    if payload.post_script_external {
+        if let Some(ref path) = payload.post_script {
+            payload.post_script = Some(read_external_script(path, dir)?);
+            payload.post_script_external = false;
+        }
+    }
+    Ok(())
+}
+
+/// Merged `.beep` folder vars for a source file dir (empty without one).
+async fn load_folder(
+    source_file_dir: &Option<String>,
+    project_root: &Option<String>,
+) -> Result<VarStore, String> {
+    let Some(dir) = source_file_dir.clone() else {
+        return Ok(VarStore::new());
+    };
+    let root = project_root.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        load_folder_vars(Path::new(&dir), root.as_deref().map(Path::new))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// `$processEnv` guard for the names allowed this session.
+fn env_guard(state: &tauri::State<'_, AppState>) -> Result<EnvGuard, String> {
+    let allowed = state.allowed_env.lock().map_err(|e| e.to_string())?;
+    Ok(EnvGuard::allow_only(allowed.clone()))
+}
+
+/// Every known value of every variable for the editor (hover, autocomplete, unknown check).
+/// Highest precedence first: client > request @var > file @var > folder files.
+#[tauri::command]
+async fn get_var_sources(
+    state: tauri::State<'_, AppState>,
+    request_vars: Vec<ParsedFileVariable>,
+    file_vars: Vec<ParsedFileVariable>,
+    source_file_dir: Option<String>,
+    project_root: Option<String>,
+) -> Result<Vec<VarSource>, String> {
+    let folder = match source_file_dir {
+        Some(dir) => tauri::async_runtime::spawn_blocking(move || {
+            load_folder_var_sources(Path::new(&dir), project_root.as_deref().map(Path::new))
+        })
+        .await
+        .map_err(|e| e.to_string())??,
+        None => Vec::new(),
+    };
+    let client = lock_client_vars(&state)?.clone();
+    Ok(collect_var_sources(&client, &request_vars, &file_vars, &folder))
+}
+
+/// Resolve `text` over the static scopes + client.vars (no scripts run). For hover previews.
+#[tauri::command]
+async fn resolve_preview(
+    state: tauri::State<'_, AppState>,
+    text: String,
+    request_vars: Vec<ParsedFileVariable>,
+    file_vars: Vec<ParsedFileVariable>,
+    source_file_dir: Option<String>,
+    project_root: Option<String>,
+) -> Result<String, String> {
+    let folder = load_folder(&source_file_dir, &project_root).await?;
+    let client = lock_client_vars(&state)?.clone();
+    let request = VarStore::from_file_vars(&request_vars);
+    let file = VarStore::from_file_vars(&file_vars);
+    let env = env_guard(&state)?;
+    Ok(resolve_template_with(
+        &text,
+        &[&client, &request, &file, &folder],
+        Some(&env),
+    ))
+}
+
+/// `$processEnv` names a send of `payload` would read that are not allowed yet.
+#[tauri::command]
+async fn find_process_env(
+    state: tauri::State<'_, AppState>,
+    mut payload: ParsedRequest,
+    file_vars: Vec<ParsedFileVariable>,
+    source_file_dir: Option<String>,
+    project_root: Option<String>,
+) -> Result<Vec<String>, String> {
+    resolve_external_scripts(&mut payload, source_file_dir.as_deref())?;
+    let mut ctx = ExecutionContext::new(state.history.clone());
+    ctx.file_vars = file_vars;
+    ctx.folder_vars = load_folder(&source_file_dir, &project_root).await?;
+    ctx.client_vars = lock_client_vars(&state)?.clone();
+
+    let allowed = state.allowed_env.lock().map_err(|e| e.to_string())?;
+    Ok(beep_core::find_process_env(&payload, &ctx)
+        .into_iter()
+        .filter(|n| !allowed.contains(n))
+        .collect())
+}
+
+/// Allow `$processEnv` names for the rest of the session (in-memory).
+#[tauri::command]
+fn allow_process_env(state: tauri::State<'_, AppState>, names: Vec<String>) -> Result<(), String> {
+    state
+        .allowed_env
+        .lock()
+        .map_err(|e| e.to_string())?
+        .extend(names);
+    Ok(())
+}
+
 fn lock_client_vars<'a>(
     state: &'a tauri::State<'_, AppState>,
 ) -> Result<std::sync::MutexGuard<'a, VarStore>, String> {
@@ -172,6 +268,13 @@ fn get_client_vars(
 #[tauri::command]
 fn clear_client_vars(state: tauri::State<'_, AppState>) -> Result<(), String> {
     lock_client_vars(&state)?.clear();
+    Ok(())
+}
+
+/// Set one session variable (`client.vars`), from the editor var popup.
+#[tauri::command]
+fn set_client_var(state: tauri::State<'_, AppState>, key: String, value: String) -> Result<(), String> {
+    lock_client_vars(&state)?.set(key, value);
     Ok(())
 }
 
@@ -274,8 +377,8 @@ fn watch_project(
 
                 let file_path = p.to_string_lossy().to_string();
 
-                // any Modify (Data or Name) can change file content
-                if is_modify {
+                // any Modify (Data or Name) can change file content; folders have none
+                if is_modify && !p.is_dir() {
                     let _ = app.emit(
                         "fs-content-change",
                         FsContentChangePayload { path: file_path },
@@ -336,22 +439,44 @@ fn get_app_constants() -> AppConstants {
         }
     }
 
+    let dynamic_vars = DYNAMIC_VARS
+        .iter()
+        .map(|(name, usage, description)| DynamicVarInfo {
+            name: name.to_string(),
+            usage: usage.to_string(),
+            description: description.to_string(),
+        })
+        .collect();
+
     AppConstants {
         platform: std::env::consts::OS.to_string(),
         default_headers: headers,
         version,
+        dynamic_vars,
     }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_dialog::init());
+
+    // MCP bridge for AI agents: debug builds with the `mcp-bridge` feature only.
+    // WARNING! Don't include this on Release build.
+    #[cfg(all(debug_assertions, feature = "mcp-bridge"))]
+    let builder = builder.plugin(
+        tauri_plugin_mcp_bridge::Builder::new()
+            .bind_address("127.0.0.1")
+            .build(),
+    );
+
+    builder
         .manage(AppState {
             history: Arc::new(Mutex::new(RequestHistory::new())),
             watcher: Mutex::new(None),
             client_vars: Mutex::new(VarStore::new()),
+            allowed_env: Mutex::new(HashSet::new()),
         })
         .invoke_handler(tauri::generate_handler![
             get_app_constants,
@@ -363,8 +488,14 @@ pub fn run() {
             unwatch_project,
             //
             execute_request,
+			//
             get_client_vars,
             clear_client_vars,
+            set_client_var,
+            get_var_sources,
+            resolve_preview,
+            find_process_env,
+            allow_process_env,
             //
             get_history,
             get_history_entry,

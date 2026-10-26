@@ -7,7 +7,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::context::VarStore;
+use crate::context::{VarScope, VarSource, VarStore};
 
 const VARS_DIR: &str = ".beep";
 const VARS_FILE: &str = "vars.json";
@@ -19,12 +19,24 @@ const VARS_SUFFIX: &str = "_vars.json";
 /// `file_dir` is read. Otherwise only `file_dir` is read.
 pub fn load_folder_vars(file_dir: &Path, project_root: Option<&Path>) -> Result<VarStore, String> {
     let mut store = VarStore::new();
-    for dir in cascade_dirs(file_dir, project_root) {
-        for file in vars_files(&dir.join(VARS_DIR))? {
-            load_vars_file(&file, &mut store)?;
-        }
+    for v in load_folder_var_sources(file_dir, project_root)? {
+        store.set(v.key, v.value);
     }
     Ok(store)
+}
+
+/// Every folder variable with the file it comes from, in load order (later wins).
+pub fn load_folder_var_sources(
+    file_dir: &Path,
+    project_root: Option<&Path>,
+) -> Result<Vec<VarSource>, String> {
+    let mut out = Vec::new();
+    for dir in cascade_dirs(file_dir, project_root) {
+        for file in vars_files(&dir.join(VARS_DIR))? {
+            load_vars_file(&file, &mut out)?;
+        }
+    }
+    Ok(out)
 }
 
 /// Folders to read, shallowest first.
@@ -73,7 +85,7 @@ fn vars_files(beep_dir: &Path) -> Result<Vec<PathBuf>, String> {
 
 /// Merge one JSON vars file into `store`. Strings as-is, numbers/bools as text,
 /// null/objects/arrays ignored.
-fn load_vars_file(path: &Path, store: &mut VarStore) -> Result<(), String> {
+fn load_vars_file(path: &Path, out: &mut Vec<VarSource>) -> Result<(), String> {
     let text = fs::read_to_string(path)
         .map_err(|e| format!("Cannot read vars file '{}': {e}", path.display()))?;
     let json: serde_json::Value = serde_json::from_str(&text)
@@ -92,7 +104,12 @@ fn load_vars_file(path: &Path, store: &mut VarStore) -> Result<(), String> {
             serde_json::Value::Bool(b) => b.to_string(),
             _ => continue,
         };
-        store.set(key, text);
+        out.push(VarSource {
+            key,
+            scope: VarScope::Folder,
+            value: text,
+            origin: Some(path.display().to_string()),
+        });
     }
     Ok(())
 }
