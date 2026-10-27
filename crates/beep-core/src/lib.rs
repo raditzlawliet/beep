@@ -15,13 +15,17 @@ pub mod types;
 pub mod vars_file;
 
 // Re-exports
-pub use compiler::{compile, compile_with_ctx};
-pub use context::{ExecutionContext, VarStore};
+pub use compiler::{compile, compile_with_ctx, find_process_env};
+pub use context::{ExecutionContext, VarScope, VarSource, VarStore, collect_var_sources};
+pub use dynamic::{DYNAMIC_VARS, EnvGuard};
 pub use engine::{ExecuteInput, execute};
 pub use exec::http::{
     BodyEncoding, HttpExecutor, HttpResponse, HttpResult, SentRequest, Size, default_headers,
 };
-pub use exec::scripts::{RequestOverrides, ScriptOutput, run_post_script, run_pre_script};
+pub use exec::scripts::{
+    RequestOverrides, ScriptExtras, ScriptOutput, run_post_script, run_post_script_with, run_pre_script,
+    run_pre_script_with,
+};
 pub use executable::{ExecutableRequest, FormFieldType, ResolvedBody, ResolvedFormField};
 pub use history::{HistoryEntry, HistoryEntrySummary, RequestHistory};
 pub use http_parser::{

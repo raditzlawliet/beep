@@ -1,0 +1,16 @@
+{
+  "app": {
+    "withGlobalTauri": true,
+    "security": {
+      "capabilities": [
+        "default",
+        {
+          "identifier": "mcp-bridge",
+          "description": "Dev only: MCP bridge for AI agents",
+          "windows": ["main"],
+          "permissions": ["mcp-bridge:default"]
+        }
+      ]
+    }
+  }
+}

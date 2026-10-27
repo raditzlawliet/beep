@@ -4,16 +4,111 @@
 //! good enough for test data, not cryptographically secure.
 
 use std::collections::hash_map::RandomState;
+use std::collections::{BTreeSet, HashSet};
 use std::hash::{BuildHasher, Hasher};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use chrono::{SecondsFormat, Utc};
 
+/// Dynamic variable names with usage and description (for editor autocomplete).
+pub const DYNAMIC_VARS: &[(&str, &str, &str)] = &[
+    ("$uuid", "$uuid", "Random UUID v4"),
+    ("$guid", "$guid", "Random UUID v4 (alias of $uuid)"),
+    ("$timestamp", "$timestamp", "Unix timestamp in seconds"),
+    ("$datetime", "$datetime iso8601", "Current UTC date-time (ISO 8601)"),
+    ("$randomInt", "$randomInt 0 100", "Random integer, min inclusive, max exclusive"),
+    ("$processEnv", "$processEnv NAME", "OS environment variable (asks permission)"),
+];
+
+/// `$processEnv` permission guard. Records every env name asked for, and the denied ones.
+///
+/// `allow == None` allows every name (CLI, tests). Clones share the same record.
+#[derive(Debug, Clone, Default)]
+pub struct EnvGuard {
+    allow: Option<Arc<HashSet<String>>>,
+    record: Arc<Mutex<EnvRecord>>,
+}
+
+#[derive(Debug, Default)]
+struct EnvRecord {
+    used: BTreeSet<String>,
+    denied: BTreeSet<String>,
+}
+
+impl EnvGuard {
+    pub fn allow_all() -> Self {
+        Self::default()
+    }
+
+    pub fn allow_only(names: HashSet<String>) -> Self {
+        Self {
+            allow: Some(Arc::new(names)),
+            record: Arc::default(),
+        }
+    }
+
+    /// Record `name` and tell whether it may be read.
+    pub fn check(&self, name: &str) -> bool {
+        let allowed = self.allow.as_ref().is_none_or(|a| a.contains(name));
+        if let Ok(mut r) = self.record.lock() {
+            r.used.insert(name.to_string());
+            if !allowed {
+                r.denied.insert(name.to_string());
+            }
+        }
+        allowed
+    }
+
+    /// Env names asked for so far, sorted.
+    pub fn used(&self) -> Vec<String> {
+        self.record
+            .lock()
+            .map(|r| r.used.iter().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    /// Env names denied so far, sorted.
+    pub fn denied(&self) -> Vec<String> {
+        self.record
+            .lock()
+            .map(|r| r.denied.iter().cloned().collect())
+            .unwrap_or_default()
+    }
+}
+
+/// Env names in `{{$processEnv NAME}}`-like text (scripts, raw templates).
+pub fn scan_process_env(text: &str) -> Vec<String> {
+    let mut out = BTreeSet::new();
+    let mut rest = text;
+    while let Some(i) = rest.find("$processEnv") {
+        rest = &rest[i + "$processEnv".len()..];
+        let trimmed = rest.trim_start_matches([' ', '\t']);
+        if trimmed.len() == rest.len() {
+            continue;
+        }
+        let name: String = trimmed
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+            .collect();
+        if !name.is_empty() {
+            out.insert(name);
+        }
+    }
+    out.into_iter().collect()
+}
+
 /// Resolve a dynamic variable expression (the part after `$`, already trimmed).
 ///
 /// Returns `None` for unknown names or invalid arguments, so the placeholder stays as-is.
+/// Every `$processEnv` name is allowed.
 pub fn resolve_dynamic(expr: &str) -> Option<String> {
+    resolve_dynamic_with(expr, None)
+}
+
+/// Like `resolve_dynamic`, with a `$processEnv` guard. A denied name resolves to "".
+pub fn resolve_dynamic_with(expr: &str, env: Option<&EnvGuard>) -> Option<String> {
     let mut parts = expr.split_whitespace();
     let name = parts.next()?;
     let args: Vec<&str> = parts.collect();
@@ -34,7 +129,10 @@ pub fn resolve_dynamic(expr: &str) -> Option<String> {
             _ => None,
         },
         "processEnv" => match args.as_slice() {
-            [var] => Some(std::env::var(var).unwrap_or_default()),
+            [var] if env.is_none_or(|g| g.check(var)) => {
+                Some(std::env::var(var).unwrap_or_default())
+            }
+            [_] => Some(String::new()),
             _ => None,
         },
         _ => None,
@@ -124,5 +222,23 @@ mod tests {
             ""
         );
         assert_eq!(resolve_dynamic("nope"), None);
+    }
+
+    #[test]
+    fn test_process_env_guard() {
+        let guard = EnvGuard::allow_only(["PATH".to_string()].into_iter().collect());
+        assert!(!resolve_dynamic_with("processEnv PATH", Some(&guard)).unwrap().is_empty());
+        assert_eq!(
+            resolve_dynamic_with("processEnv PATH_SECRET_X", Some(&guard)).unwrap(),
+            ""
+        );
+        assert_eq!(guard.used(), vec!["PATH", "PATH_SECRET_X"]);
+        assert_eq!(guard.denied(), vec!["PATH_SECRET_X"]);
+    }
+
+    #[test]
+    fn test_scan_process_env() {
+        let text = r#"x {{$processEnv HOME}} beep.interpolate("{{ $processEnv  API_KEY }}") $processEnvX"#;
+        assert_eq!(scan_process_env(text), vec!["API_KEY", "HOME"]);
     }
 }

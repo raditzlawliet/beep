@@ -1,4 +1,5 @@
 <script lang="ts">
+    import VarInput from "$lib/components/VarInput.svelte";
     import type { Auth, HeaderField } from "$lib/types";
 
     interface Props {
@@ -134,9 +135,9 @@
         {:else if auth.type === "Basic"}
             <label class="form-control w-full">
                 <div class="label py-1"><span class="label-text text-xs opacity-70">Username</span></div>
-                <input class="input input-bordered input-sm w-full" placeholder="Username"
+                <VarInput class="input input-bordered input-sm w-full" placeholder="Username"
                     value={auth.username}
-                    oninput={(e) => handleFieldUpdate({ ...auth, username: (e.target as HTMLInputElement).value } as Auth)} />
+                    oninput={(v) => handleFieldUpdate({ ...auth, username: v } as Auth)} />
             </label>
             <label class="form-control w-full">
                 <div class="label py-1"><span class="label-text text-xs opacity-70">Password</span></div>
@@ -147,17 +148,17 @@
         {:else if auth.type === "Bearer"}
             <label class="form-control w-full">
                 <div class="label py-1"><span class="label-text text-xs opacity-70">Token</span></div>
-                <input class="input input-bordered input-sm w-full" placeholder="eyJ..."
+                <VarInput class="input input-bordered input-sm w-full" placeholder="eyJ..."
                     value={auth.token}
-                    oninput={(e) => handleFieldUpdate({ type: "Bearer", token: (e.target as HTMLInputElement).value })} />
+                    oninput={(v) => handleFieldUpdate({ type: "Bearer", token: v })} />
             </label>
         {:else}
             <label class="form-control w-full">
                 <div class="label py-1"><span class="label-text text-xs opacity-70">Authorization Value</span></div>
-                <input class="input input-bordered input-sm w-full font-mono"
+                <VarInput class="input input-bordered input-sm w-full font-mono"
                     placeholder="CustomScheme credentials"
                     value={auth.value}
-                    oninput={(e) => handleFieldUpdate({ type: "Custom", value: (e.target as HTMLInputElement).value })} />
+                    oninput={(v) => handleFieldUpdate({ type: "Custom", value: v })} />
             </label>
         {/if}
     </div>

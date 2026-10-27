@@ -159,12 +159,17 @@ fn parse_request_block(block: &str, base: usize) -> ParsedRequest {
 
     if let Some(rl_idx) = request_line_idx {
         let rl = lines[rl_idx].trim();
-        let parts: Vec<&str> = rl.splitn(3, ' ').collect();
-        if parts.len() >= 2 {
-            method = parts[0].to_uppercase();
-            url = parts[1].to_string();
-            if parts.len() >= 3 {
-                http_version = Some(parts[2].to_uppercase());
+        // METHOD <url> [HTTP/x]. The url may hold spaces ({{$randomInt 1 9}}, `a b`),
+        // so it is everything between the method and an optional trailing version.
+        if let Some((m, rest)) = rl.split_once(' ') {
+            method = m.to_uppercase();
+            let rest = rest.trim();
+            match rest.rsplit_once(' ') {
+                Some((u, v)) if v.to_uppercase().starts_with("HTTP/") => {
+                    url = u.trim_end().to_string();
+                    http_version = Some(v.to_uppercase());
+                }
+                _ => url = rest.to_string(),
             }
         }
         request_line_region = Region::new(

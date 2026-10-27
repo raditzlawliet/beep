@@ -37,3 +37,17 @@ export async function confirmExternalOverwrite(
   if (result === "Discard") return "discard";
   return "cancel";
 }
+
+// Ask before a request reads OS environment variables through $processEnv.
+export async function confirmProcessEnv(names: string[]): Promise<boolean> {
+  const list = names.map((n) => `- ${n}`).join("\n");
+  const result = await message(
+    `This request reads environment variables with $processEnv:\n\n${list}\n\nTheir values may be sent to the server. Allow for this session?`,
+    {
+      title: "Allow Environment Variables",
+      kind: "warning",
+      buttons: { ok: "Allow", cancel: "Cancel" },
+    },
+  );
+  return result === "Allow";
+}

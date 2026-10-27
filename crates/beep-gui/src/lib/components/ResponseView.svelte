@@ -43,7 +43,7 @@
         >
             <!-- Header bar: tabs + metadata -->
             <div class="flex items-end border-b border-base-300 py-1">
-                <div role="tablist" class="tabs tabs-bordered tabs-xs px-1">
+                <div role="tablist" class="tabs tabs-xs px-1">
                     {#if response}
                         <button
                             role="tab"

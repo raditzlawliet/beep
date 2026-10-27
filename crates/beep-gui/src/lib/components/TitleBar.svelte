@@ -1,5 +1,6 @@
 <script lang="ts">
   import { getCurrentWindow } from "@tauri-apps/api/window";
+  import { openUrl } from "@tauri-apps/plugin-opener";
   import { X, Minus, Square, MenuIcon } from "@lucide/svelte";
   import Unmaximize from "$lib/components/icons/Unmaximize.svelte";
   import AboutDialog from "$lib/components/modals/AboutDialog.svelte";
@@ -120,6 +121,11 @@
   function handleAbout() {
     aboutDialog?.showModal();
     closeAll();
+  }
+
+  async function handleOpenRepository() {
+    closeAll();
+    await openUrl("https://github.com/raditzlawliet/beep");
   }
 
   async function quit() {
@@ -302,6 +308,23 @@
               <span class="text-xs opacity-50 ml-auto">{app.modKey}+Shift+H</span>
             </button>
           </li>
+        </ul>
+      </div>
+
+      <!-- Help Dropdown -->
+      <div class="dropdown dropdown-hover dropdown-start h-full">
+        <button
+          class="btn btn-ghost btn-xs rounded-none h-full text-xs font-normal"
+          aria-haspopup="menu"
+          tabindex="0"
+        >
+          Help
+        </button>
+        <ul
+          class="dropdown-content menu menu-sm bg-base-200 rounded-box z-1 shadow-sm border border-base-content/10 w-52 p-1"
+          tabindex="-1"
+        >
+          <li><button onclick={handleOpenRepository}>Beep Repository</button></li>
         </ul>
       </div>
     </div>

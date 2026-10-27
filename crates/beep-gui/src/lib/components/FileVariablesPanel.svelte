@@ -1,4 +1,5 @@
 <script lang="ts">
+    import VarInput from "$lib/components/VarInput.svelte";
     import type { ParsedFileVariable } from "$lib/types";
     import AddRowButton from "$lib/components/buttons/AddRowButton.svelte";
     import DeleteRowButton from "$lib/components/buttons/DeleteRowButton.svelte";
@@ -74,14 +75,13 @@
                             oninput={(e) => updateKey(i, (e.target as HTMLInputElement).value)}
                         />
                         <span class="opacity-40 text-xs">=</span>
-                        <input
-                            type="text"
+                        <VarInput
                             class="input input-xs input-bordered flex-1 font-mono text-xs"
                             placeholder="value"
                             value={v.value}
-                            oninput={(e) => updateValue(i, (e.target as HTMLInputElement).value)}
+                            oninput={(val) => updateValue(i, val)}
                         />
-                        <DeleteRowButton onclick={() => removeRow(i)} />
+                        <DeleteRowButton label="Delete variable" onclick={() => removeRow(i)} />
                     </div>
                 {/each}
                 <div class="mt-0.5">

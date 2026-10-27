@@ -51,6 +51,17 @@ cd crates/beep-gui
 npm run tauri dev
 ```
 
+#### AI agent access (MCP bridge)
+
+`npm run tauri:mcp` (opt-in) builds with `tauri-plugin-mcp-bridge` (WebSocket on 127.0.0.1:9223). It lets an MCP client (Claude Code via `.mcp.json`, server `@hypothesi/tauri-mcp-server`) take screenshots, read the DOM, click, and watch IPC.
+
+```bash
+cd crates/beep-gui
+npm run tauri:mcp   # --features mcp-bridge + src-tauri/tauri.dev.conf.json (withGlobalTauri, mcp-bridge capability)
+```
+
+The plugin is an optional cargo feature (`mcp-bridge`), so plain `npm run tauri dev` / `npm run tauri:dev`, `cargo build` and release builds do not compile it, register it, grant its capability, or set `withGlobalTauri`. Registration also needs a debug build (`cfg(all(debug_assertions, feature = "mcp-bridge"))`). `.mcp.json` uses `cmd /c npx` (Windows); on macOS/Linux use `npx` as the command.
+
 ### CLI
 
 You can run `beep` via cargo.
@@ -164,7 +175,7 @@ Beep currently implements the features defined in the [HTTP/REST file format](./
 | 8.4   | `@var` File-Level Scope                                   | ✅     | ✅       | ✅      |
 | 8.5   | `.beep/vars.json` Folder cascade                          | -      | ✅       | ✅      |
 | 8.6   | Variable Interpolation `{{var}}` (trim, nested, cycles)   | -      | ✅       | ✅      |
-| 8.7   | Dynamic Variables `{{$guid}}` etc.                        | -      | ✅       | ✅      |
+| 8.7   | Dynamic Variables `{{$guid}}` etc.                        | -      | ✅       | ✅ [4]  |
 | 9.1   | Pre-Request Script (`< {%` inline / `< ./file.js`)        | ✅     | ⚠️Basic  | ⚠️Basic |
 | 9.2   | Post-Request Script (`> {%` inline / `> ./file.js`)       | ✅     | ⚠️Basic  | ⚠️Basic |
 | 9.3   | Script Globals (`client`, `req`, `res`, `beep`)           | -      | ⚠️ [2]   | -       |
@@ -175,4 +186,5 @@ Notes:
 - [1] Kept app-wide in `AppState.client_vars` (in-memory). Read-only list + Clear in the File Variables panel.
 - [2] `client.test` / `client.assert` not implemented. No `crypto` global (e.g. `crypto.randomUUID()`).
 - [3] Edit in code mode or the request form "Vars" tab; form edits rewrite only the `@` lines.
+- [4] `$processEnv` asks Allow / Cancel before send (session allow-list).
 - Scripts (9.1 / 9.2) "Basic": console output is not returned to the GUI; script errors are only visible when reopening the entry from history. CLI does not run scripts (no `.http` file input).

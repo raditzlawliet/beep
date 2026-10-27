@@ -1,6 +1,7 @@
 <script lang="ts">
     import type { BodyKind, ParsedFormField } from "$lib/types";
     import CodeEditor from "$lib/components/CodeEditor.svelte";
+    import VarInput from "$lib/components/VarInput.svelte";
     import RequestUrlEncodedTab from "./RequestUrlEncodedTab.svelte";
     import RequestMultipartTab from "./RequestMultipartTab.svelte";
     import { BracesIcon, ChevronDownIcon, PaperclipIcon, LinkIcon, FileTextIcon, FileCodeIcon, XIcon, CheckIcon, CodeXmlIcon } from "@lucide/svelte";
@@ -76,7 +77,7 @@
 </script>
 
 <div class="flex flex-col flex-1">
-    <div class="flex items-center p-0 px-2 min-h-4">
+    <div class="flex items-center py-1 px-2 min-h-4">
         <div class="dropdown">
             <button class="btn btn-ghost btn-xs font-normal gap-1 align-baseline" role="menu" tabindex="0">
                 {#if bodyMode === "none"}
@@ -183,13 +184,12 @@
                 />
                 <span>Boundary</span>
             </label>
-            <input
-                class="input input-xs input-ghost w-40 p-0"
+            <VarInput
+                class="input input-xs input-ghost w-40 py-0 px-1 font-mono"
                 placeholder="(Auto)"
                 value={boundaryText}
                 disabled={autoBoundary}
-                oninput={(e) => {
-                    const val = (e.target as HTMLInputElement).value;
+                oninput={(val) => {
                     boundaryText = val;
                     if (!autoBoundary) {
                         onMultipartBoundaryChange(val || null);
@@ -214,6 +214,7 @@
     {#if bodyMode.startsWith("raw/")}
         <CodeEditor
             value={rawBodyContent}
+            vars
             language={bodyType === "json" ? "json" : bodyType === "html" ? "html" : bodyType === "xml" ? "xml" : "text"}
             onchange={(v: string) => onRawBodyChange(v)}
             class="border border-base-300 rounded-md overflow-hidden flex-1 min-h-0"

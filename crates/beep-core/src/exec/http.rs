@@ -83,6 +83,9 @@ pub struct HttpResponse {
 pub struct HttpResult {
     pub request: SentRequest,
     pub response: HttpResponse,
+    /// Non-fatal notes for the user (e.g. denied `$processEnv`).
+    #[serde(default)]
+    pub warnings: Vec<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -290,6 +293,7 @@ impl HttpExecutor {
         Ok(HttpResult {
             request: request_echo,
             response,
+            warnings: Vec::new(),
         })
     }
 

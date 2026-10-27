@@ -1,4 +1,5 @@
 <script lang="ts">
+    import VarInput from "$lib/components/VarInput.svelte";
     import type { BodyKind, ParsedRequest, HttpMethod, HttpVersion, HeaderField } from "$lib/types";
     import { methodTextColor } from "$lib/types";
     import { effectiveBodyKind, parseHttpVersion } from "$lib/http-file-utils";
@@ -235,7 +236,7 @@
     <div class="card-body p-0 flex flex-col min-h-0">
         <!-- method + url + send row -->
         <div class="join w-full p-2 pb-0">
-            <div class="join-item relative w-28" bind:this={methodTrigger}>
+            <div class="join-item relative w-28 border-0" bind:this={methodTrigger}>
                 <input
                     type="text"
                     class="select select-bordered select-sm w-full font-mono font-bold {methodTextColor(request.method.toUpperCase() as HttpMethod)}"
@@ -246,18 +247,16 @@
                     oninput={handleMethodInput}
                 />
             </div>
-            <input
-                type="text"
+            <VarInput
                 class="join-item input input-bordered input-sm flex-1 font-mono"
                 placeholder="https://api.example.com/endpoint"
                 value={request.url}
-                oninput={(e) => {
-                    emitUpdate({ url: (e.target as HTMLInputElement).value });
+                oninput={(v) => {
+                    emitUpdate({ url: v });
                 }}
                 onblur={() => onUrlBlur?.()}
-                onkeydown={(e) => {
-                    if (e.key === "Enter" && !loading && request.url.trim())
-                        handleSend();
+                onenter={() => {
+                    if (!loading && request.url.trim()) handleSend();
                 }}
             />
             <button
@@ -307,7 +306,7 @@
         <div class="border-b border-b-base-content/10"></div>
 
         <!-- tabs -->
-        <div role="tablist" class="tabs tabs-bordered tabs-xs px-1">
+        <div role="tablist" class="tabs tabs-xs px-1">
             {#each ["params", "auth", "headers", "body", "vars", "pre-script", "post-script", "settings"] as tab}
                 <button
                     role="tab"

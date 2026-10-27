@@ -2,7 +2,8 @@
 //!
 //! This is a pure transformation; no I/O, no network, no side effects.
 //! Variable interpolation happens here.
-use crate::context::{ExecutionContext, VarStore, resolve_template};
+use crate::context::{ExecutionContext, VarStore, resolve_template, resolve_template_with};
+use crate::dynamic::{EnvGuard, scan_process_env};
 use crate::executable::{ExecutableRequest, FormFieldType, ResolvedBody, ResolvedFormField};
 use crate::http_parser::{ParsedFileVariable, ParsedRequest, effective_body_kind};
 use crate::types::{HeaderField, HttpMethod, HttpVersion, QueryField};
@@ -38,9 +39,31 @@ pub fn compile_with_ctx(
     ];
     compile_impl(
         parsed,
-        &|s| resolve_template(s, &scopes),
+        &|s| resolve_template_with(s, &scopes, Some(&ctx.env)),
         ctx.source_file_dir.clone(),
     )
+}
+
+/// `$processEnv` names a send of `parsed` would read, sorted.
+///
+/// Resolves every template before scripts run (request `@var` from `parsed`, no `req.vars`)
+/// and scans the script text. Values set by scripts at runtime are not seen here; those
+/// still hit `ctx.env` at send time.
+pub fn find_process_env(parsed: &ParsedRequest, ctx: &ExecutionContext) -> Vec<String> {
+    let probe = EnvGuard::allow_all();
+    let request = VarStore::from_file_vars(&parsed.variables);
+    let file = VarStore::from_file_vars(&ctx.file_vars);
+    let scopes = [&ctx.client_vars, &request, &file, &ctx.folder_vars];
+    // Only names are needed; method errors cannot hide env use, so the result is ignored.
+    let _ = compile_impl(parsed, &|s| resolve_template_with(s, &scopes, Some(&probe)), None);
+
+    let mut names = probe.used();
+    for script in [&parsed.pre_script, &parsed.post_script].into_iter().flatten() {
+        names.extend(scan_process_env(script));
+    }
+    names.sort();
+    names.dedup();
+    names
 }
 
 // ---------------------------------------------------------------------------
@@ -707,5 +730,17 @@ mod tests {
         let parsed = minimal("CONNECT", "https://example.com");
         let exe = compile(&parsed, &[]).unwrap();
         assert!(matches!(exe.method, HttpMethod::Other(ref m) if m == "CONNECT"));
+    }
+
+    #[test]
+    fn test_find_process_env_nested_and_script() {
+        use crate::history::RequestHistory;
+        use std::sync::{Arc, Mutex};
+
+        let mut ctx = ExecutionContext::new(Arc::new(Mutex::new(RequestHistory::new())));
+        ctx.file_vars = vars(&[("token", "{{$processEnv API_TOKEN}}"), ("unused", "{{$processEnv NOPE}}")]);
+        let mut parsed = minimal("GET", "https://x.io/{{token}}");
+        parsed.pre_script = Some(r#"beep.interpolate("{{$processEnv HOME}}")"#.into());
+        assert_eq!(find_process_env(&parsed, &ctx), vec!["API_TOKEN", "HOME"]);
     }
 }

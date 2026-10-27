@@ -1,4 +1,5 @@
 <script lang="ts">
+    import VarInput from "$lib/components/VarInput.svelte";
     import type { ParsedFormField } from "$lib/types";
     import DeleteRowButton from "$lib/components/buttons/DeleteRowButton.svelte";
     import AddRowButton from "$lib/components/buttons/AddRowButton.svelte";
@@ -83,14 +84,14 @@
                         onchange={() => toggleRow(i)} />
                 </td>
                 <td>
-                    <input class="input input-ghost input-xs w-full font-mono p-0"
+                    <VarInput class="input input-ghost input-xs w-full font-mono p-0"
                         placeholder="Key" value={row.key}
-                        oninput={(e) => updateRow(i, "key", (e.target as HTMLInputElement).value)} />
+                        oninput={(v) => updateRow(i, "key", v)} />
                 </td>
                 <td>
-                    <input class="input input-ghost input-xs w-full font-mono p-0"
+                    <VarInput class="input input-ghost input-xs w-full font-mono p-0"
                         placeholder="Value" value={row.value}
-                        oninput={(e) => updateRow(i, "value", (e.target as HTMLInputElement).value)} />
+                        oninput={(v) => updateRow(i, "value", v)} />
                 </td>
                 <td>
                     <DeleteRowButton onclick={() => removeRow(i)} />

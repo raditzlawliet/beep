@@ -8,13 +8,14 @@
     } from "$lib/types";
     import { emptyParsedRequest } from "$lib/types";
     import { app, httpFile, project } from "$lib/app-state.svelte";
-    import { parsedToFormRequest, formRequestToParsed } from "$lib/http-file-utils";
+    import { parsedToFormRequest, formRequestToParsed, buildQueryString } from "$lib/http-file-utils";
     import MainEditorToolbar from "$lib/components/MainEditorToolbar.svelte";
     import FileEditor from "$lib/components/FileEditor.svelte";
     import RequestForm from "$lib/components/RequestForm.svelte";
     import ResponseView from "$lib/components/ResponseView.svelte";
     import FileOverview from "$lib/components/FileOverview.svelte";
     import { setSendHandler, setModeHandler } from "$lib/hotkeys.svelte";
+    import { varIndex, requestTemplates } from "$lib/vars/var-index.svelte";
 
     interface Props {
         tab: Tab;
@@ -120,8 +121,7 @@
                 // Restore display URL: inline params must show in the URL field.
                 const inline = (parsed.query_params ?? []).filter((q) => q.is_inline && q.enabled && q.key);
                 if (inline.length > 0) {
-                    const qs = inline.map((q) => `${encodeURIComponent(q.key)}=${encodeURIComponent(q.value)}`).join("&");
-                    parsed.url = `${parsed.url}?${qs}`;
+                    parsed.url = `${parsed.url}?${buildQueryString(inline)}`;
                 }
                 formRequest = parsed;
             }
@@ -338,6 +338,90 @@ async function handleVariablesUpdate(vars: ParsedFileVariable[]) {
             : tab.label
     );
 
+    // Feed the editor var index (highlight, autocomplete, hover) with the active request.
+    function inlineScript(code: string | null, external: boolean): string | null {
+        return external ? null : code;
+    }
+
+    $effect(() => {
+        const active = viewMode === "request" ? formRequest : parsedRequests[activeRequestIdx];
+        varIndex.setContext({
+            requestVars: active?.variables ?? [],
+            fileVars: fileVariables ?? [],
+            sourceFileDir: basePath,
+            projectRoot: projectPath,
+            preScript: active ? inlineScript(active.pre_script, active.pre_script_external) : null,
+            postScript: active ? inlineScript(active.post_script, active.post_script_external) : null,
+            fileScripts: parsedRequests.flatMap((r) => [
+                inlineScript(r.pre_script, r.pre_script_external),
+                inlineScript(r.post_script, r.post_script_external),
+            ]).filter((c): c is string => !!c),
+        });
+    });
+
+    $effect(() => {
+        const active = viewMode === "request" ? formRequest : parsedRequests[activeRequestIdx];
+        varIndex.setActiveText(requestTemplates(active));
+    });
+
+    // Clear the var context when the viewer goes away (no deps -> cleanup on destroy only).
+    $effect(() => () => {
+        varIndex.setContext(null);
+        varIndex.setActiveText("");
+    });
+
+    // Var popup: open a scope and edit the winning value (request / file @var).
+    function openFormTab(name: string) {
+        handleSetMode("request");
+        requestFormTab = name;
+        saveTabState({ requestFormTab: name });
+    }
+
+    function setVarValue(vars: ParsedFileVariable[], key: string, value: string): ParsedFileVariable[] {
+        return vars.map((v) => (v.key.trim() === key ? { ...v, value } : v));
+    }
+
+    async function editRequestVar(key: string, value: string) {
+        if (viewMode === "request") {
+            handleFormUpdate({ ...formRequest, variables: setVarValue(formRequest.variables, key, value) });
+            await syncFormToContent();
+            return;
+        }
+        const base = parsedRequests[activeRequestIdx];
+        if (!base) return;
+        const updated = { ...base, variables: setVarValue(base.variables, key, value) };
+        parsedRequests[activeRequestIdx] = updated;
+        formRequest = parsedToFormRequest(updated);
+        const newContent = await httpFile.updateRequest(tab.content, activeRequestIdx, updated);
+        if (newContent !== tab.content) onContentChange(newContent);
+    }
+
+    async function editFileVar(key: string, value: string) {
+        // Form edits are not in the content yet; write them first so the reparse keeps them.
+        if (viewMode === "request") await syncFormToContent();
+        await handleVariablesUpdate(setVarValue(fileVariables, key, value));
+    }
+
+    $effect(() => {
+        varIndex.setActions({
+            openRequestVars: () => openFormTab("vars"),
+            openFileVars: () => {
+                handleSetMode("file");
+                fileOverviewTab = "variables";
+                saveTabState({ fileOverviewTab });
+            },
+            editRequestVar,
+            editFileVar,
+        });
+        return () =>
+            varIndex.setActions({
+                openRequestVars: undefined,
+                openFileVars: undefined,
+                editRequestVar: undefined,
+                editFileVar: undefined,
+            });
+    });
+
     // Register Ctrl+Enter send handler and Ctrl+1/2/3 mode handler with the hotkey system
     $effect(() => {
         setSendHandler(() => handleSend(formRequest));
@@ -366,6 +450,7 @@ async function handleVariablesUpdate(vars: ParsedFileVariable[]) {
             <FileEditor
                 value={tab.content}
                 language={editorLanguage}
+                vars={editorLanguage === "http"}
                 wrapLines={true}
                 onchange={handleCodeChange}
                 initialCursorPos={cursorPos}

@@ -1,5 +1,7 @@
 <script lang="ts">
+    import VarInput from "$lib/components/VarInput.svelte";
     import type { ParsedQueryField } from "$lib/types";
+    import { buildQueryString } from "$lib/http-file-utils";
     import DeleteRowButton from "$lib/components/buttons/DeleteRowButton.svelte";
     import AddRowButton from "$lib/components/buttons/AddRowButton.svelte";
 
@@ -50,8 +52,7 @@
         // Strip existing query from base
         const q = baseUrl.indexOf('?');
         const clean = q >= 0 ? baseUrl.slice(0, q) : baseUrl;
-        const qs = inline.map((p) => `${encodeURIComponent(p.key.trim())}=${encodeURIComponent(p.value)}`).join("&");
-        return `${clean}?${qs}`;
+        return `${clean}?${buildQueryString(inline.map((p) => ({ key: p.key.trim(), value: p.value })))}`;
     }
 
     function updateRow(idx: number, field: "key" | "value", val: string) {
@@ -100,14 +101,14 @@
                         checked={row.enabled} onchange={() => toggleRow(i)} />
                 </td>
                 <td>
-                    <input class="input input-ghost input-xs w-full font-mono p-0"
+                    <VarInput class="input input-ghost input-xs w-full font-mono p-0"
                         placeholder="Key" value={row.key}
-                        oninput={(e) => updateRow(i, "key", (e.target as HTMLInputElement).value)} />
+                        oninput={(v) => updateRow(i, "key", v)} />
                 </td>
                 <td>
-                    <input class="input input-ghost input-xs w-full font-mono p-0"
+                    <VarInput class="input input-ghost input-xs w-full font-mono p-0"
                         placeholder="Value" value={row.value}
-                        oninput={(e) => updateRow(i, "value", (e.target as HTMLInputElement).value)} />
+                        oninput={(v) => updateRow(i, "value", v)} />
                 </td>
                 <td class="text-center">
                     {#if row.isInline}

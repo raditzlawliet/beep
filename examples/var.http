@@ -88,3 +88,20 @@ Content-Disposition: form-data; name="d"
 3
 --{{token}}--
 
+
+### Override file var with request var
+// Request @var wins over file @var, for this request only.
+@user = admin
+@value = overridden
+GET https://httpbingo.org/get?user={{user}}&value={{value}}
+Authorization: Basic {{user}}:{{pass}}
+
+### Override with pre-script req.vars
+// req.vars wins over request @var and file @var.
+@value = fromRequestVar
+< {%
+    req.vars.set("value", "fromScript");
+    req.vars.set("nonce", beep.interpolate("{{$guid}}"));
+%}
+GET https://httpbingo.org/get?value={{value}}&nonce={{nonce}}
+X-Value: {{value}}
