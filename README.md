@@ -21,9 +21,21 @@ Beep supports project folder panels to organize and manage your HTTP requests.
   - See [Development](./DEVELOPMENT.md) Section Spec Implementation for details
 - Code <-> Form mode - Switch between code and form editor with surgical sync
 - Multi-request .http files with request selector dropdown
-- File-level variables (@key = value)
 - File overview panel (requests list + variables editor)
 - Run directly from Code (using |> play button) or Form
+- Go To Line/Column (Ctrl+G) in code mode, cursor position in status bar
+
+### Variables
+
+Use `{{name}}` anywhere in URL, query, headers, auth and body.
+
+- **Scopes** - `req.vars` > `client.vars` > request `@var` > file `@var` > folder `.beep/vars.json` (See [Spec](./SPEC.md))
+- **Request-level variables** - `@key = value` lines per request, editable in the Vars tab
+- **File-level variables** - `@key = value` at the top of the `.http` file
+- **Folder variables** - `.beep/vars.json` and `.beep/*_vars.json`, deeper folder wins
+- **Script variables** - `req.vars` / `client.vars` get/set from pre and post scripts
+- **Dynamic variables** - `$uuid`, `$guid`, `$timestamp`, `$datetime`, `$randomInt`, `$processEnv` (asks before reading env)
+- **Editor insight** - Highlight, autocomplete, hover popup with resolved value, source scope, quick edit and jump, unknown variable warning
 
 ### HTTP Request
 
@@ -49,7 +61,7 @@ Features:
 - Request: Follow Redirects
 - Request: Test Scripts
 - Project: Environment
-- Project|Request: Variables & Prompt Variables
+- Project|Request: Prompt Variables
 - Project: Save Response
 - Project: Persistent History (saved per project)
 - Project|Request: Individual History or Timeline by Request
