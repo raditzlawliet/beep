@@ -90,6 +90,9 @@
                     history(),
                     keymap.of([...defaultKeymap, ...historyKeymap]),
                     cmPlaceholder(untrack(() => placeholder)),
+                    EditorView.contentAttributes.of({
+                        "aria-label": untrack(() => placeholder) || "Value",
+                    }),
                     editableConf.of(editable(!isDisabled)),
                     varExtensions(),
                     inputTheme,

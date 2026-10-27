@@ -53,14 +53,14 @@ npm run tauri dev
 
 #### AI agent access (MCP bridge)
 
-`npm run tauri:dev` builds with `tauri-plugin-mcp-bridge` (WebSocket on 127.0.0.1:9223). It lets an MCP client (Claude Code via `.mcp.json`, server `@hypothesi/tauri-mcp-server`) take screenshots, read the DOM, click, and watch IPC.
+`npm run tauri:mcp` (opt-in) builds with `tauri-plugin-mcp-bridge` (WebSocket on 127.0.0.1:9223). It lets an MCP client (Claude Code via `.mcp.json`, server `@hypothesi/tauri-mcp-server`) take screenshots, read the DOM, click, and watch IPC.
 
 ```bash
 cd crates/beep-gui
-npm run tauri:dev   # --features mcp-bridge + src-tauri/tauri.dev.conf.json (withGlobalTauri, mcp-bridge capability)
+npm run tauri:mcp   # --features mcp-bridge + src-tauri/tauri.dev.conf.json (withGlobalTauri, mcp-bridge capability)
 ```
 
-The plugin is an optional cargo feature (`mcp-bridge`), so plain `npm run tauri dev`, `cargo build` and release builds do not compile it, register it, grant its capability, or set `withGlobalTauri`. Registration also needs a debug build (`cfg(all(debug_assertions, feature = "mcp-bridge"))`). `.mcp.json` uses `cmd /c npx` (Windows); on macOS/Linux use `npx` as the command.
+The plugin is an optional cargo feature (`mcp-bridge`), so plain `npm run tauri dev` / `npm run tauri:dev`, `cargo build` and release builds do not compile it, register it, grant its capability, or set `withGlobalTauri`. Registration also needs a debug build (`cfg(all(debug_assertions, feature = "mcp-bridge"))`). `.mcp.json` uses `cmd /c npx` (Windows); on macOS/Linux use `npx` as the command.
 
 ### CLI
 

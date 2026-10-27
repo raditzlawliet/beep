@@ -140,9 +140,14 @@ export function registerHotkeys(handlers: HotkeyHandlers) {
   });
 
   // --- Go To Line/Column (only when a code editor is active)
-  createHotkey("Mod+G", (e) => {
-    if (editorCursor.openGoto()) e.preventDefault();
-  });
+  // Library defaults would swallow Ctrl+G everywhere; only claim it when the popup opens.
+  createHotkey(
+    "Mod+G",
+    (e) => {
+      if (editorCursor.openGoto()) e.preventDefault();
+    },
+    { preventDefault: false, stopPropagation: false },
+  );
 
   // --- View mode switch (Ctrl+1/2/3, only for http-file tabs)
   createHotkey("Mod+1", (e) => {
