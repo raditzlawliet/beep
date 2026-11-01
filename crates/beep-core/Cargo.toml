@@ -8,7 +8,7 @@ description = "Beep core"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde_json = { version = "1.0", features = ["preserve_order"] }
 chrono = { version = "0.4", features = ["serde"] }
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "charset", "brotli", "gzip", "deflate", "zstd", "http2"] }
 reqwest-middleware = "0.5"

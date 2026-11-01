@@ -114,6 +114,7 @@ const ICON_TYPE: Record<VarIcon, string> = {
   C: "var-c",
   R: "var-r",
   F: "var-f",
+  E: "var-e",
   D: "var-d",
   $: "var-dyn",
 };
@@ -336,6 +337,7 @@ const ICON_CSS: Record<string, string> = {
   "var-c": "C",
   "var-r": "R",
   "var-f": "F",
+  "var-e": "E",
   "var-d": "D",
   "var-dyn": "$",
 };

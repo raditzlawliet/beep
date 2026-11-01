@@ -1,24 +1,27 @@
 mod commands;
 mod models;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use notify::{Event, EventKind, RecursiveMode, Watcher};
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 
 use beep_core::default_headers;
 use beep_core::context::resolve_template_with;
-use beep_core::vars_file::{load_folder_var_sources, load_folder_vars};
+use beep_core::vars_file::{
+    create_env as create_env_file, env_file_for_edit, env_files, list_envs as list_env_names,
+    load_env_var_sources, load_env_vars, load_folder_var_sources, load_folder_vars, write_env_var,
+};
 use beep_core::{
     DYNAMIC_VARS, EnvGuard, ExecuteInput, ExecutionContext, HistoryEntrySummary,
     ParsedFileVariable, ParsedRequest, RequestHistory, VarSource, VarStore, collect_var_sources,
 };
 
 use models::{
-    AppConstants, AppState, DynamicVarInfo, FsChangePayload, FsContentChangePayload, ProjectNode,
+    AppConstants, AppState, DynamicVarInfo, EnvInfo, FsChangePayload, FsContentChangePayload, ProjectNode,
 };
 
 // directories excluded from tree and watcher
@@ -94,15 +97,19 @@ async fn execute_request(
     file_vars: Vec<beep_core::ParsedFileVariable>,
     source_file_dir: Option<String>,
     project_root: Option<String>,
+    prompt_values: Option<HashMap<String, String>>,
 ) -> Result<beep_core::HttpResult, String> {
     resolve_external_scripts(&mut payload, source_file_dir.as_deref())?;
     let folder_vars = load_folder(&source_file_dir, &project_root).await?;
+    let env_name = selected_env(&state)?;
 
     let mut ctx = ExecutionContext::new(state.history.clone());
     ctx.file_vars = file_vars;
     ctx.folder_vars = folder_vars;
-    ctx.source_file_dir = source_file_dir;
+    ctx.env_vars = load_env(&source_file_dir, &project_root, &env_name).await?;
+    ctx.source_file_dir = source_file_dir.clone();
     ctx.env = env_guard(&state)?;
+    ctx.prompt_vars = prompt_store(prompt_values);
     let before = lock_client_vars(&state)?.clone();
     ctx.client_vars = before.clone();
 
@@ -111,10 +118,196 @@ async fn execute_request(
     // Keep script changes to client.vars even when the request itself failed.
     // Apply only this request's own changes, so overlapping sends and a Clear
     // made meanwhile are not overwritten by a stale snapshot.
-    let mut shared = lock_client_vars(&state)?;
-    merge_client_var_changes(&mut shared, &before, &ctx.client_vars);
-    drop(shared);
-    result
+    {
+        let mut shared = lock_client_vars(&state)?;
+        merge_client_var_changes(&mut shared, &before, &ctx.client_vars);
+    }
+
+    // Save script `env.vars.set` calls, also when the request failed.
+    let errors = save_env_writes(&source_file_dir, &project_root, &env_name, ctx.env_writes).await;
+    match result {
+        Ok(mut r) => {
+            r.warnings.extend(errors);
+            Ok(r)
+        }
+        Err(e) if errors.is_empty() => Err(e),
+        Err(e) => Err(format!("{e}; {}", errors.join("; "))),
+    }
+}
+
+/// Folder the env cascade starts from: the request's file dir, else the project root.
+fn env_dir(source_file_dir: &Option<String>, project_root: &Option<String>) -> Option<String> {
+    source_file_dir.clone().or_else(|| project_root.clone())
+}
+
+/// Selected environment values (empty without a file dir or project).
+async fn load_env(
+    source_file_dir: &Option<String>,
+    project_root: &Option<String>,
+    env: &Option<String>,
+) -> Result<VarStore, String> {
+    let Some(dir) = env_dir(source_file_dir, project_root) else {
+        return Ok(VarStore::new());
+    };
+    let (root, env) = (project_root.clone(), env.clone());
+    tauri::async_runtime::spawn_blocking(move || {
+        load_env_vars(Path::new(&dir), root.as_deref().map(Path::new), env.as_deref())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Write env `key = value` pairs to the selected env files. Returns one message per failure.
+async fn save_env_writes(
+    source_file_dir: &Option<String>,
+    project_root: &Option<String>,
+    env: &Option<String>,
+    writes: Vec<(String, String)>,
+) -> Vec<String> {
+    if writes.is_empty() {
+        return Vec::new();
+    }
+    let Some(dir) = env_dir(source_file_dir, project_root) else {
+        return vec!["env.vars.set ignored: no project or file folder to save to".into()];
+    };
+    let (root, env) = (project_root.clone(), env.clone());
+    tauri::async_runtime::spawn_blocking(move || {
+        writes
+            .iter()
+            .filter_map(|(k, v)| {
+                write_env_var(Path::new(&dir), root.as_deref().map(Path::new), env.as_deref(), k, v)
+                    .err()
+            })
+            .collect()
+    })
+    .await
+    .unwrap_or_else(|e| vec![e.to_string()])
+}
+
+fn selected_env(state: &tauri::State<'_, AppState>) -> Result<Option<String>, String> {
+    Ok(state.selected_env.lock().map_err(|e| e.to_string())?.clone())
+}
+
+/// `<app data>/settings.json`: `{ "projects": { "<project path>": { "env": "dev" } } }`.
+fn settings_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    Ok(app.path().app_data_dir().map_err(|e| e.to_string())?.join("settings.json"))
+}
+
+fn read_settings(app: &tauri::AppHandle) -> serde_json::Value {
+    settings_path(app)
+        .ok()
+        .and_then(|p| fs::read_to_string(p).ok())
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .filter(serde_json::Value::is_object)
+        .unwrap_or_else(|| serde_json::json!({}))
+}
+
+/// Settings key for a project (`""` = no project open).
+fn project_key(project_root: &Option<String>) -> String {
+    project_root.clone().unwrap_or_default()
+}
+
+/// Load the remembered environment of `project_root` and make it the selected one.
+#[tauri::command]
+fn load_env_selection(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    project_root: Option<String>,
+) -> Result<Option<String>, String> {
+    let name = read_settings(&app)["projects"][project_key(&project_root)]["env"]
+        .as_str()
+        .map(str::to_string);
+    *state.selected_env.lock().map_err(|e| e.to_string())? = name.clone();
+    Ok(name)
+}
+
+/// Select an environment (`None` = Default) and remember it for `project_root`.
+#[tauri::command]
+fn select_env(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    project_root: Option<String>,
+    name: Option<String>,
+) -> Result<(), String> {
+    *state.selected_env.lock().map_err(|e| e.to_string())? = name.clone();
+
+    let mut settings = read_settings(&app);
+    let projects = settings
+        .as_object_mut()
+        .map(|o| o.entry("projects").or_insert_with(|| serde_json::json!({})))
+        .ok_or("invalid settings")?;
+    if !projects.is_object() {
+        *projects = serde_json::json!({});
+    }
+    projects[project_key(&project_root)]["env"] = match name {
+        Some(n) => serde_json::Value::String(n),
+        None => serde_json::Value::Null,
+    };
+    let path = settings_path(&app)?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let text = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
+    fs::write(&path, text).map_err(|e| format!("Cannot save settings: {e}"))
+}
+
+/// Environments for the env dropdown: Default first, then names sorted; each with its files in load order.
+#[tauri::command]
+async fn list_envs(
+    source_file_dir: Option<String>,
+    project_root: Option<String>,
+) -> Result<Vec<EnvInfo>, String> {
+    let Some(dir) = env_dir(&source_file_dir, &project_root) else {
+        return Ok(Vec::new());
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        let dir = Path::new(&dir);
+        let root = project_root.as_deref().map(Path::new);
+        let names = std::iter::once(None).chain(list_env_names(dir, root).into_iter().map(Some));
+        names
+            .map(|name| EnvInfo {
+                files: env_files(dir, root, name.as_deref())
+                    .iter()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .collect(),
+                name,
+            })
+            .collect()
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/// File to edit an environment (`name` None = Default): first existing in load order, else `{}` created at the project root.
+#[tauri::command]
+fn open_env_file(
+    source_file_dir: Option<String>,
+    project_root: Option<String>,
+    name: Option<String>,
+) -> Result<String, String> {
+    let dir = env_dir(&source_file_dir, &project_root).ok_or("No project or file folder")?;
+    env_file_for_edit(Path::new(&dir), project_root.as_deref().map(Path::new), name.as_deref())
+        .map(|p| p.to_string_lossy().to_string())
+}
+
+/// Create `<projectRoot>/.beep/env.<name>.json` (`{}`) if missing; returns its path.
+#[tauri::command]
+fn create_env(project_root: String, name: String) -> Result<String, String> {
+    create_env_file(Path::new(&project_root), &name).map(|p| p.to_string_lossy().to_string())
+}
+
+/// Save one value into the selected environment (var popup edit).
+#[tauri::command]
+async fn set_env_var(
+    state: tauri::State<'_, AppState>,
+    key: String,
+    value: String,
+    source_file_dir: Option<String>,
+    project_root: Option<String>,
+) -> Result<(), String> {
+    let env = selected_env(&state)?;
+    let errors = save_env_writes(&source_file_dir, &project_root, &env, vec![(key, value)]).await;
+    if errors.is_empty() { Ok(()) } else { Err(errors.join("; ")) }
 }
 
 /// Apply keys set/changed/removed between `before` and `after` onto `shared`.
@@ -164,6 +357,15 @@ async fn load_folder(
     .map_err(|e| e.to_string())?
 }
 
+/// `// @prompt` values typed by the user for this send.
+fn prompt_store(values: Option<HashMap<String, String>>) -> VarStore {
+    let mut store = VarStore::new();
+    for (k, v) in values.unwrap_or_default() {
+        store.set(k, v);
+    }
+    store
+}
+
 /// `$processEnv` guard for the names allowed this session.
 fn env_guard(state: &tauri::State<'_, AppState>) -> Result<EnvGuard, String> {
     let allowed = state.allowed_env.lock().map_err(|e| e.to_string())?;
@@ -171,7 +373,7 @@ fn env_guard(state: &tauri::State<'_, AppState>) -> Result<EnvGuard, String> {
 }
 
 /// Every known value of every variable for the editor (hover, autocomplete, unknown check).
-/// Highest precedence first: client > request @var > file @var > folder files.
+/// Highest precedence first: client > request @var > file @var > env > folder files.
 #[tauri::command]
 async fn get_var_sources(
     state: tauri::State<'_, AppState>,
@@ -180,16 +382,24 @@ async fn get_var_sources(
     source_file_dir: Option<String>,
     project_root: Option<String>,
 ) -> Result<Vec<VarSource>, String> {
-    let folder = match source_file_dir {
-        Some(dir) => tauri::async_runtime::spawn_blocking(move || {
-            load_folder_var_sources(Path::new(&dir), project_root.as_deref().map(Path::new))
-        })
-        .await
-        .map_err(|e| e.to_string())??,
-        None => Vec::new(),
-    };
+    let env_name = selected_env(&state)?;
+    let env_from = env_dir(&source_file_dir, &project_root);
+    let (folder, env) = tauri::async_runtime::spawn_blocking(move || {
+        let root = project_root.as_deref().map(Path::new);
+        let folder = match source_file_dir {
+            Some(dir) => load_folder_var_sources(Path::new(&dir), root)?,
+            None => Vec::new(),
+        };
+        let env = match env_from {
+            Some(dir) => load_env_var_sources(Path::new(&dir), root, env_name.as_deref())?,
+            None => Vec::new(),
+        };
+        Ok::<_, String>((folder, env))
+    })
+    .await
+    .map_err(|e| e.to_string())??;
     let client = lock_client_vars(&state)?.clone();
-    Ok(collect_var_sources(&client, &request_vars, &file_vars, &folder))
+    Ok(collect_var_sources(&client, &request_vars, &file_vars, &env, &folder))
 }
 
 /// Resolve `text` over the static scopes + client.vars (no scripts run). For hover previews.
@@ -203,13 +413,14 @@ async fn resolve_preview(
     project_root: Option<String>,
 ) -> Result<String, String> {
     let folder = load_folder(&source_file_dir, &project_root).await?;
+    let env_vars = load_env(&source_file_dir, &project_root, &selected_env(&state)?).await?;
     let client = lock_client_vars(&state)?.clone();
     let request = VarStore::from_file_vars(&request_vars);
     let file = VarStore::from_file_vars(&file_vars);
     let env = env_guard(&state)?;
     Ok(resolve_template_with(
         &text,
-        &[&client, &request, &file, &folder],
+        &[&client, &request, &file, &env_vars, &folder],
         Some(&env),
     ))
 }
@@ -222,11 +433,14 @@ async fn find_process_env(
     file_vars: Vec<ParsedFileVariable>,
     source_file_dir: Option<String>,
     project_root: Option<String>,
+    prompt_values: Option<HashMap<String, String>>,
 ) -> Result<Vec<String>, String> {
     resolve_external_scripts(&mut payload, source_file_dir.as_deref())?;
     let mut ctx = ExecutionContext::new(state.history.clone());
+    ctx.prompt_vars = prompt_store(prompt_values);
     ctx.file_vars = file_vars;
     ctx.folder_vars = load_folder(&source_file_dir, &project_root).await?;
+    ctx.env_vars = load_env(&source_file_dir, &project_root, &selected_env(&state)?).await?;
     ctx.client_vars = lock_client_vars(&state)?.clone();
 
     let allowed = state.allowed_env.lock().map_err(|e| e.to_string())?;
@@ -477,6 +691,7 @@ pub fn run() {
             watcher: Mutex::new(None),
             client_vars: Mutex::new(VarStore::new()),
             allowed_env: Mutex::new(HashSet::new()),
+            selected_env: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             get_app_constants,
@@ -496,6 +711,12 @@ pub fn run() {
             resolve_preview,
             find_process_env,
             allow_process_env,
+            list_envs,
+            load_env_selection,
+            select_env,
+            set_env_var,
+            create_env,
+            open_env_file,
             //
             get_history,
             get_history_entry,

@@ -47,6 +47,7 @@ pub async fn execute(
 
     // Step 2: Clear request vars, load request @var, run pre-request script
     ctx.clear_request_vars();
+    ctx.env_writes.clear();
     ctx.request_static_vars = VarStore::from_file_vars(&parsed.variables);
 
     let mut script_error: Option<String> = None;
@@ -68,8 +69,10 @@ pub async fn execute(
             ScriptExtras {
                 env: ctx.env.clone(),
                 sent: None,
+                env_vars: ctx.env_vars.clone(),
             },
         );
+        ctx.apply_env_writes(out.env_writes);
 
         if let Some(err) = out.error {
             script_error = Some(format!("Pre-script error: {err}"));
@@ -153,8 +156,10 @@ pub async fn execute(
             ScriptExtras {
                 env: ctx.env.clone(),
                 sent: Some(result.request.clone()),
+                env_vars: ctx.env_vars.clone(),
             },
         );
+        ctx.apply_env_writes(out.env_writes);
 
         if let Some(err) = out.error {
             script_error = Some(match script_error {

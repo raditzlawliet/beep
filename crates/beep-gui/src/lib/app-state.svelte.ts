@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AppConstants,
+  EnvInfo,
   HistoryEntry,
   HistoryEntrySummary,
   ParsedRequest,
@@ -12,6 +13,7 @@ import type {
 import { emptyParsedRequest } from "./types";
 import { varIndex } from "./vars/var-index.svelte";
 import { confirmProcessEnv } from "./dialog";
+import { askPromptVars } from "./prompt-vars.svelte";
 
 function mergeChildren(
   tree: ProjectNode[],
@@ -56,6 +58,8 @@ let _result = $state<HttpResult | null>(null);
 let _history = $state<HistoryEntrySummary[]>([]);
 let _constants = $state<AppConstants | null>(null);
 let _projectPath = $state<string | null>(null);
+let _envSelected = $state<string | null>(null);
+let _envs = $state<EnvInfo[]>([]);
 let _projectName = $state<string | null>(null);
 let _projectTree = $state<ProjectNode[]>([]);
 
@@ -82,13 +86,19 @@ export const request = {
     return _result?.response ?? null;
   },
 
-  // Returns null when the user cancels the $processEnv prompt (nothing sent).
+  // Returns null when the user cancels the @prompt or $processEnv dialog (nothing sent).
   async send(req: ParsedRequest, fileVars: ParsedFileVariable[] = [], sourceFileDir?: string): Promise<HttpResult | null> {
+    let promptValues: Record<string, string> | null = null;
+    if (req.prompts?.length) {
+      promptValues = await askPromptVars(req.prompts);
+      if (!promptValues) return null;
+    }
     const envNames = await invoke<string[]>("find_process_env", {
       payload: req,
       fileVars,
       sourceFileDir: sourceFileDir ?? null,
       projectRoot: _projectPath,
+      promptValues,
     });
     if (envNames.length > 0) {
       if (!(await confirmProcessEnv(envNames))) return null;
@@ -100,6 +110,7 @@ export const request = {
         fileVars,
         sourceFileDir: sourceFileDir ?? null,
         projectRoot: _projectPath,
+        promptValues,
       });
       _result = res;
       history.refresh().catch(() => {});
@@ -203,6 +214,7 @@ export const project = {
 
   async open(folderPath: string) {
     _projectPath = folderPath;
+    environment.load().catch((e) => console.error("load env", e));
     _projectName = folderPath.split(/[/\\]/).pop() || folderPath;
     _projectTree = await invoke<ProjectNode[]>("read_dir_children", {
       path: folderPath,
@@ -250,9 +262,51 @@ export const project = {
 
   close() {
     _projectPath = null;
+    environment.load().catch((e) => console.error("load env", e));
     _projectName = null;
     _projectTree = [];
     _loadingDirs.clear();
+  },
+};
+
+// environment domain - selected env (null = Default, `.beep/env.json`), remembered per project
+export const environment = {
+  get selected() {
+    return _envSelected;
+  },
+
+  /** Default first, then named envs, each with its files in load order; refreshed when the picker opens. */
+  get envs() {
+    return _envs;
+  },
+
+  /** Load the remembered env of the current project (also on app start / project close). */
+  async load() {
+    _envSelected = await invoke<string | null>("load_env_selection", { projectRoot: _projectPath });
+    _envs = [];
+    await varIndex.refresh();
+  },
+
+  async refresh(sourceFileDir: string | null) {
+    _envs = await invoke<EnvInfo[]>("list_envs", { sourceFileDir, projectRoot: _projectPath });
+  },
+
+  /** Path of the file to edit env `name` (null = Default); created at the project root if none exists. */
+  async fileForEdit(sourceFileDir: string | null, name: string | null): Promise<string> {
+    return invoke<string>("open_env_file", { sourceFileDir, projectRoot: _projectPath, name });
+  },
+
+  async select(name: string | null) {
+    await invoke("select_env", { projectRoot: _projectPath, name });
+    _envSelected = name;
+    await varIndex.refresh();
+  },
+
+  /** Create `<project>/.beep/env.<name>.json` (if missing) and select it; returns the file path. */
+  async create(name: string): Promise<string> {
+    const path = await invoke<string>("create_env", { projectRoot: _projectPath, name });
+    await environment.select(name.trim());
+    return path;
   },
 };
 
