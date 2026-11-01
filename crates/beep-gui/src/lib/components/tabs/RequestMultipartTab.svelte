@@ -421,10 +421,11 @@
                         </div>
                         <input
                             type="checkbox"
-                            class="checkbox checkbox-xs shrink-0"
+                            class="checkbox checkbox-xs shrink-0 tooltip tooltip-top"
                             checked={row.autoContentType}
                             onchange={() => toggleContentTypeAuto(i)}
-                            title="Auto content-type"
+                            data-tip="Auto content-type"
+                            aria-label="Auto content-type"
                         />
                     </div>
                 </td>

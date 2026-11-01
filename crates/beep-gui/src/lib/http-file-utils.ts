@@ -71,6 +71,7 @@ export function parsedToFormRequest(
       post_script_external: false,
       http_version: null,
       variables: [],
+      prompts: [],
       block_region: { start: 0, end: 0 },
       request_line_region: { start: 0, end: 0 },
       query_region: { start: 0, end: 0 },

@@ -3,7 +3,8 @@
  *
  * Two layers:
  *   1. StreamLanguage tokenizer (this file) - request structure: `###`, comments,
- *      `@var`, request line, headers, multiline query, `{{variables}}`, script
+ *      `@var`, `// @prompt` / `// @body` directives, request line, headers,
+ *      multiline query, `{{variables}}`, script
  *      markers, redirects, multipart boundaries.
  *   2. Embedded highlighter (`body-highlighter.ts`) - real Lezer parsers for the
  *      body (JSON/XML/HTML) and `{% ... %}` script blocks (JavaScript).
@@ -68,6 +69,10 @@ const S = {
   redirect: "httpRedirect",
   fileRef: "httpFileRef",
   boundary: "httpBoundary",
+  directive: "httpDirective",
+  directiveArg: "httpDirectiveArg",
+  directiveMod: "httpDirectiveMod",
+  bodyKind: "httpBodyKind",
 } as const;
 
 const METHOD_STYLE: Record<string, string> = {
@@ -88,7 +93,7 @@ const METHOD_STYLE: Record<string, string> = {
 type Section = "pre" | "headers" | "body";
 
 /** What the current line is, decided at line start. */
-type LineKind = "none" | "request" | "header" | "query" | "var" | "body" | "path";
+type LineKind = "none" | "request" | "header" | "query" | "var" | "body" | "path" | "prompt" | "bodyDirective";
 
 interface State {
   section: Section;
@@ -103,6 +108,8 @@ interface State {
   seenColon: boolean;
   /** `@var` line: `=` seen. */
   seenEq: boolean;
+  /** Directive line: tokens seen after `//` (0 = keyword, 1 = argument, 2+ = rest). */
+  dirStep: number;
 }
 
 function startState(): State {
@@ -114,6 +121,7 @@ function startState(): State {
     inQuery: false,
     seenColon: false,
     seenEq: false,
+    dirStep: 0,
   };
 }
 
@@ -145,6 +153,7 @@ function lineStart(stream: StringStream, state: State): string | null | undefine
   state.inQuery = false;
   state.seenColon = false;
   state.seenEq = false;
+  state.dirStep = 0;
 
   if (stream.match("###")) {
     state.section = "pre";
@@ -154,6 +163,15 @@ function lineStart(stream: StringStream, state: State): string | null | undefine
   if (stream.match("//-")) {
     stream.skipToEnd();
     return S.disabled;
+  }
+  // Directives, only where core parses them: `// @prompt` in the pre area, `// @body` among headers.
+  if (state.section === "pre" && stream.match(/^\/\/\s*(?=@prompt(:secret)?\s+\S)/)) {
+    state.line = "prompt";
+    return S.comment;
+  }
+  if (state.section === "headers" && stream.match(/^\/\/ (?=@body \S)/)) {
+    state.line = "bodyDirective";
+    return S.comment;
   }
   if (stream.match("//")) {
     stream.skipToEnd();
@@ -237,6 +255,9 @@ function token(stream: StringStream, state: State): string | null {
     case "path":
       stream.skipToEnd();
       return S.fileRef;
+    case "prompt":
+    case "bodyDirective":
+      return directiveToken(stream, state);
     default:
       // Body text: only variables are tokens; the rest belongs to the embedded highlighter.
       if (eatVariable(stream)) return S.variable;
@@ -299,6 +320,23 @@ function varToken(stream: StringStream, state: State): string | null {
   return S.varVal;
 }
 
+/** `@prompt[:secret] name description...` / `@body kind` after the `//`. */
+function directiveToken(stream: StringStream, state: State): string | null {
+  // `:modifier` right after the keyword (SPEC: directive modifiers).
+  if (state.dirStep === 1 && stream.match(/^:\w+/)) return S.directiveMod;
+  const step = state.dirStep++;
+  if (step === 0) {
+    stream.match(/^@\w+/);
+    return S.directive;
+  }
+  if (step === 1) {
+    stream.match(/^\S+/);
+    return state.line === "prompt" ? S.directiveArg : S.bodyKind;
+  }
+  stream.skipToEnd();
+  return S.comment;
+}
+
 const httpStreamLanguage = StreamLanguage.define<State>({
   name: "http",
   startState,
@@ -337,6 +375,10 @@ const httpStreamLanguage = StreamLanguage.define<State>({
     [S.redirect]: tags.operatorKeyword,
     [S.fileRef]: tags.string,
     [S.boundary]: tags.contentSeparator,
+    [S.directive]: tags.controlKeyword,
+    [S.directiveArg]: tags.definition(tags.variableName),
+    [S.directiveMod]: tags.modifier,
+    [S.bodyKind]: tags.typeName,
   },
 });
 
@@ -358,6 +400,7 @@ export const httpHighlight = HighlightStyle.define([
   { tag: tags.contentSeparator, color: "#75715E", fontStyle: "italic", opacity: "0.7" },
   { tag: tags.special(tags.variableName), color: "#AE81FF" },
   { tag: tags.punctuation, color: "#75715E" },
+  { tag: tags.modifier, color: "#66D9EF", fontStyle: "italic" },
 ]);
 
 // ---------------------------------------------------------------------------

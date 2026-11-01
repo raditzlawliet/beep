@@ -209,17 +209,17 @@
                         <!-- Auth now encourge user to focus on Auth tab instead of inline editing. -->
                         {#if isAuth}
                             <button
-                                class="badge badge-ghost badge-xs px-1 text-[10px] opacity-60 hover:opacity-100 shrink-0 cursor-pointer"
+                                class="badge badge-ghost badge-xs px-1 text-[10px] opacity-60 hover:opacity-100 shrink-0 cursor-pointer tooltip tooltip-top"
                                 onclick={() => onFocusAuth?.()}
-                                title="Edit in Auth tab">
+                                data-tip="Edit in Auth tab">
                                 Auth <ExternalLinkIcon class="w-2.5 h-2.5" />
                             </button>
                         {/if}
                         {#if isContentType}
                             <button
-                                class="badge badge-ghost badge-xs px-1 text-[10px] opacity-60 hover:opacity-100 shrink-0 cursor-pointer"
+                                class="badge badge-ghost badge-xs px-1 text-[10px] opacity-60 hover:opacity-100 shrink-0 cursor-pointer tooltip tooltip-top"
                                 onclick={() => onFocusBody?.()}
-                                title="Edit in Body tab">
+                                data-tip="Edit in Body tab">
                                 Body <ExternalLinkIcon class="w-2.5 h-2.5" />
                             </button>
                         {/if}
