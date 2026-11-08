@@ -1,11 +1,16 @@
 <script lang="ts">
     import { EyeIcon, EyeOffIcon } from "@lucide/svelte";
+    import { SvelteSet } from "svelte/reactivity";
     import { promptVars } from "$lib/prompt-vars.svelte";
 
     let dialog = $state<HTMLDialogElement | null>(null);
     let values = $state<Record<string, string>>({});
-    // Secret fields the user chose to show.
-    let shown = $state<Record<string, boolean>>({});
+    // Secret fields the user chose to show. A Set, so names like `constructor` or `__proto__` cannot hit inherited props.
+    const shown = new SvelteSet<string>();
+
+    function toggleShown(name: string) {
+        if (!shown.delete(name)) shown.add(name);
+    }
 
     const pending = $derived(promptVars.pending);
 
@@ -13,7 +18,7 @@
         if (!dialog) return;
         if (pending) {
             values = Object.fromEntries(pending.prompts.map((p) => [p.name, promptVars.initial(p)]));
-            shown = {};
+            shown.clear();
             dialog.showModal();
             // showModal focuses the first input; select so a prefilled value is easy to replace.
             dialog.querySelector<HTMLInputElement>("input")?.select();
@@ -44,7 +49,7 @@
                         <input
                             id="prompt-{p.name}"
                             class="grow"
-                            type={secret && !shown[p.name] ? "password" : "text"}
+                            type={secret && !shown.has(p.name) ? "password" : "text"}
                             autocomplete="off"
                             spellcheck="false"
                             bind:value={values[p.name]}
@@ -54,10 +59,10 @@
                                 type="button"
                                 class="opacity-60 hover:opacity-100"
                                 tabindex="-1"
-                                aria-label={shown[p.name] ? "Hide value" : "Show value"}
-                                onclick={() => (shown[p.name] = !shown[p.name])}
+                                aria-label={shown.has(p.name) ? "Hide value" : "Show value"}
+                                onclick={() => toggleShown(p.name)}
                             >
-                                {#if shown[p.name]}<EyeOffIcon size={14} />{:else}<EyeIcon size={14} />{/if}
+                                {#if shown.has(p.name)}<EyeOffIcon size={14} />{:else}<EyeIcon size={14} />{/if}
                             </button>
                         {/if}
                     </label>

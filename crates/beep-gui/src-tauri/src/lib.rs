@@ -229,8 +229,6 @@ fn select_env(
     project_root: Option<String>,
     name: Option<String>,
 ) -> Result<(), String> {
-    *state.selected_env.lock().map_err(|e| e.to_string())? = name.clone();
-
     let mut settings = read_settings(&app);
     let projects = settings
         .as_object_mut()
@@ -239,8 +237,8 @@ fn select_env(
     if !projects.is_object() {
         *projects = serde_json::json!({});
     }
-    projects[project_key(&project_root)]["env"] = match name {
-        Some(n) => serde_json::Value::String(n),
+    projects[project_key(&project_root)]["env"] = match &name {
+        Some(n) => serde_json::Value::String(n.clone()),
         None => serde_json::Value::Null,
     };
     let path = settings_path(&app)?;
@@ -248,7 +246,10 @@ fn select_env(
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     let text = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
-    fs::write(&path, text).map_err(|e| format!("Cannot save settings: {e}"))
+    fs::write(&path, text).map_err(|e| format!("Cannot save settings: {e}"))?;
+    // Only switch after the choice is saved, so memory and disk stay in step.
+    *state.selected_env.lock().map_err(|e| e.to_string())? = name;
+    Ok(())
 }
 
 /// Environments for the env dropdown: Default first, then names sorted; each with its files in load order.

@@ -62,6 +62,8 @@ let _envSelected = $state<string | null>(null);
 let _envs = $state<EnvInfo[]>([]);
 let _projectName = $state<string | null>(null);
 let _projectTree = $state<ProjectNode[]>([]);
+// Pending env selection load; send waits on it so it never uses the previous project's env.
+let _envLoad: Promise<void> = Promise.resolve();
 
 // Eagerly load constants at module init (SSR is disabled so invoke is safe).
 invoke<AppConstants>("get_app_constants").then((c) => {
@@ -88,6 +90,7 @@ export const request = {
 
   // Returns null when the user cancels the @prompt or $processEnv dialog (nothing sent).
   async send(req: ParsedRequest, fileVars: ParsedFileVariable[] = [], sourceFileDir?: string): Promise<HttpResult | null> {
+    await _envLoad;
     let promptValues: Record<string, string> | null = null;
     if (req.prompts?.length) {
       promptValues = await askPromptVars(req.prompts);
@@ -214,7 +217,7 @@ export const project = {
 
   async open(folderPath: string) {
     _projectPath = folderPath;
-    environment.load().catch((e) => console.error("load env", e));
+    _envLoad = environment.load().catch((e) => console.error("load env", e));
     _projectName = folderPath.split(/[/\\]/).pop() || folderPath;
     _projectTree = await invoke<ProjectNode[]>("read_dir_children", {
       path: folderPath,
@@ -262,7 +265,7 @@ export const project = {
 
   close() {
     _projectPath = null;
-    environment.load().catch((e) => console.error("load env", e));
+    _envLoad = environment.load().catch((e) => console.error("load env", e));
     _projectName = null;
     _projectTree = [];
     _loadingDirs.clear();

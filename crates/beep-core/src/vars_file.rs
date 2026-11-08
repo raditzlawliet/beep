@@ -7,6 +7,7 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use crate::context::{VarScope, VarSource, VarStore};
 
@@ -44,6 +45,21 @@ pub fn load_folder_var_sources(
     Ok(out)
 }
 
+/// Serializes `write_env_var` read-modify-write so concurrent sets do not overwrite each other.
+static ENV_WRITE_LOCK: Mutex<()> = Mutex::new(());
+
+/// Env name usable in a file name: no path separators or leading dot, so it stays in `.beep`.
+fn is_valid_env_name(name: &str) -> bool {
+    !name.is_empty() && !name.contains(['/', '\\', ':', ' ', '\t']) && !name.starts_with('.')
+}
+
+fn check_env_name(env: Option<&str>) -> Result<(), String> {
+    match env {
+        Some(name) if !is_valid_env_name(name) => Err(format!("Invalid environment name '{name}'")),
+        _ => Ok(()),
+    }
+}
+
 /// Env file name: `env.json` for Default (`None`), else `env.<name>.json`.
 fn env_file_name(env: Option<&str>) -> String {
     match env {
@@ -54,6 +70,9 @@ fn env_file_name(env: Option<&str>) -> String {
 
 /// Existing files of one environment along the cascade, in load order (project root first).
 pub fn env_files(file_dir: &Path, project_root: Option<&Path>, env: Option<&str>) -> Vec<PathBuf> {
+    if check_env_name(env).is_err() {
+        return Vec::new();
+    }
     cascade_dirs(file_dir, project_root)
         .into_iter()
         .map(|dir| dir.join(VARS_DIR).join(env_file_name(env)))
@@ -68,6 +87,7 @@ pub fn env_file_for_edit(
     project_root: Option<&Path>,
     env: Option<&str>,
 ) -> Result<PathBuf, String> {
+    check_env_name(env)?;
     if let Some(first) = env_files(file_dir, project_root, env).into_iter().next() {
         return Ok(first);
     }
@@ -86,9 +106,7 @@ pub fn env_file_for_edit(
 /// Create `<project_root>/.beep/env.<name>.json` with `{}` (kept as-is when it exists).
 pub fn create_env(project_root: &Path, name: &str) -> Result<PathBuf, String> {
     let name = name.trim();
-    if name.is_empty() || name.contains(['/', '\\', ':', ' ', '\t']) || name.starts_with('.') {
-        return Err(format!("Invalid environment name '{name}'"));
-    }
+    check_env_name(Some(name))?;
     let dir = project_root.join(VARS_DIR);
     let path = dir.join(env_file_name(Some(name)));
     if !path.is_file() {
@@ -152,6 +170,10 @@ pub fn write_env_var(
     key: &str,
     value: &str,
 ) -> Result<PathBuf, String> {
+    check_env_name(env)?;
+    let _guard = ENV_WRITE_LOCK
+        .lock()
+        .map_err(|_| "Env write lock poisoned".to_string())?;
     let existing = load_env_var_sources(file_dir, project_root, env)?
         .into_iter()
         .rev()
@@ -168,9 +190,11 @@ pub fn write_env_var(
         }
     };
 
+    let mut crlf = false;
     let mut map = if path.is_file() {
         let text = fs::read_to_string(&path)
             .map_err(|e| format!("Cannot read env file '{}': {e}", path.display()))?;
+        crlf = text.contains("\r\n");
         match serde_json::from_str(&text) {
             Ok(serde_json::Value::Object(m)) => m,
             _ => return Err(format!("Env file '{}' must contain a JSON object", path.display())),
@@ -194,8 +218,11 @@ pub fn write_env_var(
             .map_err(|e| format!("Cannot create '{}': {e}", parent.display()))?;
     }
     let text = serde_json::to_string_pretty(&serde_json::Value::Object(map))
-        .map_err(|e| e.to_string())?;
-    fs::write(&path, text + "\n")
+        .map_err(|e| e.to_string())?
+        + "\n";
+    // Keep the file's own line endings (pretty JSON escapes newlines inside strings).
+    let text = if crlf { text.replace('\n', "\r\n") } else { text };
+    fs::write(&path, text)
         .map_err(|e| format!("Cannot write env file '{}': {e}", path.display()))?;
     Ok(path)
 }
@@ -476,6 +503,24 @@ mod tests {
         for bad in ["", "a/b", "a\\b", "a b", ".x"] {
             assert!(create_env(&root, bad).is_err(), "{bad}");
         }
+        // Path-escaping names rejected at every entry point.
+        let bad = Some("../../evil");
+        assert!(env_files(&root, Some(&root), bad).is_empty());
+        assert!(env_file_for_edit(&root, Some(&root), bad).is_err());
+        assert!(write_env_var(&root, Some(&root), bad, "k", "v").is_err());
+        assert!(load_env_vars(&root, Some(&root), bad).unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_write_env_var_keeps_crlf() {
+        let root = temp_dir("env-crlf");
+        write(&root.join(".beep/env.json"), "{\r\n  \"a\": \"1\"\r\n}\r\n");
+        write_env_var(&root, Some(&root), None, "b", "2").unwrap();
+        assert_eq!(
+            fs::read_to_string(root.join(".beep/env.json")).unwrap(),
+            "{\r\n  \"a\": \"1\",\r\n  \"b\": \"2\"\r\n}\r\n"
+        );
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]

@@ -419,14 +419,15 @@
                                 </ul>
                             {/if}
                         </div>
-                        <input
-                            type="checkbox"
-                            class="checkbox checkbox-xs shrink-0 tooltip tooltip-top"
-                            checked={row.autoContentType}
-                            onchange={() => toggleContentTypeAuto(i)}
-                            data-tip="Auto content-type"
-                            aria-label="Auto content-type"
-                        />
+                        <div class="tooltip tooltip-top shrink-0 flex" data-tip="Auto content-type">
+                            <input
+                                type="checkbox"
+                                class="checkbox checkbox-xs"
+                                checked={row.autoContentType}
+                                onchange={() => toggleContentTypeAuto(i)}
+                                aria-label="Auto content-type"
+                            />
+                        </div>
                     </div>
                 </td>
                 <td>
