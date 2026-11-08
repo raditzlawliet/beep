@@ -222,8 +222,16 @@ pub fn write_env_var(
         + "\n";
     // Keep the file's own line endings (pretty JSON escapes newlines inside strings).
     let text = if crlf { text.replace('\n', "\r\n") } else { text };
-    fs::write(&path, text)
-        .map_err(|e| format!("Cannot write env file '{}': {e}", path.display()))?;
+    // Temp file + rename, so lock-free readers see the old or the new file, never a partial one.
+    // Leading dot keeps it out of the env/vars file patterns.
+    let file_name = path.file_name().map(|n| n.to_string_lossy()).unwrap_or_default();
+    let tmp = path.with_file_name(format!(".{file_name}.tmp"));
+    let write_err = |e: std::io::Error| format!("Cannot write env file '{}': {e}", path.display());
+    fs::write(&tmp, text).map_err(write_err)?;
+    if let Err(e) = fs::rename(&tmp, &path) {
+        let _ = fs::remove_file(&tmp);
+        return Err(write_err(e));
+    }
     Ok(path)
 }
 
@@ -520,6 +528,8 @@ mod tests {
             fs::read_to_string(root.join(".beep/env.json")).unwrap(),
             "{\r\n  \"a\": \"1\",\r\n  \"b\": \"2\"\r\n}\r\n"
         );
+        // Temp file renamed away, nothing left behind.
+        assert!(!root.join(".beep/.env.json.tmp").exists());
         let _ = fs::remove_dir_all(&root);
     }
 
