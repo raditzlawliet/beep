@@ -11,7 +11,7 @@
 //! Post-script globals:
 //! - Same as pre-script, plus `res` with status/body/headers/time/size/statusText
 
-use crate::context::{VarStore, resolve_template_with};
+use crate::context::{ExecutionContext, VarStore, resolve_template_with};
 use crate::dynamic::EnvGuard;
 use crate::exec::http::SentRequest;
 use rquickjs::CatchResultExt;
@@ -30,6 +30,8 @@ pub struct ScriptOutput {
     pub console: Vec<String>,
     /// Error message if the script threw or failed to compile.
     pub error: Option<String>,
+    /// `env.vars.set(key, value)` calls, in order. The host writes them to the env file.
+    pub env_writes: Vec<(String, String)>,
 }
 
 /// Request mutations made by a pre-request script.
@@ -55,6 +57,8 @@ pub struct ScriptExtras {
     pub env: EnvGuard,
     /// Post-script: real sent request, used by `req.getUrl/getHeader/getBody()`.
     pub sent: Option<SentRequest>,
+    /// Selected environment values, read by `env.vars.get`.
+    pub env_vars: VarStore,
 }
 
 // ---------------------------------------------------------------------------
@@ -65,7 +69,7 @@ struct ScriptContext {
     client_vars: Rc<RefCell<VarStore>>,
     request_vars: Rc<RefCell<VarStore>>,
     request_overrides: Rc<RefCell<RequestOverrides>>,
-    /// Static scopes below client vars: request @var > file @var > folder vars.
+    /// Static scopes below client vars: request @var > file @var > env > folder vars.
     static_scopes: Vec<VarStore>,
     request_url: String,
     request_method: String,
@@ -78,6 +82,10 @@ struct ScriptContext {
     response_size_headers: Option<u64>,
     response_size_body: Option<u64>,
     extras: ScriptExtras,
+    /// Selected environment, updated by `env.vars.set` for the rest of the script.
+    env_vars: RefCell<VarStore>,
+    /// `env.vars.set` calls, in order.
+    env_writes: RefCell<Vec<(String, String)>>,
 }
 
 impl ScriptContext {
@@ -85,8 +93,14 @@ impl ScriptContext {
     fn interpolate(&self, input: &str) -> String {
         let client = self.client_vars.borrow();
         let request = self.request_vars.borrow();
+        let env = self.env_vars.borrow();
+        let env_changed = !self.env_writes.borrow().is_empty();
         let mut scopes: Vec<&VarStore> = vec![&request, &client];
-        scopes.extend(self.static_scopes.iter());
+        for (i, s) in self.static_scopes.iter().enumerate() {
+            // after env.vars.set the live env replaces the env snapshot
+            let live = env_changed && i == ExecutionContext::ENV_SCOPE_SLOT;
+            scopes.push(if live { &env } else { s });
+        }
         resolve_template_with(input, &scopes, Some(&self.extras.env))
     }
 
@@ -181,6 +195,8 @@ pub fn run_pre_script_with(
         response_time_ms: None,
         response_size_headers: None,
         response_size_body: None,
+        env_vars: RefCell::new(extras.env_vars.clone()),
+        env_writes: RefCell::default(),
         extras,
     });
 
@@ -265,6 +281,8 @@ pub fn run_post_script_with(
         response_time_ms: Some(response_time_ms),
         response_size_headers: Some(response_size_headers),
         response_size_body: Some(response_size_body),
+        env_vars: RefCell::new(extras.env_vars.clone()),
+        env_writes: RefCell::default(),
         extras,
     });
 
@@ -290,6 +308,7 @@ fn run_script(sc: Rc<ScriptContext>, code: &str) -> ScriptOutput {
             return ScriptOutput {
                 console: vec![],
                 error: Some(format!("Failed to create JS runtime: {e}")),
+                ..Default::default()
             };
         }
     };
@@ -305,6 +324,7 @@ fn run_script(sc: Rc<ScriptContext>, code: &str) -> ScriptOutput {
             return ScriptOutput {
                 console: vec![],
                 error: Some(format!("Failed to create JS context: {e}")),
+                ..Default::default()
             };
         }
     };
@@ -388,6 +408,33 @@ fn run_script(sc: Rc<ScriptContext>, code: &str) -> ScriptOutput {
             // client.test and client.assert intentionally excluded until implemented
 
             c.globals().set("client", client)?;
+        }
+
+        // --- env (selected environment; set is saved to the env file by the host) ---
+        {
+            let env = rquickjs::Object::new(c.clone())?;
+            let vars_obj = rquickjs::Object::new(c.clone())?;
+
+            let sc_evg = sc.clone();
+            vars_obj.set(
+                "get",
+                rquickjs::Function::new(c.clone(), move |key: String| -> Option<String> {
+                    sc_evg.env_vars.borrow().get(&key).map(|s| s.to_string())
+                })?,
+            )?;
+
+            let sc_evs = sc.clone();
+            vars_obj.set(
+                "set",
+                rquickjs::Function::new(c.clone(), move |key: String, value: rquickjs::Value| {
+                    let value = js_value_to_string(value);
+                    sc_evs.env_vars.borrow_mut().set(key.clone(), value.clone());
+                    sc_evs.env_writes.borrow_mut().push((key, value));
+                })?,
+            )?;
+
+            env.set("vars", vars_obj)?;
+            c.globals().set("env", env)?;
         }
 
         // --- req ---
@@ -706,6 +753,7 @@ fn run_script(sc: Rc<ScriptContext>, code: &str) -> ScriptOutput {
     ScriptOutput {
         console: logs,
         error,
+        env_writes: sc.env_writes.borrow().clone(),
     }
 }
 
@@ -1103,6 +1151,76 @@ mod tests {
     }
 
     #[test]
+    fn test_env_vars_get_set() {
+        let mut client = VarStore::new();
+        let mut req = VarStore::new();
+        let mut env_vars = VarStore::new();
+        env_vars.set("host".into(), "dev".into());
+        let resp_headers = HashMap::from([("content-type".to_string(), "application/json".to_string())]);
+        let out = run_post_script_with(
+            r#"
+                console.log(env.vars.get("host") + " " + env.vars.get("token"));
+                env.vars.set("token", res.body.token);
+                env.vars.set("n", 7);
+                console.log(env.vars.get("token"));
+            "#,
+            &mut client,
+            &mut req,
+            &[],
+            "https://example.com",
+            "GET",
+            &HashMap::new(),
+            None,
+            200,
+            r#"{"token": "t-1"}"#,
+            &resp_headers,
+            100,
+            0,
+            0,
+            ScriptExtras { env_vars, ..Default::default() },
+        );
+        assert_eq!(out.error, None);
+        assert_eq!(out.console, vec!["dev undefined", "t-1"]);
+        assert_eq!(
+            out.env_writes,
+            vec![("token".to_string(), "t-1".to_string()), ("n".to_string(), "7".to_string())]
+        );
+    }
+
+    #[test]
+    fn test_interpolate_sees_env_vars_set() {
+        let mut client = VarStore::new();
+        let mut req = VarStore::new();
+        let mut env_vars = VarStore::new();
+        env_vars.set("host".into(), "old".into());
+        let mut file = VarStore::new();
+        file.set("pinned".into(), "file".into());
+        let mut folder = VarStore::new();
+        folder.set("token".into(), "folder".into());
+        // request @var, file @var, env, folder (ExecutionContext::static_scopes order)
+        let scopes = [VarStore::new(), file, env_vars.clone(), folder];
+        let (out, _) = run_pre_script_with(
+            r#"
+                env.vars.set("host", "new");
+                env.vars.set("token", "env");
+                env.vars.set("pinned", "env");
+                console.log(beep.interpolate("{{host}} {{token}} {{pinned}}"));
+                console.log(req.getUrl());
+            "#,
+            &mut client,
+            &mut req,
+            &scopes,
+            "https://{{host}}/x",
+            "GET",
+            &HashMap::new(),
+            None,
+            ScriptExtras { env_vars, ..Default::default() },
+        );
+        assert_eq!(out.error, None);
+        assert_eq!(out.console, vec!["new env file", "https://new/x"]);
+    }
+
+    #[test]
     fn test_client_vars_persist() {
         let mut client = VarStore::new();
         let mut req1 = VarStore::new();
@@ -1318,7 +1436,7 @@ mod tests {
             1,
             0,
             0,
-            ScriptExtras { env: EnvGuard::allow_all(), sent: Some(sent) },
+            ScriptExtras { env: EnvGuard::allow_all(), sent: Some(sent), ..Default::default() },
         );
         assert_eq!(out.console, vec!["https://x.io/a?q=1", "42", "{{host}}/a", "undefined"]);
     }
@@ -1337,7 +1455,7 @@ mod tests {
             "GET",
             &HashMap::new(),
             None,
-            ScriptExtras { env: guard.clone(), sent: None },
+            ScriptExtras { env: guard.clone(), sent: None, ..Default::default() },
         );
         assert_eq!(out.console, vec!["[]"]);
         assert_eq!(guard.denied(), vec!["PATH"]);

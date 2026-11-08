@@ -198,9 +198,9 @@
             />
         {/if}
         {#if bodyMode.startsWith("raw/") && (bodyType === "json" || bodyType === "html" || bodyType === "xml")}
-            <button class="btn btn-xs btn-ghost text-accent"
+            <button class="btn btn-xs btn-ghost text-accent tooltip tooltip-end"
                 onclick={async () => { const beautified = await onBeautify(); onRawBodyChange(beautified); }}
-                title={bodyType === "json" ? "Beautify JSON" : bodyType === "html" ? "Beautify HTML" : "Beautify XML"}>
+                data-tip={bodyType === "json" ? "Beautify JSON" : bodyType === "html" ? "Beautify HTML" : "Beautify XML"}>
                 <BracesIcon class="h-3.5 w-3.5" />Beautify
             </button>
         {/if}

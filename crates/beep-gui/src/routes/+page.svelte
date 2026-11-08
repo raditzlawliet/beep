@@ -1,7 +1,7 @@
 <script lang="ts">
     import type { ParsedRequest, ParsedFileVariable, Tab, ProjectNode, HistoryEntrySummary } from "$lib/types";
     import { emptyParsedRequest, isHttpFile } from "$lib/types";
-    import { request, history, app, project, httpFile } from "$lib/app-state.svelte";
+    import { request, history, app, project, httpFile, environment } from "$lib/app-state.svelte";
     import { parsedRequestToContent } from "$lib/http-file-utils";
     import { invoke } from "@tauri-apps/api/core";
     import { open, save, message } from "@tauri-apps/plugin-dialog";
@@ -22,7 +22,9 @@
     import MainEditorToolbar from "$lib/components/MainEditorToolbar.svelte";
     import TabSwitcherPopup from "$lib/components/TabSwitcherPopup.svelte";
     import GoToLinePopup from "$lib/components/GoToLinePopup.svelte";
+    import PromptVarsDialog from "$lib/components/modals/PromptVarsDialog.svelte";
     import { registerHotkeys, setTabSwitcherToggle } from "$lib/hotkeys.svelte";
+    import { beepJsonKind } from "$lib/vars/beep-files";
 
     // local UI state
     let sidebarOpen = $state(true);
@@ -705,6 +707,7 @@
         _appInitialized = true;
         // Default: empty request tab + project sidebar open
         handleNewUntitled();
+        environment.load().catch((e) => console.error("load env", e));
     });
 
     $effect(() => {
@@ -813,6 +816,8 @@
             ? activeTab.filePath.replace(/[/\\][^/\\]*$/, "")
             : project.path
     );
+    // Env lookup dir: a `.beep` file tab looks up from the folder that owns `.beep`.
+    let envDir = $derived(basePath?.replace(/[/\\]\.beep$/, "") ?? project.path);
     let hasActiveFileTab = $derived(activeTab?.type === "file");
 
     $effect(() => {
@@ -941,17 +946,25 @@
                             : activeTab.label)
                         : activeTab.label}
                     tabType="file"
+                    hasFileMode={!!activeTab.filePath && beepJsonKind(activeTab.filePath) !== null}
                     requests={[]}
                     activeRequestIdx={0}
-                    viewMode="code"
+                    viewMode={activeTab.filePath && beepJsonKind(activeTab.filePath) ? (activeTab.beepView ?? "file") : "code"}
                     onSelectRequest={() => {}}
-                    onSetMode={() => {}}
+                    onSetMode={(m) => {
+                        if (activeTab && (m === "code" || m === "file")) activeTab.beepView = m;
+                    }}
                     onSend={() => {}}
                 />
                 <div class="flex-1 min-h-0 overflow-hidden">
                     <FileViewer
                         fileName={activeTab.label}
+                        filePath={activeTab.filePath}
                         content={activeTab.content ?? ""}
+                        beepView={activeTab.beepView}
+                        onBeepViewChange={(v) => {
+                            if (activeTab) activeTab.beepView = v;
+                        }}
                         language={activeTab.language ?? "text"}
                         languageManual={activeTab.languageManual}
                         onLanguageDetected={(lang) => {
@@ -983,6 +996,10 @@
         response={activeTab?.lastResult?.response ?? request.response}
         loading={sending}
         error={reqError}
+        showEnv={project.path !== null}
+        envDir={envDir}
+        onOpenEnvFile={(path) =>
+            handleFileDblClick({ name: path.split(/[/\\]/).pop() ?? path, path, is_dir: false })}
         language={activeTab?.type === "file"
             ? (activeTab.language ?? "text")
             : activeTab?.type === "http-file" && activeTab.viewMode === "code"
@@ -1005,6 +1022,7 @@
     />
 
     <GoToLinePopup />
+    <PromptVarsDialog />
 </div>
 
 <svelte:window

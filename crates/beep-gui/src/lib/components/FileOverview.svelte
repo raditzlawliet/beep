@@ -94,9 +94,10 @@
                             <span class="truncate flex-1 font-mono">{req.url || "(no URL)"}</span>
                             <span class="text-xs opacity-50 truncate max-w-32">{req.title || ""}</span>
                             <button
-                                class="btn btn-ghost btn-xs"
+                                class="btn btn-ghost btn-xs tooltip tooltip-end"
                                 onclick={() => onNavigateToRequest(i)}
-                                title="Edit request"
+                                data-tip="Edit request"
+                                aria-label="Edit request"
                             >
                                 <ArrowUpRightIcon class="h-3.5 w-3.5" />
                             </button>

@@ -83,12 +83,21 @@ export interface ParsedRequest {
   http_version: string | null;
   /** Request-level `@key = value` declarations (between `###` and the request line). */
   variables: ParsedFileVariable[];
+  /** Request-level `// @prompt name [description]` lines, asked at send. */
+  prompts: ParsedPrompt[];
   //
   block_region: ParsedRegion;
   request_line_region: ParsedRegion;
   query_region: ParsedRegion;
   headers_region: ParsedRegion;
   body_region: ParsedRegion;
+}
+
+export interface ParsedPrompt {
+  name: string;
+  description: string | null;
+  /** `// @prompt:secret`: masked input, never prefilled. */
+  secret: boolean;
 }
 
 export type BodyKind =
@@ -178,13 +187,13 @@ export interface AppConstants {
 
 // --- Variable insight (matches Rust context::VarSource, DynamicVarInfo) ---
 
-export type VarScope = "client" | "request" | "file" | "folder";
+export type VarScope = "client" | "request" | "file" | "env" | "folder";
 
 export interface VarSource {
   key: string;
   scope: VarScope;
   value: string;
-  /** Folder vars file path. */
+  /** Folder vars / env file path. */
   origin: string | null;
 }
 
@@ -231,6 +240,14 @@ export interface Tab {
   // file tab: editor language (undefined = Plain Text) and whether the user picked it
   language?: EditorLanguage;
   languageManual?: boolean;
+  // `.beep` env/vars JSON file tab: "file" = form (default), "code" = JSON text
+  beepView?: "code" | "file";
+}
+
+/** Env picker entry (matches Rust EnvInfo): name null = Default; files in load order, empty = not created. */
+export interface EnvInfo {
+  name: string | null;
+  files: string[];
 }
 
 // --- Helpers ---
@@ -253,6 +270,7 @@ export function emptyParsedRequest(): ParsedRequest {
     post_script_external: false,
     http_version: null,
     variables: [],
+    prompts: [],
 
     //
     block_region: { start: 0, end: 0 },

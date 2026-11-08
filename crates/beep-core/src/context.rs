@@ -75,14 +75,20 @@ impl VarStore {
 
 /// Shared state for the entire execution pipeline.
 pub struct ExecutionContext {
-    /// Script-set request scope (`req.vars`). Cleared per-request.
+    /// Script-set request scope (`req.vars`). Reset to `prompt_vars` per-request.
     pub request_vars: VarStore,
+    /// `// @prompt` values typed by the user for this send; seed `req.vars`.
+    pub prompt_vars: VarStore,
     /// Script-set session scope (`client.vars`). Owner keeps it alive across requests.
     pub client_vars: VarStore,
     /// Static `@var` declared inside the request block.
     pub request_static_vars: VarStore,
     /// File-level `@var` declarations.
     pub file_vars: Vec<ParsedFileVariable>,
+    /// Selected environment (`.beep/env[.<name>].json` cascade, already merged).
+    pub env_vars: VarStore,
+    /// `env.vars.set` calls made by this send's scripts; the host saves them to disk.
+    pub env_writes: Vec<(String, String)>,
     /// `.beep/vars.json` folder cascade (already merged, deepest wins).
     pub folder_vars: VarStore,
     /// Directory of the source .http file, for resolving relative multipart file paths.
@@ -97,9 +103,12 @@ impl ExecutionContext {
     pub fn new(history: Arc<Mutex<RequestHistory>>) -> Self {
         Self {
             request_vars: VarStore::new(),
+            prompt_vars: VarStore::new(),
             client_vars: VarStore::new(),
             request_static_vars: VarStore::new(),
             file_vars: Vec::new(),
+            env_vars: VarStore::new(),
+            env_writes: Vec::new(),
             folder_vars: VarStore::new(),
             source_file_dir: None,
             env: EnvGuard::allow_all(),
@@ -107,19 +116,31 @@ impl ExecutionContext {
         }
     }
 
-    /// Clear request-scoped variables (called before each request).
+    /// Reset request-scoped variables to the prompt values (called before each request).
+    /// Index of the env scope in `static_scopes()`.
+    pub const ENV_SCOPE_SLOT: usize = 2;
+
     pub fn clear_request_vars(&mut self) {
-        self.request_vars.clear();
+        self.request_vars = self.prompt_vars.clone();
     }
 
     /// Static scopes below the script scopes, in precedence order:
-    /// request `@var` > file `@var` > folder vars.
+    /// request `@var` > file `@var` > env (`ENV_SCOPE_SLOT`) > folder vars.
     pub fn static_scopes(&self) -> Vec<VarStore> {
         vec![
             self.request_static_vars.clone(),
             VarStore::from_file_vars(&self.file_vars),
+            self.env_vars.clone(),
             self.folder_vars.clone(),
         ]
+    }
+
+    /// Apply script `env.vars.set` calls: visible to the rest of the send, queued for saving.
+    pub fn apply_env_writes(&mut self, writes: Vec<(String, String)>) {
+        for (k, v) in writes {
+            self.env_vars.set(k.clone(), v.clone());
+            self.env_writes.push((k, v));
+        }
     }
 
     /// Resolve `{{variable}}` placeholders in `input`.
@@ -129,7 +150,8 @@ impl ExecutionContext {
     /// 2. `client_vars`         - client.vars (script, session)
     /// 3. `request_static_vars` - request `@var`
     /// 4. `file_vars`           - file `@var`
-    /// 5. `folder_vars`         - .beep/vars.json cascade
+    /// 5. `env_vars`            - selected environment
+    /// 6. `folder_vars`         - .beep/vars.json cascade
     pub fn resolve(&self, input: &str) -> String {
         if !input.contains("{{") {
             return input.to_string();
@@ -142,6 +164,7 @@ impl ExecutionContext {
                 &self.client_vars,
                 &self.request_static_vars,
                 &file,
+                &self.env_vars,
                 &self.folder_vars,
             ],
             Some(&self.env),
@@ -160,6 +183,7 @@ pub enum VarScope {
     Client,
     Request,
     File,
+    Env,
     Folder,
 }
 
@@ -177,6 +201,7 @@ pub fn collect_var_sources(
     client: &VarStore,
     request: &[ParsedFileVariable],
     file: &[ParsedFileVariable],
+    env: &[VarSource],
     folder: &[VarSource],
 ) -> Vec<VarSource> {
     let mut out = Vec::new();
@@ -188,6 +213,7 @@ pub fn collect_var_sources(
             out.push(VarSource { key, scope, value, origin: None });
         }
     }
+    out.extend(env.iter().rev().cloned());
     out.extend(folder.iter().rev().cloned());
     out
 }
@@ -316,6 +342,19 @@ mod tests {
         assert_eq!(result, "https://api.example.com/users");
     }
 
+    #[test]
+    fn test_prompt_vars_seed_request_vars() {
+        let history = Arc::new(Mutex::new(RequestHistory::new()));
+        let mut ctx = ExecutionContext::new(history);
+        ctx.prompt_vars = store(&[("user", "typed")]);
+        ctx.client_vars = store(&[("user", "client")]);
+        ctx.request_vars = store(&[("stale", "x")]);
+
+        ctx.clear_request_vars();
+        assert_eq!(ctx.request_vars.get("stale"), None);
+        assert_eq!(ctx.resolve("{{user}}"), "typed");
+    }
+
     fn store(pairs: &[(&str, &str)]) -> VarStore {
         let mut s = VarStore::new();
         for (k, v) in pairs {
@@ -328,7 +367,8 @@ mod tests {
     fn test_resolve_all_scopes_precedence() {
         let history = Arc::new(Mutex::new(RequestHistory::new()));
         let mut ctx = ExecutionContext::new(history);
-        ctx.folder_vars = store(&[("a", "folder"), ("b", "folder"), ("c", "folder"), ("d", "folder"), ("e", "folder")]);
+        ctx.folder_vars = store(&[("a", "folder"), ("b", "folder"), ("c", "folder"), ("d", "folder"), ("e", "folder"), ("f", "folder")]);
+        ctx.env_vars = store(&[("a", "env"), ("b", "env"), ("c", "env"), ("d", "env"), ("e", "env")]);
         ctx.file_vars = vec![
             ParsedFileVariable { key: "a".into(), value: "file".into() },
             ParsedFileVariable { key: "b".into(), value: "file".into() },
@@ -340,8 +380,8 @@ mod tests {
         ctx.request_vars = store(&[("a", "req")]);
 
         assert_eq!(
-            ctx.resolve("{{a}} {{b}} {{c}} {{d}} {{e}}"),
-            "req client req-static file folder"
+            ctx.resolve("{{a}} {{b}} {{c}} {{d}} {{e}} {{f}}"),
+            "req client req-static file env folder"
         );
     }
 
@@ -357,7 +397,7 @@ mod tests {
             VarSource { key: "a".into(), scope: VarScope::Folder, value: "root".into(), origin: Some("r".into()) },
             VarSource { key: "a".into(), scope: VarScope::Folder, value: "deep".into(), origin: Some("d".into()) },
         ];
-        let got: Vec<String> = collect_var_sources(&client, &req, &file, &folder)
+        let got: Vec<String> = collect_var_sources(&client, &req, &file, &[], &folder)
             .into_iter()
             .map(|v| v.value)
             .collect();
