@@ -4,8 +4,8 @@ import { invoke } from "@tauri-apps/api/core";
 import type { DynamicVarInfo, ParsedFileVariable, ParsedRequest, VarSource } from "$lib/types";
 
 /** One-char scope icon. S = req.vars (script), C = client.vars, R = request @var,
- *  F = file @var, D = folder .beep json, $ = dynamic. */
-export type VarIcon = "S" | "C" | "R" | "F" | "D" | "$";
+ *  F = file @var, E = environment, D = folder .beep json, $ = dynamic. */
+export type VarIcon = "S" | "C" | "R" | "F" | "E" | "D" | "$";
 
 export interface VarEntry {
   key: string;
@@ -33,6 +33,7 @@ export const SCOPE_LABEL: Record<VarIcon, string> = {
   C: "client.vars (session)",
   R: "request @var",
   F: "file @var",
+  E: "environment",
   D: "folder vars",
   $: "dynamic",
 };
@@ -47,12 +48,15 @@ export interface VarContext {
   postScript: string | null;
   /** Every inline script in the file (client.vars may be set by any request). */
   fileScripts: string[];
+  /** Active request `// @prompt` names (seed req.vars at send). */
+  prompts: string[];
 }
 
 const ICON_OF: Record<VarSource["scope"], VarIcon> = {
   client: "C",
   request: "R",
   file: "F",
+  env: "E",
   folder: "D",
 };
 
@@ -91,9 +95,12 @@ function buildIndex(): Map<string, VarEntry[]> {
     else map.set(e.key, [e]);
   };
 
-  // Highest precedence first: req.vars > client.vars > request > file > folder.
+  // Highest precedence first: req.vars (script, then @prompt) > client.vars > request > file > folder.
   for (const key of new Set(scriptKeys(_ctx?.preScript ?? null, "req"))) {
     push({ key, icon: "S", value: null, note: "set by pre-script at send" });
+  }
+  for (const key of new Set(_ctx?.prompts ?? [])) {
+    push({ key, icon: "S", value: null, note: "prompted at send" });
   }
   const clientSources = _sources.filter((s) => s.scope === "client");
   for (const s of clientSources) push({ key: s.key, icon: "C", value: s.value, note: null });
@@ -128,7 +135,10 @@ let _actions: VarActions = {};
 async function writeFolderVar(path: string, key: string, value: string) {
   const text = await invoke<string>("read_file_content", { path });
   const obj = JSON.parse(text) as Record<string, unknown>;
-  const old = obj[key];
+  // long form `{ "value": ... }`: change only `value`
+  const entry = obj[key];
+  const long = typeof entry === "object" && entry !== null && !Array.isArray(entry);
+  const old = long ? (entry as Record<string, unknown>).value : entry;
   let next: unknown = value;
   if (typeof old === "number" || typeof old === "boolean") {
     try {
@@ -138,7 +148,8 @@ async function writeFolderVar(path: string, key: string, value: string) {
       // not a number/bool anymore -> string
     }
   }
-  obj[key] = next;
+  if (long) (entry as Record<string, unknown>).value = next;
+  else obj[key] = next;
   const eol = text.includes("\r\n") ? "\r\n" : "\n";
   await invoke("save_file_content", { path, content: JSON.stringify(obj, null, 2).replace(/\n/g, eol) + eol });
 }
@@ -269,6 +280,7 @@ export const varIndex = {
     switch (entry.icon) {
       case "R": return !!_actions.openRequestVars;
       case "F": return !!_actions.openFileVars;
+      case "E":
       case "D": return !!_actions.openFile && !!entry.origin;
       default: return false;
     }
@@ -278,6 +290,7 @@ export const varIndex = {
     switch (entry.icon) {
       case "R": _actions.openRequestVars?.(); break;
       case "F": _actions.openFileVars?.(); break;
+      case "E":
       case "D": if (entry.origin) _actions.openFile?.(entry.origin); break;
     }
   },
@@ -288,6 +301,7 @@ export const varIndex = {
       case "C": return entry.value !== null;
       case "R": return !!_actions.editRequestVar;
       case "F": return !!_actions.editFileVar;
+      case "E":
       case "D": return !!entry.origin;
       default: return false;
     }
@@ -299,6 +313,14 @@ export const varIndex = {
       case "C": await invoke("set_client_var", { key: entry.key, value }); break;
       case "R": await _actions.editRequestVar?.(entry.key, value); break;
       case "F": await _actions.editFileVar?.(entry.key, value); break;
+      case "E":
+        await invoke("set_env_var", {
+          key: entry.key,
+          value,
+          sourceFileDir: _ctx?.sourceFileDir ?? null,
+          projectRoot: _ctx?.projectRoot ?? null,
+        });
+        break;
       case "D": if (entry.origin) await writeFolderVar(entry.origin, entry.key, value); break;
       default: return;
     }

@@ -24,6 +24,17 @@ pub struct ParsedFileVariable {
     pub value: String,
 }
 
+/// A `// @prompt[:secret] name [description]` line in a request block: asked by the GUI at send.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ParsedPrompt {
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    /// `@prompt:secret`: masked input, never prefilled.
+    #[serde(default)]
+    pub secret: bool,
+}
+
 /// A parsed query parameter.
 ///
 /// `is_inline` tracks placement origin: `true` when parsed from the URL (`?key=value`),
@@ -149,6 +160,9 @@ pub struct ParsedRequest {
     /// Request-level `@key = value` declarations (between `###` and the request line).
     #[serde(default)]
     pub variables: Vec<ParsedFileVariable>,
+    /// Request-level `// @prompt name [description]` lines (asked at send).
+    #[serde(default)]
+    pub prompts: Vec<ParsedPrompt>,
 
     // -----------------------------------------------------------------------
     // Region offsets. Absolute byte positions in the source file.

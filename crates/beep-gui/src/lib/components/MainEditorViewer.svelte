@@ -356,6 +356,7 @@ async function handleVariablesUpdate(vars: ParsedFileVariable[]) {
                 inlineScript(r.pre_script, r.pre_script_external),
                 inlineScript(r.post_script, r.post_script_external),
             ]).filter((c): c is string => !!c),
+            prompts: active?.prompts?.map((p) => p.name) ?? [],
         });
     });
 

@@ -112,9 +112,9 @@
                 </td>
                 <td class="text-center">
                     {#if row.isInline}
-                        <span class="text-[10px] opacity-50" title="Inline in URL">URL</span>
+                        <span class="text-[10px] opacity-50 tooltip tooltip-top" data-tip="Inline in URL">URL</span>
                     {:else}
-                        <span class="text-[10px] opacity-50" title="Multiline below URL">ML</span>
+                        <span class="text-[10px] opacity-50 tooltip tooltip-top" data-tip="Multiline below URL">ML</span>
                     {/if}
                 </td>
                 <td>

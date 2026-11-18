@@ -279,7 +279,14 @@ pub fn serialize_request_block(req: &ParsedRequest) -> String {
         }
     }
 
-    // Request variables, right before the request line
+    // Prompts, then request variables, right before the request line
+    for p in &req.prompts {
+        let kw = if p.secret { "@prompt:secret" } else { "@prompt" };
+        match &p.description {
+            Some(d) => out.push_str(&format!("// {kw} {} {d}\n", p.name)),
+            None => out.push_str(&format!("// {kw} {}\n", p.name)),
+        }
+    }
     for v in &req.variables {
         out.push_str(&format!("@{} = {}\n", v.key, v.value));
     }

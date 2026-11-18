@@ -23,7 +23,7 @@ pub fn compile(
 }
 
 /// Compile using `ExecutionContext` for variable resolution with the full cascade
-/// (req.vars > client.vars > request @var > file @var > folder vars).
+/// (req.vars > client.vars > request @var > file @var > env > folder vars).
 pub fn compile_with_ctx(
     parsed: &ParsedRequest,
     ctx: &ExecutionContext,
@@ -35,6 +35,7 @@ pub fn compile_with_ctx(
         &ctx.client_vars,
         &ctx.request_static_vars,
         &file,
+        &ctx.env_vars,
         &ctx.folder_vars,
     ];
     compile_impl(
@@ -53,7 +54,7 @@ pub fn find_process_env(parsed: &ParsedRequest, ctx: &ExecutionContext) -> Vec<S
     let probe = EnvGuard::allow_all();
     let request = VarStore::from_file_vars(&parsed.variables);
     let file = VarStore::from_file_vars(&ctx.file_vars);
-    let scopes = [&ctx.client_vars, &request, &file, &ctx.folder_vars];
+    let scopes = [&ctx.prompt_vars, &ctx.client_vars, &request, &file, &ctx.env_vars, &ctx.folder_vars];
     // Only names are needed; method errors cannot hide env use, so the result is ignored.
     let _ = compile_impl(parsed, &|s| resolve_template_with(s, &scopes, Some(&probe)), None);
 

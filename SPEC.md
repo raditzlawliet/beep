@@ -54,6 +54,19 @@ Content-Type: application/json
 }
 ```
 
+### 2.1 Directives and Modifiers
+
+A comment that starts with `@<keyword>` is a **directive** (e.g. `// @body`, `// @prompt`, `//- @headerAuto`). Each directive is only read in its own place (see its section); anywhere else it is a plain comment.
+
+```
+// @<directive>[:<modifier>] <args...>
+```
+
+- A modifier is one word joined to the keyword with `:`, no spaces (e.g. `// @prompt:secret token`).
+- Each directive lists the modifiers it accepts. An unknown modifier makes the whole line a plain comment, so a typo never half-applies.
+- Modifiers apply to `//` directives only, not to `@key = value` variable lines (there the word after `@` is the variable name).
+- Current modifiers: `@prompt:secret` (8.8).
+
 ---
 
 ## 3. Request Separator
@@ -424,16 +437,36 @@ In the example above, `page` and `limit` are sent. `sort` and `filter` are disab
 Beep resolves variables at request time by walking a precedence chain; highest scope wins.
 
 ```md
-1. req.vars - script-set, current request only (highest)
+1. req.vars - script-set, current request only (highest); `// @prompt` values seed it (8.8)
 2. client.vars - script-set, session (in-memory)
 3. @var in request block - static, current request only
 4. @var in file preamble - static, file-level
-5. .beep/vars.json - folder/project cascade, deepest folder wins (lowest)
+5. environment - selected .beep/env[.<name>].json (8.9)
+6. .beep/vars.json - collection, folder/project cascade, deepest folder wins (lowest)
 ```
 
 Dynamic variables (`{{$guid}}` etc., see 8.7) are not part of the chain; they are generated on use.
 
-Script-set scopes (1, 2) sit above static scopes (3, 4, 5), so a script can always override a value declared in a file.
+Script-set scopes (1, 2) sit above static scopes (3-6), so a script can always override a value declared in a file.
+
+Compared with Postman / Bruno: `req.vars` / `client.vars` = runtime vars, request `@var` = request vars, file `@var` = folder vars, environment = environment, `.beep/vars.json` = collection vars.
+
+#### Who can write what
+
+Rule: values that change at runtime are written by scripts; values that are authored (`@var`, collection JSON) are written by people only.
+
+| Scope | Script | GUI / by hand | Saved | Lifetime |
+| --- | --- | --- | --- | --- |
+| `req.vars` (incl. `@prompt`) | `req.vars.set` | prompt dialog | no | one send |
+| `client.vars` | `client.vars.set` / `reset` | hover popup, Clear | no | app session |
+| request `@var` | read-only | code view, Vars tab, hover popup | `.http` file, on tab save | file |
+| file `@var` | read-only | code view, file view, hover popup | `.http` file, on tab save | file |
+| environment | `env.vars.set` | env file (table / JSON), hover popup | env file, immediately (script, popup) or on tab save | file |
+| `.beep/vars.json` | read-only | vars file (table / JSON), hover popup | vars file, immediately (popup) or on tab save | file |
+
+- Scripts never change `.http` files or collection JSON: they are shared, usually committed, and may be open in an editor.
+- A script value only shadows a lower scope with the same key; the lower scope's file is not touched.
+- Values produced at runtime (login token, created ids): `env.vars.set` to keep them across restarts, `client.vars.set` for the session only.
 
 ---
 
@@ -529,9 +562,9 @@ Static `@var` values (8.3, 8.4) are read-only at runtime; scripts cannot overwri
 - Inline comment: ` //` (whitespace before `//`) starts a comment, so `https://` inside a value is safe.
 - Later declaration of the same key in the same scope wins.
 
-### 8.5 `.beep/vars.json` - Folder / Project Scope
+### 8.5 `.beep/vars.json` - Collection Scope (folder / project)
 
-- **Set via:** JSON files inside a `.beep/` folder: `vars.json` and `*_vars.json` (e.g. `secret_vars.json`)
+- **Set via:** JSON files inside a `.beep/` folder: `vars.json` and `vars.<part>.json` (e.g. `vars.secret.json`)
 - **Lives:** read fresh on every request, so edits apply immediately
 - **Stored:** in the file itself
 
@@ -560,12 +593,12 @@ If `host` is defined at both `collections/.beep/` and `my-api/.beep/`, the `coll
 
 #### Multiple files at same level
 
-All `*_vars.json` files in one `.beep/` folder are loaded alphabetically, then `vars.json` last (canonical override file). Later files win.
+All `vars.<part>.json` files in one `.beep/` folder are loaded alphabetically, then `vars.json` last (canonical override file). Later files win. Other files (including `env*.json`, see 8.9) are not collection vars.
 
 ```
 .beep/
-├── a_vars.json        - loaded 1st
-├── secret_vars.json   - loaded 2nd (good candidate for .gitignore)
+├── vars.auth.json     - loaded 1st
+├── vars.secret.json   - loaded 2nd (good candidate for .gitignore)
 └── vars.json          - loaded last, wins on conflict
 ```
 
@@ -583,7 +616,19 @@ The root must be a JSON object.
 ```
 
 - String values are used as-is. Numbers and booleans are converted to text (`30`, `true`).
-- `null`, objects and arrays are ignored.
+- An entry may also be an object (long form), for metadata:
+
+  ```json
+  {
+    "host": "https://dev.example.com",
+    "token": { "value": "abc", "description": "set by Login post-script" },
+    "debug": { "value": "1", "enabled": false }
+  }
+  ```
+
+  `value` (string / number / bool) is the value. `description` is free text. `enabled: false` = not loaded. Other fields are kept when Beep rewrites the file (reserved for later, e.g. `secret`). Short and long form can be mixed; the GUI form writes the long form only when a row is disabled, has a description or has extra fields.
+- `null`, arrays and objects without a scalar `value` are ignored.
+- Writes (`env.vars.set`, hover popup) on a long-form entry change only `value`.
 - Values may reference other variables, e.g. `"baseUrl": "{{host}}/{{version}}"`.
 - Invalid JSON fails the request with an error naming the file.
 
@@ -641,6 +686,75 @@ Content-Type: application/json
     "priority": "{{$randomInt 1 10}}"
 }
 ```
+
+### 8.8 `// @prompt` - Prompt Variables
+
+- **Set via:** `// @prompt[:secret] <name> [description]` lines inside a request block, after `###` and before the request line
+- **Lives:** current request only, asked again on every send
+- **Stored:** memory (typed by the user)
+
+```http
+### Login
+// @prompt username
+// @prompt:secret password Your account password
+POST {{host}}/login HTTP/1.1
+Content-Type: application/json
+
+{"user": "{{username}}", "pass": "{{password}}"}
+```
+
+- Before every send the GUI shows one dialog with a field per prompt (name, description as hint). **Cancel** sends nothing.
+- Values seed `req.vars` before the pre-request script, so they win over every static scope and `client.vars`, a script can read them with `req.vars.get("username")`, and `req.vars.set` overrides them.
+- Name is the first word after `@prompt`; the rest of the line is the description. A repeated name is asked once.
+- `:secret` masks the input (with a show/hide toggle) and is never prefilled. The name alone never masks: `// @prompt password` is a plain text field.
+- Non-secret values are prefilled with the last value typed for that name in this app session (memory only).
+- `@prompt` accepts only the `:secret` modifier; any other modifier makes the line a plain comment (see 2.1).
+- Values are resolved like any variable (nested `{{...}}` works).
+- Request block only: a `// @prompt` line in the file preamble or among the headers is a plain comment.
+- CLI: not supported.
+
+### 8.9 Environment
+
+- **Set via:** `.beep/env.json` (environment "Default") and `.beep/env.<name>.json` (environment `<name>`), or a script `env.vars.set`
+- **Lives:** in the file; the selected environment is remembered per project
+- **Stored:** in the file itself (commit it or not, your choice)
+
+```
+my-api/
+├── .beep/
+│   ├── env.json          - "Default" (used when no other env is picked)
+│   ├── env.dev.json      - "dev"
+│   ├── env.prod.json     - "prod"
+│   └── vars.json         - collection, always loaded
+└── users.http
+```
+
+```http
+### Login
+POST {{host}}/auth/login HTTP/1.1
+Content-Type: application/json
+
+{"user": "john", "pass": "{{password}}"}
+
+> {%
+    env.vars.set("token", res.body.token);   // saved into the selected env file
+%}
+
+### Me - token from the selected environment
+GET {{host}}/me HTTP/1.1
+Authorization: Bearer {{token}}
+```
+
+- Exactly one environment is active: `Default` (`env.json`, may not exist) or one named environment (`env.<name>.json` only, it does not inherit `env.json`). Values shared by every environment belong in `vars.json`.
+- Select it with the environment picker at the right end of the GUI status bar (shown while a project is open), or "Use this environment" in an env file tab. The choice is remembered per project across restarts.
+- The picker lists `Default` (marked "not created" without `env.json`) and every named env, each with its files in load order (project root first, last wins). The edit button opens the first file, or creates `{}` at the project root. "New environment" creates `<project root>/.beep/env.<name>.json`.
+- GUI: `.beep` env and vars files open in **File** mode (form: enabled, key, value, description) with a **Code** mode toggle (same file text). The project tree marks the selected env files (every `.beep` level) with `active`.
+- Env name = text between `env.` and `.json` (e.g. `env.prod_eu.json` -> `prod_eu`).
+- Same folder cascade and JSON format as `.beep/vars.json` (8.5): project root -> `.http` file folder, deeper wins. Untitled requests read the project root only.
+- Precedence: below file `@var`, above `.beep/vars.json`.
+- `env.vars.set(key, value)` (pre or post script) updates the value for the rest of the send and saves it to disk: into the deepest env file of the selected environment that already has `key`, else into the farthest one (project root, or the `.http` file folder without a project), created if missing. Other keys and their order are kept; the saved value is a JSON string.
+- Saving never changes `vars.json` or any `@var`. An env value only shadows a `vars.json` value with the same key.
+- CLI: not supported yet.
 
 ---
 
@@ -731,6 +845,7 @@ Four globals are available (following Bruno conventions):
 | Global   | Available  | Description                                      |
 | -------- | ---------- | ------------------------------------------------ |
 | `client` | pre + post | Session-level API (vars)                         |
+| `env`    | pre + post | Selected environment (vars, saved to file)       |
 | `req`    | pre + post | Current request CRUD (read + mutate before send) |
 | `res`    | post only  | Response data. Throws if accessed in pre-script  |
 | `beep`   | pre + post | Utility namespace (interpolate)                  |
@@ -741,6 +856,13 @@ Four globals are available (following Bruno conventions):
 client.vars.set("key", value); // set session variable (cross-request, in-memory)
 client.vars.get("key"); // get session variable
 client.vars.reset("key"); // remove session variable
+```
+
+#### `env`
+
+```javascript
+env.vars.get("key"); // value from the selected environment, or undefined
+env.vars.set("key", value); // set + save into the selected env file (8.9)
 ```
 
 #### `req`
@@ -911,19 +1033,12 @@ Authorization: Bearer {{token}}
 
 | Feature                  | Status |
 | ------------------------ | ------ |
-| Environment [1]          | TBD    |
+| Environment: CLI `--env` | TBD    |
+| Secrets (keystore)       | TBD    |
 | cURL import              | TBD    |
 | Persistence variables    | TBD    |
 | Cookies                  | TBD    |
-| Prompt variables         | TBD    |
 | GraphQL `X-REQUEST-TYPE` | TBD    |
 | WebSocket                | TBD    |
 | gRPC                     | TBD    |
 | Test & Assert            | TBD    |
-
-[1] Environment (reserved design, not implemented):
-
-- Files: `.beep/env/<name>.json` (e.g. `dev.json`, `prod.json`) and `.beep/env/<name>.local.json` for secrets (gitignored, wins over `<name>.json`). Same folder cascade and format as `.beep/vars.json`.
-- Selected environment chosen in GUI (dropdown) or CLI (`--env dev`).
-- Precedence slot: below file `@var`, above `.beep/vars.json`:
-  `req.vars > client.vars > request @var > file @var > env (selected) > .beep/vars.json`

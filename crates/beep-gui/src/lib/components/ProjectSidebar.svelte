@@ -1,6 +1,9 @@
 <script lang="ts">
+    import ActiveDot from "$lib/components/ActiveDot.svelte";
     import type { ProjectNode } from "$lib/types";
     import { Folder, File, FolderOpen, Loader } from "@lucide/svelte";
+    import { environment } from "$lib/app-state.svelte";
+    import { isActiveEnvFile } from "$lib/vars/beep-files";
 
     interface Props {
         tree: ProjectNode[];
@@ -262,7 +265,7 @@
             aria-level={depth + 1}
             aria-expanded={isOpen}
             aria-selected={false}
-            class="flex items-center w-full text-left text-xs py-1 hover:bg-base-200/50 {isFocused ? 'ring-1 ring-inset ring-primary/50' : ''}"
+            class="group/active flex items-center w-full text-left text-xs py-1 hover:bg-base-200/50 {isFocused ? 'ring-1 ring-inset ring-primary/50' : ''}"
             style="padding-left: {padLeft}px"
             onclick={() => handleDirClick(node)}
         >
@@ -292,12 +295,15 @@
             role="treeitem"
             aria-level={depth + 1}
             aria-selected={isActive}
-            class="flex items-center w-full text-left text-xs py-1 hover:bg-base-200/50 {isActive ? 'bg-base-200' : ''} {isFocused ? 'ring-1 ring-inset ring-primary/50' : ''}"
+            class="group/active flex items-center w-full text-left text-xs py-1 hover:bg-base-200/50 {isActive ? 'bg-base-200' : ''} {isFocused ? 'ring-1 ring-inset ring-primary/50' : ''}"
             style="padding-left: {padLeft}px"
             onclick={() => handleFileClick(node)}
         >
             <File class="h-3.5 w-3.5 me-1.5 shrink-0 fill-base-content/40" />
             <span class="whitespace-nowrap">{node.name}</span>
+            {#if isActiveEnvFile(node.path, environment.selected)}
+                <ActiveDot class="ms-1.5" />
+            {/if}
         </button>
         </div>
     {/if}

@@ -12,6 +12,8 @@ pub struct AppState {
     pub client_vars: Mutex<VarStore>,
     /// `$processEnv` names the user allowed this session.
     pub allowed_env: Mutex<HashSet<String>>,
+    /// Selected environment name (`None` = Default, `.beep/env.json`).
+    pub selected_env: Mutex<Option<String>>,
 }
 
 #[allow(dead_code)]
@@ -29,6 +31,13 @@ pub struct DynamicVarInfo {
     pub name: String,
     pub usage: String,
     pub description: String,
+}
+
+/// One environment for the picker: `name` None = Default; `files` in load order (empty = not created).
+#[derive(Debug, Clone, Serialize)]
+pub struct EnvInfo {
+    pub name: Option<String>,
+    pub files: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

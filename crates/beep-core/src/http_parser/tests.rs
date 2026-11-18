@@ -20,6 +20,7 @@ mod tests {
             post_script_external: false,
             http_version: None,
             variables: vec![],
+            prompts: vec![],
             block_region: Region::default(),
             request_line_region: Region::default(),
             query_region: Region::default(),
@@ -963,5 +964,67 @@ GET https://httpbingo.org/get?foo=bar&baz=qux HTTP/1.1
         updated.variables = vec![var("x", "2")];
         let result = apply_request_update(content, 0, &updated);
         assert_eq!(result, "### A\r\n@x = 2\r\nGET https://x.io HTTP/1.1\r\n");
+    }
+
+    fn prompt(name: &str, desc: Option<&str>) -> ParsedPrompt {
+        ParsedPrompt {
+            name: name.to_string(),
+            description: desc.map(str::to_string),
+            secret: false,
+        }
+    }
+
+    #[test]
+    fn test_parse_prompts() {
+        let content = "// @prompt notInPreamble\n\n### Login\n// @prompt username\n@x = 1\n//   @prompt  password   Your account password \n// @promptx no\n// @prompt username again\n// @prompt\nPOST https://x.io HTTP/1.1\n// @prompt header-area\n";
+        let r = &parse(content).requests[0];
+        assert_eq!(r.method, "POST");
+        assert_eq!(
+            r.prompts,
+            vec![prompt("username", None), prompt("password", Some("Your account password"))]
+        );
+        assert_eq!(r.variables, vec![var("x", "1")]);
+    }
+
+    #[test]
+    fn test_parse_prompt_secret_modifier() {
+        let content = "### A\n// @prompt:secret apiKey Your key\n// @prompt:secret pin\n// @prompt:bogus x\n// @prompt:secretx y\nGET https://x.io\n";
+        let r = &parse(content).requests[0];
+        let mut key = prompt("apiKey", Some("Your key"));
+        key.secret = true;
+        let mut pin = prompt("pin", None);
+        pin.secret = true;
+        assert_eq!(r.prompts, vec![key, pin]);
+        assert_eq!(parse(&serialize_request_block(r)).requests[0].prompts, r.prompts);
+        assert!(serialize_request_block(r).contains("// @prompt:secret apiKey Your key\n"));
+    }
+
+    #[test]
+    fn test_parse_prompts_crlf() {
+        let r = &parse("### A\r\n// @prompt otp One-time code\r\nGET https://x.io\r\n").requests[0];
+        assert_eq!(r.prompts, vec![prompt("otp", Some("One-time code"))]);
+        assert_eq!(r.url, "https://x.io");
+    }
+
+    #[test]
+    fn test_serialize_request_block_with_prompts() {
+        let mut req = make_empty_parsed();
+        req.method = "GET".into();
+        req.url = "https://x.io".into();
+        req.prompts = vec![prompt("user", None), prompt("pass", Some("Password"))];
+        req.variables = vec![var("id", "7")];
+        let text = serialize_request_block(&req);
+        assert!(text.starts_with("###\n// @prompt user\n// @prompt pass Password\n@id = 7\nGET"), "{text}");
+        assert_eq!(parse(&text).requests[0].prompts, req.prompts);
+    }
+
+    #[test]
+    fn test_surgical_update_keeps_prompts() {
+        let content = "### A\n// @prompt user\n@old = 1\nGET https://x.io HTTP/1.1\n";
+        let mut updated = parse(content).requests[0].clone();
+        updated.variables = vec![var("a", "1")];
+        updated.url = "https://y.io".into();
+        let result = apply_request_update(content, 0, &updated);
+        assert_eq!(result, "### A\n// @prompt user\n@a = 1\nGET https://y.io HTTP/1.1\n");
     }
 }

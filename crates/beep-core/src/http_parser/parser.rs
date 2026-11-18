@@ -126,6 +126,7 @@ fn parse_request_block(block: &str, base: usize) -> ParsedRequest {
     let mut pre_script: Option<String> = None;
     let mut pre_script_external = false;
     let mut variables: Vec<ParsedFileVariable> = Vec::new();
+    let mut prompts: Vec<ParsedPrompt> = Vec::new();
     let mut request_line_idx: Option<usize> = None;
 
     while i < lines.len() {
@@ -144,6 +145,11 @@ fn parse_request_block(block: &str, base: usize) -> ParsedRequest {
             }
             i += 1;
         } else if trimmed.is_empty() || trimmed.starts_with("//") {
+            if let Some(p) = parse_prompt_line(trimmed) {
+                if !prompts.iter().any(|q| q.name == p.name) {
+                    prompts.push(p);
+                }
+            }
             i += 1;
         } else {
             request_line_idx = Some(i);
@@ -399,6 +405,7 @@ fn parse_request_block(block: &str, base: usize) -> ParsedRequest {
         post_script_external,
         http_version,
         variables,
+        prompts,
         block_region: Region::new(base, block_end),
         request_line_region,
         query_region,
@@ -410,6 +417,30 @@ fn parse_request_block(block: &str, base: usize) -> ParsedRequest {
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
+
+/// Parse a `// @prompt[:secret] name [description]` line.
+/// An unknown modifier makes the line a plain comment (`None`).
+fn parse_prompt_line(trimmed: &str) -> Option<ParsedPrompt> {
+    let rest = trimmed.strip_prefix("//")?.trim_start().strip_prefix("@prompt")?;
+    let (secret, rest) = match rest.strip_prefix(":secret") {
+        Some(r) => (true, r),
+        None => (false, rest),
+    };
+    if !rest.starts_with([' ', '\t']) {
+        return None;
+    }
+    let rest = rest.trim();
+    let (name, desc) = rest.split_once([' ', '\t']).unwrap_or((rest, ""));
+    if name.is_empty() {
+        return None;
+    }
+    let desc = desc.trim();
+    Some(ParsedPrompt {
+        name: name.to_string(),
+        description: (!desc.is_empty()).then(|| desc.to_string()),
+        secret,
+    })
+}
 
 /// Parse a `@key = value` line. Strips a trailing ` //` comment (whitespace before
 /// `//`, so `https://` inside a value is safe). `None` when not a valid declaration.

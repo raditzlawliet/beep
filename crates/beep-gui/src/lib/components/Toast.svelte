@@ -63,10 +63,10 @@
             </div>
             <div class="flex gap-0.5">
                 <button
-                    class="btn btn-ghost btn-xs btn-square"
+                    class="btn btn-ghost btn-xs btn-square tooltip tooltip-end"
                     onclick={handleCopy}
                     aria-label="Copy message"
-                    title="Copy message"
+                    data-tip="Copy message"
                 >
                     {#if copied}
                         <CheckIcon class="h-3.5 w-3.5 text-success" />

@@ -29,8 +29,8 @@ pub use exec::scripts::{
 pub use executable::{ExecutableRequest, FormFieldType, ResolvedBody, ResolvedFormField};
 pub use history::{HistoryEntry, HistoryEntrySummary, RequestHistory};
 pub use http_parser::{
-    ParsedFileVariable, ParsedFormField, ParsedHeaderField, ParsedHttpFile, ParsedQueryField,
-    ParsedRequest, Region, append_request_block, apply_request_update, apply_variable_update,
+    ParsedFileVariable, ParsedFormField, ParsedHeaderField, ParsedHttpFile, ParsedPrompt,
+    ParsedQueryField, ParsedRequest, Region, append_request_block, apply_request_update, apply_variable_update,
     parse, serialize_file_variables, serialize_request_block,
 };
 pub use types::{Auth, HeaderField, HttpMethod, HttpVersion, QueryField};

@@ -29,11 +29,13 @@ Beep supports project folder panels to organize and manage your HTTP requests.
 
 Use `{{name}}` anywhere in URL, query, headers, auth and body.
 
-- **Scopes** - `req.vars` > `client.vars` > request `@var` > file `@var` > folder `.beep/vars.json` (See [Spec](./SPEC.md))
+- **Scopes** - `req.vars` > `client.vars` > request `@var` > file `@var` > environment > collection `.beep/vars.json` (See [Spec](./SPEC.md))
 - **Request-level variables** - `@key = value` lines per request, editable in the Vars tab
+- **Prompt variables** - `// @prompt name [description]` asks for values before each send, `// @prompt:secret` masks the input
 - **File-level variables** - `@key = value` at the top of the `.http` file
-- **Folder variables** - `.beep/vars.json` and `.beep/*_vars.json`, deeper folder wins
-- **Script variables** - `req.vars` / `client.vars` get/set from pre and post scripts
+- **Environments** - `.beep/env.json` (Default) and `.beep/env.<name>.json`, picked or created in the status bar and remembered per project, edited in a form (enabled, description) or as JSON, active env marked in the project tree; scripts save values with `env.vars.set` (e.g. a login token)
+- **Collection variables** - `.beep/vars.json` and `.beep/vars.<part>.json`, deeper folder wins
+- **Script variables** - `req.vars` / `client.vars` / `env.vars` get/set from pre and post scripts
 - **Dynamic variables** - `$uuid`, `$guid`, `$timestamp`, `$datetime`, `$randomInt`, `$processEnv` (asks before reading env)
 - **Editor insight** - Highlight, autocomplete, hover popup with resolved value, source scope, quick edit and jump, unknown variable warning
 
@@ -60,8 +62,6 @@ Features:
 - Request: Cookies
 - Request: Follow Redirects
 - Request: Test Scripts
-- Project: Environment
-- Project|Request: Prompt Variables
 - Project: Save Response
 - Project: Persistent History (saved per project)
 - Project|Request: Individual History or Timeline by Request

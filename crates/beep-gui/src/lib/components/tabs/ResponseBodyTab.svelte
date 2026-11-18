@@ -218,17 +218,19 @@
         {#if activeTab === "body"}
             <div class="flex items-center gap-0.5">
                 <button
-                    class="btn btn-xs btn-soft btn-square"
+                    class="btn btn-xs btn-soft btn-square tooltip tooltip-end"
                     class:btn-active={!wrapLines}
                     onclick={() => (wrapLines = !wrapLines)}
-                    title="Toggle line wrap"
+                    data-tip="Toggle line wrap"
+                    aria-label="Toggle line wrap"
                 >
                     <TextWrapIcon class="w-3 h-3"></TextWrapIcon>
                 </button>
                 <button
-                    class="btn btn-xs btn-ghost btn-square"
+                    class="btn btn-xs btn-ghost btn-square tooltip tooltip-end"
                     onclick={copyBody}
-                    title="Copy body"
+                    data-tip="Copy body"
+                    aria-label="Copy body"
                 >
                     <CopyIcon class="w-3 h-3"></CopyIcon>
                 </button>

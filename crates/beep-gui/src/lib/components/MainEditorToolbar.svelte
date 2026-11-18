@@ -13,11 +13,14 @@
         onSelectRequest: (idx: number) => void;
         onSetMode: (mode: ViewMode) => void;
         onSend: () => void;
+        /** File tab with a File (form) view, e.g. `.beep` env/vars JSON. */
+        hasFileMode?: boolean;
     }
 
     let {
         fileName,
         tabType,
+        hasFileMode = false,
         requests,
         activeRequestIdx,
         viewMode,
@@ -119,7 +122,6 @@
         <button
             class="tab gap-1 {viewMode === 'code' ? 'tab-active text-primary' : ''} tooltip tooltip-end"
             onclick={() => onSetMode('code')}
-            title={`Code View    ${app.modKey}+1`}
         >
             <CodeIcon class="h-3.5 w-3.5" />
             <div class="tooltip-content text-xs">
@@ -127,11 +129,10 @@
                 <span class="opacity-50 ml-4">{app.modKey}+1</span>
             </div>
         </button>
-        {#if tabType === 'http-file'}
+        {#if tabType === 'http-file' || hasFileMode}
             <button
                 class="tab gap-1 {viewMode === 'file' ? 'tab-active text-primary' : ''} tooltip tooltip-end"
                 onclick={() => onSetMode('file')}
-                title={`File View    ${app.modKey}+2`}
             >
                 <LayoutList class="h-3.5 w-3.5" />
                 <div class="tooltip-content text-xs">
@@ -139,10 +140,11 @@
                     <span class="opacity-50 ml-4">{app.modKey}+2</span>
                 </div>
             </button>
+        {/if}
+        {#if tabType === 'http-file'}
             <button
                 class="tab gap-1 {viewMode === 'request' ? 'tab-active text-primary' : ''} tooltip tooltip-end"
                 onclick={() => onSetMode('request')}
-                title={`Request View    ${app.modKey}+3`}
             >
                 <FileText class="h-3.5 w-3.5" />
                 <div class="tooltip-content text-xs">
