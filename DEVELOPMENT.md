@@ -177,7 +177,7 @@ Beep currently implements the features defined in the [HTTP/REST file format](./
 | 8.7   | Dynamic Variables `{{$guid}}` etc.                        | -      | ✅       | ✅      |
 | 8.7.1 | `{{process.env.KEY}}` (`.env`, then OS)                   | -      | ✅       | ✅ [4]  |
 | 8.8   | `// @prompt` (top layer per send)                         | -      | ✅       | -       |
-| 8.9   | Environments + settings dialog                            | -      | ✅       | -       |
+| 8.9   | Environments + settings tab                               | -      | ✅       | -       |
 | 9.1   | Pre-Request Script (`< {%` inline / `< ./file.js`)        | ✅     | ⚠️Basic  | ⚠️Basic |
 | 9.2   | Post-Request Script (`> {%` inline / `> ./file.js`)       | ✅     | ⚠️Basic  | ⚠️Basic |
 | 9.3   | Script Globals (`client`, `req`, `res`, `beep`)           | -      | ⚠️ [2]   | -       |

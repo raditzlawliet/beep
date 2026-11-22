@@ -3,20 +3,19 @@
     import { environment, project } from "$lib/app-state.svelte";
     import NewEnvPopup from "$lib/components/NewEnvPopup.svelte";
     import ActiveDot from "$lib/components/ActiveDot.svelte";
-    import EnvSettingsDialog from "$lib/components/modals/EnvSettingsDialog.svelte";
 
     interface Props {
         /** Env files are looked up from this dir. */
         envDir?: string | null;
         /** Open an env file in a tab (created / picked from the env picker). */
         onOpenEnvFile?: (path: string) => void;
+        /** Open the env settings tab. */
+        onManageEnvs?: () => void;
     }
 
-    let { envDir = null, onOpenEnvFile }: Props = $props();
+    let { envDir = null, onOpenEnvFile, onManageEnvs }: Props = $props();
 
     let newEnvOpen = $state(false);
-    let settingsOpen = $state(false);
-    let envError = $state<string | null>(null);
 
     const missingSelected = $derived(
         environment.selected !== null && !environment.envs.some((e) => e.name === environment.selected),
@@ -24,17 +23,6 @@
 
     function closeMenu() {
         (document.activeElement as HTMLElement | null)?.blur();
-    }
-
-    async function openEnv(name: string | null) {
-        try {
-            const path = await environment.fileForEdit(envDir, name);
-            envError = null;
-            closeMenu();
-            onOpenEnvFile?.(path);
-        } catch (e) {
-            envError = String(e);
-        }
     }
 
     function openFile(path: string) {
@@ -58,7 +46,7 @@
     <div
         tabindex="0"
         role="button"
-        class="btn btn-ghost btn-xs font-normal gap-1 ms-1 opacity-70 hover:opacity-100 tooltip tooltip-bottom"
+        class="btn btn-ghost btn-xs text-xs font-normal gap-1 ms-1 opacity-70 hover:opacity-100 tooltip tooltip-bottom"
         aria-label="Select Environment"
         onfocus={() => environment.refresh(envDir).catch(() => {})}
     >
@@ -85,32 +73,28 @@
             </button>
         </li>
         {#each environment.envs as env (env.name ?? "")}
+            <!-- click = select; hint text only, the row is the button -->
             <li class="group group/active">
-                <div class="flex items-center gap-2">
-                    <button class="flex-1 min-w-0 flex items-center gap-1.5 text-left" onclick={() => selectEnv(env.name)}>
-                        <span class="truncate">{env.name ?? "Default"}</span>
-                        {#if environment.selected === env.name}
-                            <ActiveDot />
-                        {/if}
-                        {#if env.files.length === 0}
-                            <span class="opacity-40 italic whitespace-nowrap">not created yet</span>
-                        {/if}
-                    </button>
-                    <button
-                        class="opacity-0 group-hover:opacity-60 hover:opacity-100! hover:underline underline-offset-2 tooltip tooltip-end"
-                        onclick={() => openEnv(env.name)}
-                    >
-                        Edit
-                        <div class="tooltip-content text-xs">{env.files.length ? "Open env file" : "Create and open env file"}</div>
-                    </button>
-                </div>
+                <button class="flex items-center gap-1.5 text-left" onclick={() => selectEnv(env.name)}>
+                    <span class="truncate">{env.name ?? "Default"}</span>
+                    {#if environment.selected === env.name}
+                        <ActiveDot />
+                    {/if}
+                    {#if env.files.length === 0}
+                        <span class="opacity-40 italic whitespace-nowrap">not created yet</span>
+                    {/if}
+                    {#if environment.selected !== env.name}
+                        <span class="ms-auto opacity-0 group-hover:opacity-60 whitespace-nowrap">Activate environment</span>
+                    {/if}
+                </button>
             </li>
-            <!-- load order: first = project root, last wins -->
+            <!-- load order: first = project root, last wins; click = open the file -->
             {#each env.files as file, i (file)}
-                <li>
+                <li class="group/file">
                     <button class="ps-6 opacity-60 hover:opacity-100 tooltip tooltip-end" onclick={() => openFile(file)}>
                         <span class="opacity-50">{i + 1}.</span>
-                        <span class="truncate">{shortPath(file)}</span>
+                        <span class="truncate font-mono">{shortPath(file)}</span>
+                        <span class="ms-auto opacity-0 group-hover/file:opacity-60 whitespace-nowrap">Edit</span>
                         <div class="tooltip-content text-xs break-all">{file}</div>
                     </button>
                 </li>
@@ -121,14 +105,11 @@
                 <span>{environment.selected} <span class="italic">file missing</span></span>
             </li>
         {/if}
-        {#if envError}
-            <li class="text-error px-2 whitespace-normal">{envError}</li>
-        {/if}
         <li class="border-t border-base-content/10 mt-1 pt-1">
             <button
                 onclick={() => {
                     closeMenu();
-                    settingsOpen = true;
+                    onManageEnvs?.();
                 }}
             >
                 <Settings2Icon class="h-3 w-3" />
@@ -137,5 +118,4 @@
         </li>
     </ul>
 </div>
-<EnvSettingsDialog open={settingsOpen} {envDir} onclose={() => (settingsOpen = false)} onOpenFile={(path) => onOpenEnvFile?.(path)} />
 <NewEnvPopup open={newEnvOpen} onclose={() => (newEnvOpen = false)} oncreated={(path) => onOpenEnvFile?.(path)} />

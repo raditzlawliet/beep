@@ -79,7 +79,7 @@
     {:else if error}
         <span class="text-xs text-error">{error}</span>
     {:else if response}
-        <span class="flex items-center gap-1.5">
+        <span class="flex items-center gap-1.5 font-mono">
             <StatusBadge status={response.status} />
             <span class="opacity-30">·</span>
             <span class="opacity-70">{response.elapsed_ms}ms</span>
@@ -105,7 +105,7 @@
     {/if}
     {#if editorCursor.current}
         {@const cur = editorCursor.current}
-        <div class="tooltip tooltip-top">
+        <div class="tooltip tooltip-top tooltip-end">
             <button
                 class="btn btn-ghost btn-xs font-normal font-mono opacity-70 hover:opacity-100"
                 onclick={() => editorCursor.openGoto()}

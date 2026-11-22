@@ -37,12 +37,12 @@
         <span class="px-2">History</span>
         {#if entries.length > 0}
             <button
-                class="btn btn-ghost btn-xs btn-square me-1 tooltip tooltip-top"
+                class="btn btn-ghost btn-xs btn-square me-1 tooltip tooltip-left"
                 onclick={onClearAll}
-                data-tip="Clear all history"
                 aria-label="Clear all history"
             >
                 <BrushCleaning class="h-3.5 w-3.5" />
+                <div class="tooltip-content text-xs">Clear all history</div>
             </button>
         {/if}
     </div>
@@ -82,15 +82,15 @@
                                 hidden group-hover:flex items-center gap-0.5 bg-transparent p-0 m-0"
                     >
                         <button
-                            class="btn btn-ghost btn-xs btn-square tooltip tooltip-top"
+                            class="btn btn-ghost btn-xs btn-square tooltip tooltip-left"
                             onclick={(e) => {
                                 e.stopPropagation();
                                 onDelete(entry.id);
                             }}
-                            data-tip="Remove"
-                            aria-label="Remove"
+                            aria-label="Delete from history"
                         >
                             <Trash2 class="h-4 w-4" />
+                            <div class="tooltip-content text-xs">Delete from history</div>
                         </button>
                     </div>
                 </li>

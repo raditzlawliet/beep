@@ -312,6 +312,15 @@ export const environment = {
     return path;
   },
 
+  /** Rename env `name` (null = Default) to `newName` (all its files). The selection follows the renamed vars. */
+  async rename(sourceFileDir: string | null, name: string | null, newName: string) {
+    const to = newName.trim();
+    await invoke("rename_env", { sourceFileDir, projectRoot: _projectPath, name, newName: to });
+    await environment.refresh(sourceFileDir);
+    if (_envSelected === name) await environment.select(to);
+    else await varIndex.refresh();
+  },
+
   /** Delete env `name` files: only `path` or all. Falls back to Default when the selected env is gone. */
   async remove(sourceFileDir: string | null, name: string | null, path: string | null) {
     await invoke("delete_env", { sourceFileDir, projectRoot: _projectPath, name, path });

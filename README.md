@@ -33,7 +33,7 @@ Use `{{name}}` anywhere in URL, query, headers, auth and body.
 - **Request-level variables** - `@key = value` lines per request, editable in the Vars tab
 - **Prompt variables** - `// @prompt name [description]` asks for values before each send, `// @prompt:secret` masks the input
 - **File-level variables** - `@key = value` at the top of the `.http` file
-- **Environments** - `.beep/env.json` (Default) and `.beep/env.<name>.json`, picked in the title bar and remembered per project, managed in a Bruno-style settings dialog, edited in a form (enabled, description) or as JSON, active env marked in the project tree; scripts save values with `env.vars.set` (e.g. a login token)
+- **Environments** - `.beep/env.json` (Default) and `.beep/env.<name>.json`, picked in the title bar and remembered per project, managed in a Bruno-style Environments tab, edited in a form (enabled, description) or as JSON, active env marked in the project tree; scripts save values with `env.vars.set` (e.g. a login token)
 - **Collection variables** - `.beep/vars.json` and `.beep/vars.<part>.json`, deeper folder wins
 - **Script variables** - `client.vars` (runtime) / `env.vars` get/set from pre and post scripts
 - **Dynamic variables** - `$uuid`, `$guid`, `$timestamp`, `$datetime`, `$randomInt`; `{{process.env.KEY}}` reads the project `.env`, then the OS (asks first)

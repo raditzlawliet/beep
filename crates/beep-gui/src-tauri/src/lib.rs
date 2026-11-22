@@ -12,7 +12,7 @@ use tauri::{Emitter, Manager};
 use beep_core::default_headers;
 use beep_core::context::resolve_template_with;
 use beep_core::vars_file::{
-    create_env as create_env_file, delete_env as delete_env_files, env_file_for_edit, env_files, list_envs as list_env_names,
+    create_env as create_env_file, delete_env as delete_env_files, rename_env as rename_env_files, env_file_for_edit, env_files, list_envs as list_env_names,
     load_env_var_sources, load_env_vars, load_folder_var_sources, load_folder_vars, write_env_var,
 };
 use beep_core::{
@@ -313,6 +313,18 @@ fn delete_env(
         path.as_deref().map(Path::new),
     )
     .map(|_| ())
+}
+
+/// Rename env `name` (None = Default) to `newName`: all its files along the cascade.
+#[tauri::command]
+fn rename_env(
+    source_file_dir: Option<String>,
+    project_root: Option<String>,
+    name: Option<String>,
+    new_name: String,
+) -> Result<(), String> {
+    let dir = env_dir(&source_file_dir, &project_root).ok_or("No project or file folder")?;
+    rename_env_files(Path::new(&dir), project_root.as_deref().map(Path::new), name.as_deref(), &new_name).map(|_| ())
 }
 
 /// Save one value into the selected environment (var popup edit).
@@ -747,6 +759,7 @@ pub fn run() {
             set_env_var,
             create_env,
             delete_env,
+            rename_env,
             open_env_file,
             //
             get_history,

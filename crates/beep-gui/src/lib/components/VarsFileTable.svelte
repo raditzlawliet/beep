@@ -68,16 +68,18 @@
         <thead>
             <tr>
                 <th class="w-8"></th>
+                <!-- table-fixed: w-8 columns stay exact, the 4 auto columns share the rest; Value spans 2 -> key : value : description = 1 : 2 : 1 -->
                 <th class="text-xs">Key</th>
-                <th class="text-xs">Value</th>
+                <th class="text-xs" colspan="2">Value</th>
                 <th class="text-xs">Description</th>
+                <!-- action column: just fits the delete button (td p-0) -->
                 <th class="w-8"></th>
             </tr>
         </thead>
         <tbody>
             {#each rows as row, i (i)}
                 <tr class="group hover:bg-base-300 divide-x divide-base-content/10" class:opacity-50={!row.enabled}>
-                    <td>
+                    <td class="text-center p-0">
                         <input type="checkbox" class="checkbox checkbox-xs" checked={row.enabled}
                             disabled={row.kind === "other"}
                             aria-label="Enabled"
@@ -88,9 +90,9 @@
                             placeholder="Key" value={row.key}
                             oninput={(e) => updateRow(i, { key: (e.target as HTMLInputElement).value })} />
                     </td>
-                    <td>
+                    <td colspan="2">
                         {#if row.kind === "other"}
-                            <span class="font-mono text-xs opacity-50 tooltip tooltip-top" data-tip="null or an object without Needs a string, number or bool (or an object with &quot;value&quot;)quot;valueNeeds a string, number or bool (or an object with &quot;value&quot;)quot;">
+                            <span class="font-mono text-xs opacity-50 tooltip tooltip-top" data-tip="null or an object without &quot;value&quot;">
                                 {row.value} (ignored by Beep)
                             </span>
                         {:else}
@@ -102,7 +104,7 @@
                                         placeholder="Value" value={row.value}
                                         oninput={(v) => updateRow(i, { value: v })} />
                                 </div>
-                                <select class="select select-ghost select-xs w-22 shrink-0 ps-1 opacity-60 hover:opacity-100"
+                                <select class="select select-ghost select-xs w-18 shrink-0 ps-1 pe-5 opacity-60 hover:opacity-100"
                                     aria-label="Value type" value={row.kind}
                                     onchange={(e) => changeKind(i, (e.target as HTMLSelectElement).value as VarKind)}>
                                     {#each VAR_KINDS as k (k)}
@@ -119,13 +121,13 @@
                                 oninput={(e) => updateRow(i, { description: (e.target as HTMLInputElement).value })} />
                         {/if}
                     </td>
-                    <td>
+                    <td class="text-center p-0">
                         <DeleteRowButton label="Delete variable" onclick={() => removeRow(i)} />
                     </td>
                 </tr>
             {/each}
             <tr>
-                <td class="p-0" colspan="5">
+                <td class="p-0" colspan="6">
                     <AddRowButton onclick={addRow} text="Add variable" />
                 </td>
             </tr>

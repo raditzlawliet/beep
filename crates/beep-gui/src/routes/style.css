@@ -1,3 +1,11 @@
+/* Tooltips never inherit bold / uppercase from their button or header (unlayered, beats daisyUI). */
+.tooltip > .tooltip-content,
+.tooltip[data-tip]::before {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
 @layer utilities {
   .overlay-scrollbar {
     overflow: overlay;

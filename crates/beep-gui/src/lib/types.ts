@@ -212,7 +212,7 @@ export interface ProjectNode {
 
 // --- Tab types ---
 
-export type TabType = "http-file" | "file";
+export type TabType = "http-file" | "file" | "env-settings";
 export type ViewMode = "code" | "file" | "request";
 export type EditorLanguage = "text" | "json" | "html" | "xml" | "http" | "javascript";
 
@@ -242,6 +242,8 @@ export interface Tab {
   languageManual?: boolean;
   // `.beep` env/vars JSON file tab: "file" = form (default), "code" = JSON text
   beepView?: "code" | "file";
+  // env-settings tab: env shown (name null = Default), lookup dir; filePath/content = that env's file
+  env?: { dir: string | null; name: string | null; loaded: boolean };
 }
 
 /** Env picker entry (matches Rust EnvInfo): name null = Default; files in load order, empty = not created. */

@@ -141,6 +141,38 @@ pub fn delete_env(
     Ok(targets)
 }
 
+/// Rename env `from` (None = Default) to `to`: every file along the cascade is renamed in place.
+/// Renaming Default leaves a fresh `{}` Default at the project root. Returns the new paths.
+pub fn rename_env(
+    file_dir: &Path,
+    project_root: Option<&Path>,
+    from: Option<&str>,
+    to: &str,
+) -> Result<Vec<PathBuf>, String> {
+    check_env_name(from)?;
+    let to = to.trim();
+    check_env_name(Some(to))?;
+    let files = env_files(file_dir, project_root, from);
+    if files.is_empty() {
+        return Err("Environment has no file".into());
+    }
+    let new_name = env_file_name(Some(to));
+    let pairs: Vec<(PathBuf, PathBuf)> = files.iter().map(|f| (f.clone(), f.with_file_name(&new_name))).collect();
+    if let Some((_, dst)) = pairs.iter().find(|(_, dst)| dst.exists()) {
+        return Err(format!("Environment '{to}' already exists ('{}')", dst.display()));
+    }
+    let _guard = ENV_WRITE_LOCK.lock().map_err(|e| e.to_string())?;
+    for (src, dst) in &pairs {
+        fs::rename(src, dst).map_err(|e| format!("Cannot rename '{}': {e}", src.display()))?;
+    }
+    if from.is_none() {
+        let first = &pairs[0].0;
+        fs::write(first, "{}
+").map_err(|e| format!("Cannot write env file '{}': {e}", first.display()))?;
+    }
+    Ok(pairs.into_iter().map(|(_, d)| d).collect())
+}
+
 /// Environment names (`env.<name>.json`) found along the cascade, sorted. Default is not listed.
 pub fn list_envs(file_dir: &Path, project_root: Option<&Path>) -> Vec<String> {
     let mut names = BTreeSet::new();
@@ -553,6 +585,29 @@ mod tests {
         assert!(env_files(&deep, Some(&root), Some("dev")).is_empty());
         assert!(root.join(".beep/env.json").is_file());
         assert!(delete_env(&deep, Some(&root), Some("../x"), None).is_err());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn test_rename_env() {
+        let root = temp_dir("env-rename");
+        let deep = root.join("a");
+        write(&root.join(".beep/env.dev.json"), r#"{"a": "1"}"#);
+        write(&deep.join(".beep/env.dev.json"), "{}");
+        write(&root.join(".beep/env.json"), r#"{"d": "1"}"#);
+        write(&root.join(".beep/env.taken.json"), "{}");
+        assert!(rename_env(&deep, Some(&root), Some("dev"), "taken").is_err());
+        assert!(rename_env(&deep, Some(&root), Some("dev"), "a/b").is_err());
+        assert!(rename_env(&deep, Some(&root), Some("none"), "x").is_err());
+        let moved = rename_env(&deep, Some(&root), Some("dev"), " qa ").unwrap();
+        assert_eq!(moved, vec![root.join(".beep/env.qa.json"), deep.join(".beep/env.qa.json")]);
+        assert!(env_files(&deep, Some(&root), Some("dev")).is_empty());
+        assert_eq!(fs::read_to_string(root.join(".beep/env.qa.json")).unwrap(), r#"{"a": "1"}"#);
+        // Default -> named, Default re-created empty
+        rename_env(&root, Some(&root), None, "old").unwrap();
+        assert_eq!(fs::read_to_string(root.join(".beep/env.old.json")).unwrap(), r#"{"d": "1"}"#);
+        assert_eq!(fs::read_to_string(root.join(".beep/env.json")).unwrap(), "{}
+");
         let _ = fs::remove_dir_all(&root);
     }
 
