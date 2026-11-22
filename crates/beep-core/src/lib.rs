@@ -5,6 +5,7 @@
 
 pub mod compiler;
 pub mod context;
+pub mod dotenv;
 pub mod dynamic;
 pub mod engine;
 pub mod exec;
@@ -17,6 +18,7 @@ pub mod vars_file;
 // Re-exports
 pub use compiler::{compile, compile_with_ctx, find_process_env};
 pub use context::{ExecutionContext, VarScope, VarSource, VarStore, collect_var_sources};
+pub use dotenv::load_dotenv;
 pub use dynamic::{DYNAMIC_VARS, EnvGuard};
 pub use engine::{ExecuteInput, execute};
 pub use exec::http::{

@@ -3,7 +3,7 @@
     import VarInput from "$lib/components/VarInput.svelte";
     import DeleteRowButton from "$lib/components/buttons/DeleteRowButton.svelte";
     import AddRowButton from "$lib/components/buttons/AddRowButton.svelte";
-    import { parseVarsJson, serializeVarsJson, type VarsRow } from "$lib/vars/beep-files";
+    import { parseVarsJson, serializeVarsJson, typedValue, VAR_KINDS, type VarKind, type VarsRow } from "$lib/vars/beep-files";
 
     interface Props {
         content: string;
@@ -42,6 +42,12 @@
         emit();
     }
 
+    function changeKind(idx: number, kind: VarKind) {
+        const v = rows[idx].value.trim();
+        // empty / plain text has no valid object form; start from `{}`
+        updateRow(idx, kind === "object" && !v.startsWith("{") && !v.startsWith("[") ? { kind, value: "{}" } : { kind });
+    }
+
     function removeRow(idx: number) {
         rows.splice(idx, 1);
         emit();
@@ -58,14 +64,14 @@
         <button class="btn btn-xs" onclick={onShowCode}>Open code view</button>
     </div>
 {:else}
-    <table class="table table-xs table-pin-rows min-w-max">
+    <table class="table table-xs table-pin-rows table-fixed w-full">
         <thead>
             <tr>
-                <th class="w-0"></th>
-                <th class="w-auto text-xs">Key</th>
-                <th class="w-auto text-xs">Value</th>
-                <th class="w-auto text-xs">Description</th>
-                <th class="w-0"></th>
+                <th class="w-8"></th>
+                <th class="text-xs">Key</th>
+                <th class="text-xs">Value</th>
+                <th class="text-xs">Description</th>
+                <th class="w-8"></th>
             </tr>
         </thead>
         <tbody>
@@ -84,13 +90,26 @@
                     </td>
                     <td>
                         {#if row.kind === "other"}
-                            <span class="font-mono text-xs opacity-50 tooltip tooltip-top" data-tip="Needs a string, number or bool (or an object with &quot;value&quot;)">
+                            <span class="font-mono text-xs opacity-50 tooltip tooltip-top" data-tip="null or an object without Needs a string, number or bool (or an object with &quot;value&quot;)quot;valueNeeds a string, number or bool (or an object with &quot;value&quot;)quot;">
                                 {row.value} (ignored by Beep)
                             </span>
                         {:else}
-                            <VarInput class="input input-ghost input-xs w-full font-mono p-0"
-                                placeholder="Value" value={row.value}
-                                oninput={(v) => updateRow(i, { value: v })} />
+                            {@const invalid = typedValue(row) === null}
+                            <div class="flex items-center gap-1">
+                                <div class="flex-1 min-w-0" class:tooltip={invalid} class:tooltip-top={invalid}
+                                    data-tip={invalid ? `Not a valid ${row.kind} - saved as string until valid` : undefined}>
+                                    <VarInput class="input input-ghost input-xs w-full font-mono p-0 {invalid ? 'underline decoration-wavy decoration-error' : ''}"
+                                        placeholder="Value" value={row.value}
+                                        oninput={(v) => updateRow(i, { value: v })} />
+                                </div>
+                                <select class="select select-ghost select-xs w-22 shrink-0 ps-1 opacity-60 hover:opacity-100"
+                                    aria-label="Value type" value={row.kind}
+                                    onchange={(e) => changeKind(i, (e.target as HTMLSelectElement).value as VarKind)}>
+                                    {#each VAR_KINDS as k (k)}
+                                        <option value={k}>{k}</option>
+                                    {/each}
+                                </select>
+                            </div>
                         {/if}
                     </td>
                     <td>

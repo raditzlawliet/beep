@@ -117,6 +117,30 @@ pub fn create_env(project_root: &Path, name: &str) -> Result<PathBuf, String> {
     Ok(path)
 }
 
+/// Delete env files of `env` along the cascade: only `only` (must be one of them) or all.
+/// Returns the deleted paths.
+pub fn delete_env(
+    file_dir: &Path,
+    project_root: Option<&Path>,
+    env: Option<&str>,
+    only: Option<&Path>,
+) -> Result<Vec<PathBuf>, String> {
+    check_env_name(env)?;
+    let files = env_files(file_dir, project_root, env);
+    let targets: Vec<PathBuf> = match only {
+        Some(p) => files.into_iter().filter(|f| f == p).collect(),
+        None => files,
+    };
+    if only.is_some() && targets.is_empty() {
+        return Err("Not a file of this environment".into());
+    }
+    let _guard = ENV_WRITE_LOCK.lock().map_err(|e| e.to_string())?;
+    for f in &targets {
+        fs::remove_file(f).map_err(|e| format!("Cannot delete '{}': {e}", f.display()))?;
+    }
+    Ok(targets)
+}
+
 /// Environment names (`env.<name>.json`) found along the cascade, sorted. Default is not listed.
 pub fn list_envs(file_dir: &Path, project_root: Option<&Path>) -> Vec<String> {
     let mut names = BTreeSet::new();
@@ -205,7 +229,7 @@ pub fn write_env_var(
     let new_value = serde_json::Value::String(value.to_string());
     match map.get_mut(key) {
         // long form: only `value` changes, description/enabled/extra fields kept
-        Some(serde_json::Value::Object(entry)) => {
+        Some(serde_json::Value::Object(entry)) if entry.contains_key(VALUE_FIELD) => {
             entry.insert(VALUE_FIELD.to_string(), new_value);
         }
         _ => {
@@ -279,19 +303,20 @@ fn vars_files(beep_dir: &Path) -> Result<Vec<PathBuf>, String> {
     Ok(files)
 }
 
-/// Text of a scalar JSON value (string as-is, number/bool as text).
-fn scalar_text(value: &serde_json::Value) -> Option<String> {
+/// Text of a var value: string as-is, number/bool as text, array/object as compact JSON; null = none.
+fn value_text(value: &serde_json::Value) -> Option<String> {
     match value {
         serde_json::Value::String(s) => Some(s.clone()),
         serde_json::Value::Number(n) => Some(n.to_string()),
         serde_json::Value::Bool(b) => Some(b.to_string()),
-        _ => None,
+        serde_json::Value::Array(_) | serde_json::Value::Object(_) => serde_json::to_string(value).ok(),
+        serde_json::Value::Null => None,
     }
 }
 
-/// Append one JSON vars file to `out`. Entry = scalar, or `{ "value": scalar,
+/// Append one JSON vars file to `out`. Entry = scalar, array, or `{ "value": any,
 /// "enabled"?: bool, "description"?: string }` (`enabled: false` skipped).
-/// null/arrays/objects without a scalar `value` ignored.
+/// Object/array values resolve to compact JSON. null and objects without `value` ignored.
 fn load_vars_file(path: &Path, scope: VarScope, out: &mut Vec<VarSource>) -> Result<(), String> {
     let text = fs::read_to_string(path)
         .map_err(|e| format!("Cannot read vars file '{}': {e}", path.display()))?;
@@ -310,9 +335,9 @@ fn load_vars_file(path: &Path, scope: VarScope, out: &mut Vec<VarSource>) -> Res
                 if entry.get(ENABLED_FIELD) == Some(&serde_json::Value::Bool(false)) {
                     continue;
                 }
-                entry.get(VALUE_FIELD).and_then(scalar_text)
+                entry.get(VALUE_FIELD).and_then(value_text)
             }
-            other => scalar_text(other),
+            other => value_text(other),
         };
         let Some(text) = text else { continue };
         out.push(VarSource {
@@ -390,8 +415,9 @@ mod tests {
         assert_eq!(vars.get("f"), Some("1.5"));
         assert_eq!(vars.get("b"), Some("true"));
         assert_eq!(vars.get("z"), None);
+        // bare object = long form without `value` -> ignored; bare array = JSON value
         assert_eq!(vars.get("o"), None);
-        assert_eq!(vars.get("arr"), None);
+        assert_eq!(vars.get("arr"), Some("[1]"));
 
         let _ = fs::remove_dir_all(&root);
     }
@@ -470,6 +496,19 @@ mod tests {
         assert_eq!(vars.get("d"), None);
         assert_eq!(vars.get("e"), Some("plain"));
 
+        // object / array values in long form resolve to compact JSON
+        write(
+            &root.join(".beep/vars.json"),
+            r#"{"o": {"value": {"a": [1, "x"]}}, "l": {"value": []}, "eo": {"value": {}},
+               "off": {"value": {"a": 1}, "enabled": false}, "n": {"value": null}}"#,
+        );
+        let vars = load_folder_vars(&root, Some(&root)).unwrap();
+        assert_eq!(vars.get("o"), Some(r#"{"a":[1,"x"]}"#));
+        assert_eq!(vars.get("l"), Some("[]"));
+        assert_eq!(vars.get("eo"), Some("{}"));
+        assert_eq!(vars.get("off"), None);
+        assert_eq!(vars.get("n"), None);
+
         // env.vars.set on a long-form key keeps description + extra fields
         write(&root.join(".beep/env.json"), r#"{"t": {"value": "old", "description": "tok", "x": 1}}"#);
         write_env_var(&root, Some(&root), None, "t", "new").unwrap();
@@ -495,6 +534,26 @@ mod tests {
         assert!(env_files(&sub, Some(&root), None).is_empty());
         // existing -> first in load order, nothing created
         assert_eq!(env_file_for_edit(&sub, Some(&root), Some("dev")).unwrap(), p);
+    }
+
+    #[test]
+    fn test_delete_env() {
+        let root = temp_dir("env-delete");
+        let deep = root.join("a");
+        write(&root.join(".beep/env.dev.json"), "{}");
+        write(&deep.join(".beep/env.dev.json"), "{}");
+        write(&root.join(".beep/env.json"), "{}");
+        // not a file of this env
+        assert!(delete_env(&deep, Some(&root), Some("dev"), Some(&root.join(".beep/env.json"))).is_err());
+        let one = delete_env(&deep, Some(&root), Some("dev"), Some(&deep.join(".beep/env.dev.json"))).unwrap();
+        assert_eq!(one, vec![deep.join(".beep/env.dev.json")]);
+        assert_eq!(env_files(&deep, Some(&root), Some("dev")), vec![root.join(".beep/env.dev.json")]);
+        write(&deep.join(".beep/env.dev.json"), "{}");
+        assert_eq!(delete_env(&deep, Some(&root), Some("dev"), None).unwrap().len(), 2);
+        assert!(env_files(&deep, Some(&root), Some("dev")).is_empty());
+        assert!(root.join(".beep/env.json").is_file());
+        assert!(delete_env(&deep, Some(&root), Some("../x"), None).is_err());
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]

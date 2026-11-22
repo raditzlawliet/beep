@@ -4,7 +4,7 @@
 //! good enough for test data, not cryptographically secure.
 
 use std::collections::hash_map::RandomState;
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::hash::{BuildHasher, Hasher};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -19,15 +19,17 @@ pub const DYNAMIC_VARS: &[(&str, &str, &str)] = &[
     ("$timestamp", "$timestamp", "Unix timestamp in seconds"),
     ("$datetime", "$datetime iso8601", "Current UTC date-time (ISO 8601)"),
     ("$randomInt", "$randomInt 0 100", "Random integer, min inclusive, max exclusive"),
-    ("$processEnv", "$processEnv NAME", "OS environment variable (asks permission)"),
+    ("$processEnv", "$processEnv NAME", "Same as process.env.NAME: .env file, then OS (asks permission)"),
 ];
 
-/// `$processEnv` permission guard. Records every env name asked for, and the denied ones.
+/// `process.env` source + OS permission guard. `.env` values are served first and never
+/// checked; OS names are recorded, and the denied ones too.
 ///
-/// `allow == None` allows every name (CLI, tests). Clones share the same record.
+/// `allow == None` allows every OS name (CLI, tests). Clones share the same record.
 #[derive(Debug, Clone, Default)]
 pub struct EnvGuard {
     allow: Option<Arc<HashSet<String>>>,
+    dotenv: Arc<HashMap<String, String>>,
     record: Arc<Mutex<EnvRecord>>,
 }
 
@@ -45,8 +47,27 @@ impl EnvGuard {
     pub fn allow_only(names: HashSet<String>) -> Self {
         Self {
             allow: Some(Arc::new(names)),
-            record: Arc::default(),
+            ..Self::default()
         }
+    }
+
+    /// Serve `.env` values before the OS environment.
+    pub fn with_dotenv(mut self, dotenv: HashMap<String, String>) -> Self {
+        self.dotenv = Arc::new(dotenv);
+        self
+    }
+
+    /// Same `.env` values, every OS name allowed, fresh record (to probe which names a send reads).
+    pub fn probe(&self) -> Self {
+        Self {
+            dotenv: self.dotenv.clone(),
+            ..Self::default()
+        }
+    }
+
+    /// `.env` value of `name`.
+    pub fn dotenv(&self, name: &str) -> Option<&str> {
+        self.dotenv.get(name).map(String::as_str)
     }
 
     /// Record `name` and tell whether it may be read.
@@ -78,9 +99,20 @@ impl EnvGuard {
     }
 }
 
-/// Env names in `{{$processEnv NAME}}`-like text (scripts, raw templates).
+/// Env names in `{{$processEnv NAME}}` / `process.env.NAME`-like text (scripts, raw templates).
 pub fn scan_process_env(text: &str) -> Vec<String> {
     let mut out = BTreeSet::new();
+    let mut rest = text;
+    while let Some(i) = rest.find("process.env.") {
+        rest = &rest[i + "process.env.".len()..];
+        let name: String = rest
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+            .collect();
+        if !name.is_empty() {
+            out.insert(name);
+        }
+    }
     let mut rest = text;
     while let Some(i) = rest.find("$processEnv") {
         rest = &rest[i + "$processEnv".len()..];
@@ -129,10 +161,11 @@ pub fn resolve_dynamic_with(expr: &str, env: Option<&EnvGuard>) -> Option<String
             _ => None,
         },
         "processEnv" => match args.as_slice() {
-            [var] if env.is_none_or(|g| g.check(var)) => {
-                Some(std::env::var(var).unwrap_or_default())
-            }
-            [_] => Some(String::new()),
+            [var] => match env.and_then(|g| g.dotenv(var)) {
+                Some(v) => Some(v.to_string()),
+                None if env.is_none_or(|g| g.check(var)) => Some(std::env::var(var).unwrap_or_default()),
+                None => Some(String::new()),
+            },
             _ => None,
         },
         _ => None,
@@ -234,6 +267,28 @@ mod tests {
         );
         assert_eq!(guard.used(), vec!["PATH", "PATH_SECRET_X"]);
         assert_eq!(guard.denied(), vec!["PATH_SECRET_X"]);
+    }
+
+    #[test]
+    fn test_process_env_dotenv_first_no_check() {
+        let mut dotenv = HashMap::new();
+        dotenv.insert("PATH".to_string(), "from-dotenv".to_string());
+        let guard = EnvGuard::allow_only(HashSet::new()).with_dotenv(dotenv);
+        assert_eq!(resolve_dynamic_with("processEnv PATH", Some(&guard)).unwrap(), "from-dotenv");
+        assert!(guard.used().is_empty());
+        // OS name still checked
+        assert_eq!(resolve_dynamic_with("processEnv HOME", Some(&guard)).unwrap(), "");
+        assert_eq!(guard.denied(), vec!["HOME"]);
+        assert!(guard.probe().used().is_empty());
+        assert_eq!(guard.probe().dotenv("PATH"), Some("from-dotenv"));
+    }
+
+    #[test]
+    fn test_scan_process_env_dot_syntax() {
+        assert_eq!(
+            scan_process_env(r#"{{process.env.API_KEY}} x process.env.HOME; process.env."#),
+            vec!["API_KEY", "HOME"]
+        );
     }
 
     #[test]

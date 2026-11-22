@@ -38,11 +38,11 @@ export async function confirmExternalOverwrite(
   return "cancel";
 }
 
-// Ask before a request reads OS environment variables through $processEnv.
+// Ask before a request reads OS environment variables through process.env (.env values never ask).
 export async function confirmProcessEnv(names: string[]): Promise<boolean> {
   const list = names.map((n) => `- ${n}`).join("\n");
   const result = await message(
-    `This request reads environment variables with $processEnv:\n\n${list}\n\nTheir values may be sent to the server. Allow for this session?`,
+    `This request reads OS environment variables (process.env, not in .env):\n\n${list}\n\nTheir values may be sent to the server. Allow for this session?`,
     {
       title: "Allow Environment Variables",
       kind: "warning",
@@ -50,4 +50,21 @@ export async function confirmProcessEnv(names: string[]): Promise<boolean> {
     },
   );
   return result === "Allow";
+}
+
+export type DeleteEnvChoice = "file" | "all" | "cancel";
+
+// Ask how much of an environment to delete: the file being edited, or every folder level.
+export async function confirmDeleteEnv(name: string, file: string, count: number): Promise<DeleteEnvChoice> {
+  const result = await message(
+    `Delete environment "${name}"?\n\nThis file: ${file}\nAll files: ${count} file(s) of this environment in every folder.`,
+    {
+      title: "Delete Environment",
+      kind: "warning",
+      buttons: { yes: "This file", no: "All files", cancel: "Cancel" },
+    },
+  );
+  if (result === "This file") return "file";
+  if (result === "All files") return "all";
+  return "cancel";
 }

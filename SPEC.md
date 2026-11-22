@@ -437,19 +437,19 @@ In the example above, `page` and `limit` are sent. `sort` and `filter` are disab
 Beep resolves variables at request time by walking a precedence chain; highest scope wins.
 
 ```md
-1. req.vars - script-set, current request only (highest); `// @prompt` values seed it (8.8)
-2. client.vars - script-set, session (in-memory)
-3. @var in request block - static, current request only
-4. @var in file preamble - static, file-level
-5. environment - selected .beep/env[.<name>].json (8.9)
-6. .beep/vars.json - collection, folder/project cascade, deepest folder wins (lowest)
+0. prompt values - `// @prompt`, current send only, typed by the user (8.8)
+1. runtime - client.vars, script-set, app session (in-memory)
+2. @var in request block - static, current request only
+3. @var in file preamble - static, file-level
+4. environment - selected .beep/env[.<name>].json (8.9)
+5. .beep/vars.json - collection, folder/project cascade, deepest folder wins (lowest)
 ```
 
-Dynamic variables (`{{$guid}}` etc., see 8.7) are not part of the chain; they are generated on use.
+Dynamic variables (`{{$guid}}` etc., 8.7) and `{{process.env.KEY}}` (8.7.1) are not part of the chain; they are looked up on use.
 
-Script-set scopes (1, 2) sit above static scopes (3-6), so a script can always override a value declared in a file.
+Runtime (1) sits above the static scopes (2-5), so a script can always override a value declared in a file. Only a prompt value (0) wins over runtime, for its own send.
 
-Compared with Postman / Bruno: `req.vars` / `client.vars` = runtime vars, request `@var` = request vars, file `@var` = folder vars, environment = environment, `.beep/vars.json` = collection vars.
+Compared with Bruno: `client.vars` = runtime vars (`bru.setVar`), request `@var` = request vars, file `@var` = folder vars, environment = environment (`bru.setEnvVar`), `.beep/vars.json` = collection vars, `// @prompt` = prompt vars, `.env` = `process.env`. Global environments: not supported.
 
 #### Who can write what
 
@@ -457,8 +457,8 @@ Rule: values that change at runtime are written by scripts; values that are auth
 
 | Scope | Script | GUI / by hand | Saved | Lifetime |
 | --- | --- | --- | --- | --- |
-| `req.vars` (incl. `@prompt`) | `req.vars.set` | prompt dialog | no | one send |
-| `client.vars` | `client.vars.set` / `reset` | hover popup, Clear | no | app session |
+| prompt values | read-only (`beep.interpolate`) | prompt dialog | no | one send |
+| runtime (`client.vars`) | `client.vars.set` / `reset` | hover popup, Clear | no | app session |
 | request `@var` | read-only | code view, Vars tab, hover popup | `.http` file, on tab save | file |
 | file `@var` | read-only | code view, file view, hover popup | `.http` file, on tab save | file |
 | environment | `env.vars.set` | env file (table / JSON), hover popup | env file, immediately (script, popup) or on tab save | file |
@@ -470,18 +470,19 @@ Rule: values that change at runtime are written by scripts; values that are auth
 
 ---
 
-### 8.1 `req.vars` - Request Scope (script)
+### 8.1 Runtime Variables - `client.vars` (script)
 
-- **Set via:** pre-request script
-- **Lives:** current request only, cleared before each request
-- **Stored:** memory
+- **Set via:** pre or post-request script (`client.vars.set`), or the GUI hover popup
+- **Lives:** entire app session (shared across all files and projects), lost when app closes
+- **Stored:** memory only
+
+A value set in a pre-script is used by that send and stays for later sends. For a per-send value (timestamp, nonce, signature) set it again in every pre-script:
 
 ```http
 ### Signed request
 < {%
-    const ts = new Date().toISOString();
-    req.vars.set("timestamp", ts);
-    req.vars.set("nonce", beep.interpolate("{{$guid}}"));
+    client.vars.set("timestamp", new Date().toISOString());
+    client.vars.set("nonce", beep.interpolate("{{$guid}}"));
 %}
 POST https://api.example.com/orders HTTP/1.1
 X-Timestamp: {{timestamp}}
@@ -491,13 +492,9 @@ Content-Type: application/json
 {"product_id": 1}
 ```
 
-After this request completes, `{{timestamp}}` and `{{nonce}}` no longer exist.
+`req.vars` (the old one-send script scope) is removed. A script that calls `req.vars.*` fails with `req.vars was removed, use client.vars`.
 
-### 8.2 `client.vars` - Session Scope (script)
-
-- **Set via:** pre or post-request script
-- **Lives:** entire app session (shared across all files and projects), lost when app closes
-- **Stored:** memory only (for now)
+### 8.2 Runtime across requests
 
 ```http
 ### Login
@@ -536,7 +533,7 @@ GET {{baseUrl}}/users/{{userId}}?fields={{fields}} HTTP/1.1
 GET {{baseUrl}}/users HTTP/1.1
 ```
 
-A request `@var` overrides a file `@var` with the same key, for that request only. Scripts read it with `beep.interpolate("{{userId}}")`, and a pre-script `req.vars.set("userId", ...)` overrides it.
+A request `@var` overrides a file `@var` with the same key, for that request only. Scripts read it with `beep.interpolate("{{userId}}")`, and a pre-script `client.vars.set("userId", ...)` overrides it.
 
 ### 8.4 `@var` in File Preamble - File Scope (static)
 
@@ -626,8 +623,9 @@ The root must be a JSON object.
   }
   ```
 
-  `value` (string / number / bool) is the value. `description` is free text. `enabled: false` = not loaded. Other fields are kept when Beep rewrites the file (reserved for later, e.g. `secret`). Short and long form can be mixed; the GUI form writes the long form only when a row is disabled, has a description or has extra fields.
-- `null`, arrays and objects without a scalar `value` are ignored.
+  `value` (string / number / bool / object / array) is the value. `description` is free text. `enabled: false` = not loaded. Other fields are kept when Beep rewrites the file (reserved for later, e.g. `secret`). Short and long form can be mixed; the GUI form writes the long form only when a row is disabled, has a description, has extra fields or holds an object value.
+- Object / array values resolve to compact JSON text (`{{user}}` -> `{"id":1}`). An array may be written short (`"ids": [1, 2]`); an object value must use the long form (`"user": { "value": { "id": 1 } }`), since a bare object is read as the long form.
+- `null` and objects without a `value` field are ignored.
 - Writes (`env.vars.set`, hover popup) on a long-form entry change only `value`.
 - Values may reference other variables, e.g. `"baseUrl": "{{host}}/{{version}}"`.
 - Invalid JSON fails the request with an error naming the file.
@@ -668,11 +666,9 @@ Built-in variables generated at request time. No setup required. Names start wit
 | `{{$timestamp}}`         |             | Unix timestamp in seconds                           |
 | `{{$datetime iso8601}}`  |             | ISO 8601 datetime string (UTC)                      |
 | `{{$randomInt min max}}` |             | Random integer, `min` inclusive, `max` exclusive    |
-| `{{$processEnv VAR}}`    |             | OS-level environment variable (empty if not set)    |
+| `{{$processEnv VAR}}`    |             | Same as `{{process.env.VAR}}` (8.7.1)               |
 
 Random values are for test data only; they are not cryptographically secure.
-
-**`$processEnv` permission (GUI).** An env value may hold a secret, and a shared `.http` file could send it anywhere. Before a send, the GUI lists every `$processEnv` name the request would read (URL, query, headers, body, form fields, nested `@var` / `vars.json` values, and script text) and asks **Allow / Cancel**. Allowed names are kept for the app session (in-memory). A name that is not allowed (e.g. only built at runtime by a script) resolves to an empty string and the send shows a warning. The CLI allows all names.
 
 ```http
 ### Dynamic variables
@@ -686,6 +682,28 @@ Content-Type: application/json
     "priority": "{{$randomInt 1 10}}"
 }
 ```
+
+#### 8.7.1 `process.env` - `.env` File and OS Environment
+
+```
+my-api/
+├── .env              - API_TOKEN=abc123
+├── .beep/env.json    - { "token": "{{process.env.API_TOKEN}}" }
+└── users.http
+```
+
+- Syntax: `{{process.env.KEY}}`. `{{$processEnv KEY}}` is an alias.
+- Lookup: `.env` at the project root (no project: the `.http` file folder), then the OS environment. Not found = empty string.
+- `.env` is read on every send; no restart needed after editing it. A missing `.env` means OS only.
+- `.env` format, one entry per line:
+  - `KEY=value`, spaces around `=` and the value are trimmed, optional `export ` prefix.
+  - `# comment` lines and blank lines are skipped. An unquoted value ends at ` #`.
+  - `"double quoted"` keeps `#` and supports `\n`, `\"`, `\\`. `'single quoted'` is literal.
+  - A line without `=` is skipped.
+- Beep never creates or writes `.env`. Add it to `.gitignore` yourself; it usually holds secrets.
+- Scripts: `beep.interpolate("{{process.env.KEY}}")`.
+
+**OS permission (GUI).** A `.env` value never asks (it is your project file). An OS value may hold a secret, and a shared `.http` file could send it anywhere. Before a send, the GUI lists every `process.env` name the request would read from the OS (URL, query, headers, body, form fields, nested `@var` / env / `vars.json` values, and script text; names found in `.env` are left out) and asks **Allow / Cancel**. Allowed names are kept for the app session (in-memory). A name that is not allowed (e.g. only built at runtime by a script) resolves to an empty string and the send shows a warning. The CLI allows all names.
 
 ### 8.8 `// @prompt` - Prompt Variables
 
@@ -704,7 +722,7 @@ Content-Type: application/json
 ```
 
 - Before every send the GUI shows one dialog with a field per prompt (name, description as hint). **Cancel** sends nothing.
-- Values seed `req.vars` before the pre-request script, so they win over every static scope and `client.vars`, a script can read them with `req.vars.get("username")`, and `req.vars.set` overrides them.
+- Values are the top layer for that send only: they win over runtime (`client.vars`) and every static scope, and `client.vars.set` cannot override them. They are never stored in runtime vars, so a secret does not stay in the session. A script reads them with `beep.interpolate("{{username}}")`.
 - Name is the first word after `@prompt`; the rest of the line is the description. A repeated name is asked once.
 - `:secret` masks the input (with a show/hide toggle) and is never prefilled. The name alone never masks: `// @prompt password` is a plain text field.
 - Non-secret values are prefilled with the last value typed for that name in this app session (memory only).
@@ -746,8 +764,14 @@ Authorization: Bearer {{token}}
 ```
 
 - Exactly one environment is active: `Default` (`env.json`, may not exist) or one named environment (`env.<name>.json` only, it does not inherit `env.json`). Values shared by every environment belong in `vars.json`.
-- Select it with the environment picker at the right end of the GUI status bar (shown while a project is open), or "Use this environment" in an env file tab. The choice is remembered per project across restarts.
-- The picker lists `Default` (marked "not created" without `env.json`) and every named env, each with its files in load order (project root first, last wins). The edit button opens the first file, or creates `{}` at the project root. "New environment" creates `<project root>/.beep/env.<name>.json`.
+- Select it with the environment picker in the GUI title bar, after the project name (shown while a project is open), in the settings dialog, or "Use this environment" in an env file tab. The choice is remembered per project across restarts.
+- The picker lists `Default` (marked "not created" without `env.json`) and every named env, each with its files in load order (project root first, last wins). The edit button opens the first file, or creates `{}` at the project root. "New environment" creates `<project root>/.beep/env.<name>.json`. "Manage environments..." opens the settings dialog.
+- **Settings dialog** (like Bruno):
+  - Left: `Default`, every named env, `+ New`. Right: the selected env as a table (enabled, key, value, type, description), same as the File mode of an env file tab.
+  - Header: env name, `Active` badge or "Use this environment", "Open file" (opens the file tab), Delete.
+  - It edits the env file of the current folder level (the first existing file in load order, else `{}` created at the project root). Other files of the same env are listed under the table as links that open their tab.
+  - Save / Cancel. Esc = Cancel; with unsaved edits it asks first. Save writes the file like a tab save.
+  - Delete asks: **This file** (the file the dialog edits) or **All files** (every folder level of that env), or Cancel. `Default` can be deleted too (it becomes "not created"). If the deleted env was selected and no file is left, the selection falls back to `Default`.
 - GUI: `.beep` env and vars files open in **File** mode (form: enabled, key, value, description) with a **Code** mode toggle (same file text). The project tree marks the selected env files (every `.beep` level) with `active`.
 - Env name = text between `env.` and `.json` (e.g. `env.prod_eu.json` -> `prod_eu`).
 - Same folder cascade and JSON format as `.beep/vars.json` (8.5): project root -> `.http` file folder, deeper wins. Untitled requests read the project root only.
@@ -773,8 +797,8 @@ Runs before the request is sent.
 < {%
     const ts = new Date().toISOString();
     const sig = `${ts}:${client.vars.get("secret")}`;
-    req.vars.set("timestamp", ts);
-    req.vars.set("signature", sig);
+    client.vars.set("timestamp", ts);
+    client.vars.set("signature", sig);
 %}
 POST https://api.example.com/orders HTTP/1.1
 Content-Type: application/json
@@ -844,7 +868,7 @@ Four globals are available (following Bruno conventions):
 
 | Global   | Available  | Description                                      |
 | -------- | ---------- | ------------------------------------------------ |
-| `client` | pre + post | Session-level API (vars)                         |
+| `client` | pre + post | Runtime vars (app session)                       |
 | `env`    | pre + post | Selected environment (vars, saved to file)       |
 | `req`    | pre + post | Current request CRUD (read + mutate before send) |
 | `res`    | post only  | Response data. Throws if accessed in pre-script  |
@@ -853,9 +877,9 @@ Four globals are available (following Bruno conventions):
 #### `client`
 
 ```javascript
-client.vars.set("key", value); // set session variable (cross-request, in-memory)
-client.vars.get("key"); // get session variable
-client.vars.reset("key"); // remove session variable
+client.vars.set("key", value); // set runtime variable (cross-request, in-memory, highest scope)
+client.vars.get("key"); // get runtime variable
+client.vars.reset("key"); // remove runtime variable
 ```
 
 #### `env`
@@ -868,12 +892,10 @@ env.vars.set("key", value); // set + save into the selected env file (8.9)
 #### `req`
 
 ```javascript
-// Variables
-req.vars.set("key", value); // set request-scoped variable
-req.vars.get("key"); // get request-scoped variable
+// req.vars was removed - use client.vars (runtime)
 
 // Read methods ({{vars}} resolved). Unknown vars stay as `{{name}}`.
-// Pre-script: resolved at call time over the live scopes (incl. req.vars set so far),
+// Pre-script: resolved at call time over the live scopes (incl. client.vars set so far),
 //             with setUrl/setHeader/setBody/deleteHeader applied.
 // Post-script: the values really sent (URL includes query string, headers include auto headers).
 req.getUrl(); // e.g. "https://api.example.com/users"

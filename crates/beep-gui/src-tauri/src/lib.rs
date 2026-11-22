@@ -12,7 +12,7 @@ use tauri::{Emitter, Manager};
 use beep_core::default_headers;
 use beep_core::context::resolve_template_with;
 use beep_core::vars_file::{
-    create_env as create_env_file, env_file_for_edit, env_files, list_envs as list_env_names,
+    create_env as create_env_file, delete_env as delete_env_files, env_file_for_edit, env_files, list_envs as list_env_names,
     load_env_var_sources, load_env_vars, load_folder_var_sources, load_folder_vars, write_env_var,
 };
 use beep_core::{
@@ -108,7 +108,7 @@ async fn execute_request(
     ctx.folder_vars = folder_vars;
     ctx.env_vars = load_env(&source_file_dir, &project_root, &env_name).await?;
     ctx.source_file_dir = source_file_dir.clone();
-    ctx.env = env_guard(&state)?;
+    ctx.env = env_guard(&state, &source_file_dir, &project_root).await?;
     ctx.prompt_vars = prompt_store(prompt_values);
     let before = lock_client_vars(&state)?.clone();
     ctx.client_vars = before.clone();
@@ -297,6 +297,24 @@ fn create_env(project_root: String, name: String) -> Result<String, String> {
     create_env_file(Path::new(&project_root), &name).map(|p| p.to_string_lossy().to_string())
 }
 
+/// Delete env `name` files: only `path` (one of its files) or all of them.
+#[tauri::command]
+fn delete_env(
+    source_file_dir: Option<String>,
+    project_root: Option<String>,
+    name: Option<String>,
+    path: Option<String>,
+) -> Result<(), String> {
+    let dir = env_dir(&source_file_dir, &project_root).ok_or("No project or file folder")?;
+    delete_env_files(
+        Path::new(&dir),
+        project_root.as_deref().map(Path::new),
+        name.as_deref(),
+        path.as_deref().map(Path::new),
+    )
+    .map(|_| ())
+}
+
 /// Save one value into the selected environment (var popup edit).
 #[tauri::command]
 async fn set_env_var(
@@ -367,10 +385,20 @@ fn prompt_store(values: Option<HashMap<String, String>>) -> VarStore {
     store
 }
 
-/// `$processEnv` guard for the names allowed this session.
-fn env_guard(state: &tauri::State<'_, AppState>) -> Result<EnvGuard, String> {
-    let allowed = state.allowed_env.lock().map_err(|e| e.to_string())?;
-    Ok(EnvGuard::allow_only(allowed.clone()))
+/// `process.env` guard: project `.env` values (read per call), OS names allowed this session.
+async fn env_guard(
+    state: &tauri::State<'_, AppState>,
+    source_file_dir: &Option<String>,
+    project_root: &Option<String>,
+) -> Result<EnvGuard, String> {
+    let (dir, root) = (source_file_dir.clone(), project_root.clone());
+    let dotenv = tauri::async_runtime::spawn_blocking(move || {
+        beep_core::load_dotenv(dir.as_deref().map(Path::new), root.as_deref().map(Path::new))
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    let allowed = state.allowed_env.lock().map_err(|e| e.to_string())?.clone();
+    Ok(EnvGuard::allow_only(allowed).with_dotenv(dotenv))
 }
 
 /// Every known value of every variable for the editor (hover, autocomplete, unknown check).
@@ -418,7 +446,7 @@ async fn resolve_preview(
     let client = lock_client_vars(&state)?.clone();
     let request = VarStore::from_file_vars(&request_vars);
     let file = VarStore::from_file_vars(&file_vars);
-    let env = env_guard(&state)?;
+    let env = env_guard(&state, &source_file_dir, &project_root).await?;
     Ok(resolve_template_with(
         &text,
         &[&client, &request, &file, &env_vars, &folder],
@@ -426,7 +454,7 @@ async fn resolve_preview(
     ))
 }
 
-/// `$processEnv` names a send of `payload` would read that are not allowed yet.
+/// OS `process.env` names a send of `payload` would read that are not allowed yet (`.env` names never ask).
 #[tauri::command]
 async fn find_process_env(
     state: tauri::State<'_, AppState>,
@@ -443,6 +471,7 @@ async fn find_process_env(
     ctx.folder_vars = load_folder(&source_file_dir, &project_root).await?;
     ctx.env_vars = load_env(&source_file_dir, &project_root, &selected_env(&state)?).await?;
     ctx.client_vars = lock_client_vars(&state)?.clone();
+    ctx.env = env_guard(&state, &source_file_dir, &project_root).await?;
 
     let allowed = state.allowed_env.lock().map_err(|e| e.to_string())?;
     Ok(beep_core::find_process_env(&payload, &ctx)
@@ -717,6 +746,7 @@ pub fn run() {
             select_env,
             set_env_var,
             create_env,
+            delete_env,
             open_env_file,
             //
             get_history,

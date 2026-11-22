@@ -311,6 +311,15 @@ export const environment = {
     await environment.select(name.trim());
     return path;
   },
+
+  /** Delete env `name` files: only `path` or all. Falls back to Default when the selected env is gone. */
+  async remove(sourceFileDir: string | null, name: string | null, path: string | null) {
+    await invoke("delete_env", { sourceFileDir, projectRoot: _projectPath, name, path });
+    await environment.refresh(sourceFileDir);
+    const left = _envs.find((e) => e.name === name)?.files.length ?? 0;
+    if (_envSelected === name && name !== null && left === 0) await environment.select(null);
+    else await varIndex.refresh();
+  },
 };
 
 // http-file domain - parse, serialize, update .http file content

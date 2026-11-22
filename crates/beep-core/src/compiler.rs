@@ -3,7 +3,7 @@
 //! This is a pure transformation; no I/O, no network, no side effects.
 //! Variable interpolation happens here.
 use crate::context::{ExecutionContext, VarStore, resolve_template, resolve_template_with};
-use crate::dynamic::{EnvGuard, scan_process_env};
+use crate::dynamic::scan_process_env;
 use crate::executable::{ExecutableRequest, FormFieldType, ResolvedBody, ResolvedFormField};
 use crate::http_parser::{ParsedFileVariable, ParsedRequest, effective_body_kind};
 use crate::types::{HeaderField, HttpMethod, HttpVersion, QueryField};
@@ -23,7 +23,7 @@ pub fn compile(
 }
 
 /// Compile using `ExecutionContext` for variable resolution with the full cascade
-/// (req.vars > client.vars > request @var > file @var > env > folder vars).
+/// (prompt > client.vars > request @var > file @var > env > folder vars).
 pub fn compile_with_ctx(
     parsed: &ParsedRequest,
     ctx: &ExecutionContext,
@@ -31,7 +31,7 @@ pub fn compile_with_ctx(
     // Build the file scope once instead of per resolved string.
     let file = VarStore::from_file_vars(&ctx.file_vars);
     let scopes = [
-        &ctx.request_vars,
+        &ctx.prompt_vars,
         &ctx.client_vars,
         &ctx.request_static_vars,
         &file,
@@ -47,11 +47,12 @@ pub fn compile_with_ctx(
 
 /// `$processEnv` names a send of `parsed` would read, sorted.
 ///
-/// Resolves every template before scripts run (request `@var` from `parsed`, no `req.vars`)
+/// Resolves every template before scripts run (request `@var` from `parsed`, no script-set vars)
 /// and scans the script text. Values set by scripts at runtime are not seen here; those
 /// still hit `ctx.env` at send time.
 pub fn find_process_env(parsed: &ParsedRequest, ctx: &ExecutionContext) -> Vec<String> {
-    let probe = EnvGuard::allow_all();
+    // `.env` values never ask, so only OS names are recorded
+    let probe = ctx.env.probe();
     let request = VarStore::from_file_vars(&parsed.variables);
     let file = VarStore::from_file_vars(&ctx.file_vars);
     let scopes = [&ctx.prompt_vars, &ctx.client_vars, &request, &file, &ctx.env_vars, &ctx.folder_vars];
@@ -60,7 +61,7 @@ pub fn find_process_env(parsed: &ParsedRequest, ctx: &ExecutionContext) -> Vec<S
 
     let mut names = probe.used();
     for script in [&parsed.pre_script, &parsed.post_script].into_iter().flatten() {
-        names.extend(scan_process_env(script));
+        names.extend(scan_process_env(script).into_iter().filter(|n| probe.dotenv(n).is_none()));
     }
     names.sort();
     names.dedup();

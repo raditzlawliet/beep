@@ -96,12 +96,12 @@ Content-Disposition: form-data; name="d"
 GET https://httpbingo.org/get?user={{user}}&value={{value}}
 Authorization: Basic {{user}}:{{pass}}
 
-### Override with pre-script req.vars
-// req.vars wins over request @var and file @var.
+### Override with pre-script client.vars
+// client.vars (runtime) wins over request @var and file @var.
 @value = fromRequestVar
 < {%
-    req.vars.set("value", "fromScript");
-    req.vars.set("nonce", beep.interpolate("{{$guid}}"));
+    client.vars.set("value", "fromScript");
+    client.vars.set("nonce", beep.interpolate("{{$guid}}"));
 %}
 GET https://httpbingo.org/get?value={{value}}&nonce={{nonce}}
 X-Value: {{value}}

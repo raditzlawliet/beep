@@ -29,14 +29,14 @@ Beep supports project folder panels to organize and manage your HTTP requests.
 
 Use `{{name}}` anywhere in URL, query, headers, auth and body.
 
-- **Scopes** - `req.vars` > `client.vars` > request `@var` > file `@var` > environment > collection `.beep/vars.json` (See [Spec](./SPEC.md))
+- **Scopes** - `// @prompt` > runtime `client.vars` > request `@var` > file `@var` > environment > collection `.beep/vars.json` (See [Spec](./SPEC.md))
 - **Request-level variables** - `@key = value` lines per request, editable in the Vars tab
 - **Prompt variables** - `// @prompt name [description]` asks for values before each send, `// @prompt:secret` masks the input
 - **File-level variables** - `@key = value` at the top of the `.http` file
-- **Environments** - `.beep/env.json` (Default) and `.beep/env.<name>.json`, picked or created in the status bar and remembered per project, edited in a form (enabled, description) or as JSON, active env marked in the project tree; scripts save values with `env.vars.set` (e.g. a login token)
+- **Environments** - `.beep/env.json` (Default) and `.beep/env.<name>.json`, picked in the title bar and remembered per project, managed in a Bruno-style settings dialog, edited in a form (enabled, description) or as JSON, active env marked in the project tree; scripts save values with `env.vars.set` (e.g. a login token)
 - **Collection variables** - `.beep/vars.json` and `.beep/vars.<part>.json`, deeper folder wins
-- **Script variables** - `req.vars` / `client.vars` / `env.vars` get/set from pre and post scripts
-- **Dynamic variables** - `$uuid`, `$guid`, `$timestamp`, `$datetime`, `$randomInt`, `$processEnv` (asks before reading env)
+- **Script variables** - `client.vars` (runtime) / `env.vars` get/set from pre and post scripts
+- **Dynamic variables** - `$uuid`, `$guid`, `$timestamp`, `$datetime`, `$randomInt`; `{{process.env.KEY}}` reads the project `.env`, then the OS (asks first)
 - **Editor insight** - Highlight, autocomplete, hover popup with resolved value, source scope, quick edit and jump, unknown variable warning
 
 ### HTTP Request

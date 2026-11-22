@@ -872,6 +872,9 @@
         onSaveAll={handleSaveAll}
         onToggleProjectFocus={toggleProjectFocus}
         onToggleHistoryFocus={toggleHistoryFocus}
+        {envDir}
+        onOpenEnvFile={(path) =>
+            handleFileDblClick({ name: path.split(/[/\\]/).pop() ?? path, path, is_dir: false })}
     />
 
     <div class="flex flex-1 overflow-hidden">
@@ -996,10 +999,6 @@
         response={activeTab?.lastResult?.response ?? request.response}
         loading={sending}
         error={reqError}
-        showEnv={project.path !== null}
-        envDir={envDir}
-        onOpenEnvFile={(path) =>
-            handleFileDblClick({ name: path.split(/[/\\]/).pop() ?? path, path, is_dir: false })}
         language={activeTab?.type === "file"
             ? (activeTab.language ?? "text")
             : activeTab?.type === "http-file" && activeTab.viewMode === "code"
