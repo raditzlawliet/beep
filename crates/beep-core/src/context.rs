@@ -75,11 +75,9 @@ impl VarStore {
 
 /// Shared state for the entire execution pipeline.
 pub struct ExecutionContext {
-    /// Script-set request scope (`req.vars`). Reset to `prompt_vars` per-request.
-    pub request_vars: VarStore,
-    /// `// @prompt` values typed by the user for this send; seed `req.vars`.
+    /// `// @prompt` values typed by the user for this send (top layer, scripts cannot override).
     pub prompt_vars: VarStore,
-    /// Script-set session scope (`client.vars`). Owner keeps it alive across requests.
+    /// Runtime vars (`client.vars`), script-set. Owner keeps it alive across requests.
     pub client_vars: VarStore,
     /// Static `@var` declared inside the request block.
     pub request_static_vars: VarStore,
@@ -102,7 +100,6 @@ pub struct ExecutionContext {
 impl ExecutionContext {
     pub fn new(history: Arc<Mutex<RequestHistory>>) -> Self {
         Self {
-            request_vars: VarStore::new(),
             prompt_vars: VarStore::new(),
             client_vars: VarStore::new(),
             request_static_vars: VarStore::new(),
@@ -116,13 +113,8 @@ impl ExecutionContext {
         }
     }
 
-    /// Reset request-scoped variables to the prompt values (called before each request).
     /// Index of the env scope in `static_scopes()`.
     pub const ENV_SCOPE_SLOT: usize = 2;
-
-    pub fn clear_request_vars(&mut self) {
-        self.request_vars = self.prompt_vars.clone();
-    }
 
     /// Static scopes below the script scopes, in precedence order:
     /// request `@var` > file `@var` > env (`ENV_SCOPE_SLOT`) > folder vars.
@@ -146,8 +138,8 @@ impl ExecutionContext {
     /// Resolve `{{variable}}` placeholders in `input`.
     ///
     /// Highest first:
-    /// 1. `request_vars`        - req.vars (script)
-    /// 2. `client_vars`         - client.vars (script, session)
+    /// 1. `prompt_vars`         - `// @prompt` values (this send)
+    /// 2. `client_vars`         - client.vars (runtime, session)
     /// 3. `request_static_vars` - request `@var`
     /// 4. `file_vars`           - file `@var`
     /// 5. `env_vars`            - selected environment
@@ -160,7 +152,7 @@ impl ExecutionContext {
         resolve_template_with(
             input,
             &[
-                &self.request_vars,
+                &self.prompt_vars,
                 &self.client_vars,
                 &self.request_static_vars,
                 &file,
@@ -176,7 +168,7 @@ impl ExecutionContext {
 // Var sources (editor insight)
 // ---------------------------------------------------------------------------
 
-/// Static scope a variable value comes from (script `req.vars` is runtime-only, not listed).
+/// Scope a variable value comes from (prompt values are per-send, not listed).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum VarScope {
@@ -278,6 +270,9 @@ fn lookup(
     if let Some(expr) = key.strip_prefix('$') {
         return resolve_dynamic_with(expr.trim(), env);
     }
+    if let Some(name) = key.strip_prefix("process.env.") {
+        return resolve_dynamic_with(&format!("processEnv {name}"), env);
+    }
 
     // Key already being resolved: only look below the scope that defined it.
     let from = stack
@@ -322,10 +317,10 @@ mod tests {
             value: "file-level".into(),
         });
         ctx.client_vars.set("base".into(), "client-level".into());
-        ctx.request_vars.set("base".into(), "request-level".into());
+        ctx.prompt_vars.set("base".into(), "prompt-level".into());
 
         let result = ctx.resolve("{{base}}");
-        assert_eq!(result, "request-level");
+        assert_eq!(result, "prompt-level");
     }
 
     #[test]
@@ -343,15 +338,12 @@ mod tests {
     }
 
     #[test]
-    fn test_prompt_vars_seed_request_vars() {
+    fn test_prompt_vars_win_over_client() {
         let history = Arc::new(Mutex::new(RequestHistory::new()));
         let mut ctx = ExecutionContext::new(history);
         ctx.prompt_vars = store(&[("user", "typed")]);
         ctx.client_vars = store(&[("user", "client")]);
-        ctx.request_vars = store(&[("stale", "x")]);
 
-        ctx.clear_request_vars();
-        assert_eq!(ctx.request_vars.get("stale"), None);
         assert_eq!(ctx.resolve("{{user}}"), "typed");
     }
 
@@ -377,11 +369,11 @@ mod tests {
         ];
         ctx.request_static_vars = store(&[("a", "req-static"), ("b", "req-static"), ("c", "req-static")]);
         ctx.client_vars = store(&[("a", "client"), ("b", "client")]);
-        ctx.request_vars = store(&[("a", "req")]);
+        ctx.prompt_vars = store(&[("a", "prompt")]);
 
         assert_eq!(
             ctx.resolve("{{a}} {{b}} {{c}} {{d}} {{e}} {{f}}"),
-            "req client req-static file env folder"
+            "prompt client req-static file env folder"
         );
     }
 
@@ -410,6 +402,17 @@ mod tests {
         let guard = EnvGuard::allow_only(Default::default());
         assert_eq!(resolve_template_with("x={{token}}", &[&s], Some(&guard)), "x=");
         assert_eq!(guard.denied(), vec!["BEEP_TEST_SECRET"]);
+    }
+
+    #[test]
+    fn test_resolve_process_env_dot_syntax() {
+        let mut dotenv = std::collections::HashMap::new();
+        dotenv.insert("API_TOKEN".to_string(), "abc".to_string());
+        let guard = EnvGuard::allow_only(Default::default()).with_dotenv(dotenv);
+        let s = store(&[("token", "{{process.env.API_TOKEN}}")]);
+        assert_eq!(resolve_template_with("{{token}}|{{ $processEnv API_TOKEN }}", &[&s], Some(&guard)), "abc|abc");
+        assert_eq!(resolve_template_with("{{process.env.BEEP_NOPE_X}}", &[], Some(&guard)), "");
+        assert_eq!(guard.denied(), vec!["BEEP_NOPE_X"]);
     }
 
     #[test]

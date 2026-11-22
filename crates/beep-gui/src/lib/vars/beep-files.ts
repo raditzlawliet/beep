@@ -24,25 +24,32 @@ export function isActiveEnvFile(path: string, selected: string | null): boolean 
   return beepJsonKind(path) === "env" && envNameOf(path) === selected;
 }
 
+export type VarKind = "string" | "number" | "boolean" | "object";
+export const VAR_KINDS: VarKind[] = ["string", "number", "boolean", "object"];
+
 export interface VarsRow {
   key: string;
-  /** Text shown in the table. */
+  /** Text shown in the table (object = compact JSON). */
   value: string;
   enabled: boolean;
   description: string;
-  /** Original JSON type of the value; "other" (null/array/object without `value`) is read-only and written back as-is. */
-  kind: "string" | "number" | "boolean" | "other";
+  /** Value type; "other" (null, object without `value`) is read-only and written back as-is. */
+  kind: VarKind | "other";
   raw?: unknown;
   /** Long form (`{ "value": ... }`) in the file; extra fields are kept on write. */
   extra?: Record<string, unknown>;
 }
 
-type Scalar = string | number | boolean;
-const isScalar = (v: unknown): v is Scalar =>
-  typeof v === "string" || typeof v === "number" || typeof v === "boolean";
+type Value = string | number | boolean | object;
 
-function scalarRow(key: string, v: Scalar): VarsRow {
-  return { key, value: String(v), enabled: true, description: "", kind: typeof v as VarsRow["kind"] };
+function kindOf(v: unknown): VarKind | null {
+  if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") return typeof v as VarKind;
+  if (typeof v === "object" && v !== null) return "object";
+  return null;
+}
+
+function valueRow(key: string, v: Value, kind: VarKind): VarsRow {
+  return { key, value: kind === "object" ? JSON.stringify(v) : String(v), enabled: true, description: "", kind };
 }
 
 /** Rows of a vars/env JSON object, or an error message. */
@@ -59,44 +66,47 @@ export function parseVarsJson(text: string): VarsRow[] | string {
   }
   // shortcut: JS objects list integer-like keys first, so their file position is lost; fine for var names
   return Object.entries(obj as Record<string, unknown>).map(([key, v]): VarsRow => {
-    if (isScalar(v)) return scalarRow(key, v);
-    if (typeof v === "object" && v !== null && !Array.isArray(v) && isScalar((v as Record<string, unknown>).value)) {
-      const { value, enabled, description, ...extra } = v as Record<string, unknown>;
-      return {
-        ...scalarRow(key, value as Scalar),
-        enabled: enabled !== false,
-        description: typeof description === "string" ? description : "",
-        extra,
-      };
-    }
-    return { key, value: JSON.stringify(v), enabled: true, description: "", kind: "other", raw: v };
+    // bare object = long form (needs `value`); bare array = object value
+    const isLong = typeof v === "object" && v !== null && !Array.isArray(v);
+    const inner = isLong ? (v as Record<string, unknown>).value : v;
+    const kind = kindOf(inner);
+    if (!kind) return { key, value: JSON.stringify(v), enabled: true, description: "", kind: "other", raw: v };
+    if (!isLong) return valueRow(key, inner as Value, kind);
+    const { value, enabled, description, ...extra } = v as Record<string, unknown>;
+    return {
+      ...valueRow(key, value as Value, kind),
+      enabled: enabled !== false,
+      description: typeof description === "string" ? description : "",
+      extra,
+    };
   });
 }
 
-/** Short form when enabled, no description and no extra fields; else `{ value, description?, enabled?, ...extra }`. */
+/** Typed value of a row; null when the text does not fit its kind (then written as a string). */
+export function typedValue(r: VarsRow): Value | null {
+  if (r.kind === "string" || r.kind === "other") return r.value;
+  try {
+    const parsed: unknown = JSON.parse(r.value);
+    return kindOf(parsed) === r.kind ? (parsed as Value) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Short form when enabled, no description, no extra fields and not a `{}` value; else `{ value, description?, enabled?, ...extra }`. */
 function rowEntry(r: VarsRow): unknown {
   if (r.kind === "other") return r.raw;
-  const value = rowValue(r);
+  const value = typedValue(r) ?? r.value;
   const extra = r.extra ?? {};
-  if (r.enabled && !r.description && Object.keys(extra).length === 0) return value;
+  // a bare `{...}` would read as the long form, so object values (not arrays) stay long
+  const bareOk = typeof value !== "object" || Array.isArray(value);
+  if (r.enabled && !r.description && Object.keys(extra).length === 0 && bareOk) return value;
   return {
     value,
     ...(r.description ? { description: r.description } : {}),
     ...(r.enabled ? {} : { enabled: false }),
     ...extra,
   };
-}
-
-function rowValue(r: VarsRow): Scalar {
-  if (r.kind === "number" || r.kind === "boolean") {
-    try {
-      const parsed = JSON.parse(r.value);
-      if (typeof parsed === r.kind) return parsed;
-    } catch {
-      // not a number/bool anymore -> string
-    }
-  }
-  return r.value;
 }
 
 /** Pretty JSON (2 spaces) in row order; empty keys dropped, `eol` used for line breaks. */

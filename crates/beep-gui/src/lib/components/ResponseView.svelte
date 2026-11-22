@@ -80,11 +80,11 @@
                 </div>
                 <!-- Right metadata -->
                 {#if response}
-                    <div class="flex items-center gap-3 ml-auto pr-3 pb-1 text-sm">
+                    <div class="flex items-center gap-1.5 ml-auto pr-3 pb-1 text-xs font-mono">
                         <StatusBadge status={response.status} />
-                        <span class="opacity-70 text-xs"
-                            >{response.elapsed_ms}ms</span
-                        >
+                        <span class="opacity-30">·</span>
+                        <span class="opacity-70">{response.elapsed_ms}ms</span>
+                        <span class="opacity-30">·</span>
                         <div class="dropdown dropdown-hover dropdown-end">
                             <span
                                 tabindex="0"

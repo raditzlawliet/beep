@@ -9,6 +9,7 @@
     import { listen } from "@tauri-apps/api/event";
     import { confirmUnsavedClose, confirmExternalOverwrite } from "$lib/dialog";
     import { SvelteSet } from "svelte/reactivity";
+    import { untrack } from "svelte";
     import { showToast } from "$lib/toast.svelte";
     import { varIndex } from "$lib/vars/var-index.svelte";
     import TitleBar from "$lib/components/TitleBar.svelte";
@@ -17,6 +18,7 @@
     import ProjectSidebar from "$lib/components/ProjectSidebar.svelte";
     import TabBar from "$lib/components/TabBar.svelte";
     import FileViewer from "$lib/components/FileViewer.svelte";
+    import EnvSettingsView from "$lib/components/EnvSettingsView.svelte";
     import MainEditorViewer from "$lib/components/MainEditorViewer.svelte";
     import WelcomeScreen from "$lib/components/WelcomeScreen.svelte";
     import MainEditorToolbar from "$lib/components/MainEditorToolbar.svelte";
@@ -128,6 +130,30 @@
         loadFileContent(node.path);
     }
 
+    // One env settings tab; it keeps the env it shows across tab switches.
+    const ENV_TAB_ID = "__env_settings__";
+    function openEnvSettings() {
+        if (findTab(ENV_TAB_ID)) {
+            selectTab(ENV_TAB_ID);
+            return;
+        }
+        tabs.push({
+            id: ENV_TAB_ID,
+            type: "env-settings",
+            label: "Environments",
+            content: "",
+            originalContent: "",
+            persistent: true,
+            env: { dir: envDir, name: null, loaded: false },
+            lastActiveAt: Date.now(),
+        });
+        activeTabId = ENV_TAB_ID;
+    }
+
+    function openEnvFile(path: string) {
+        handleFileDblClick({ name: path.split(/[/\\]/).pop() ?? path, path, is_dir: false });
+    }
+
     async function loadFileContent(filePath: string) {
         try {
             const raw = await invoke<string>("read_file_content", { path: filePath });
@@ -147,17 +173,19 @@
 
     async function handleExternalChange(filePath: string) {
         // Only open file tabs care (also skips folder events, which cannot be read).
-        const tab = findTab(filePath);
-        if (!tab) return;
+        // The env settings tab edits a file under its own id, so match filePath too.
+        const hit = tabs.filter((t) => t.id === filePath || t.filePath === filePath);
+        if (hit.length === 0) return;
         try {
             const diskContent = await invoke<string>("read_file_content", { path: filePath });
-            const hasEdits = tab.content !== tab.originalContent;
-            if (!hasEdits) {
-                tab.content = diskContent;
-                tab.originalContent = diskContent;
-                tab.diskChanged = false;
-            } else {
-                tab.diskChanged = true;
+            for (const tab of hit) {
+                if (tab.content === tab.originalContent) {
+                    tab.content = diskContent;
+                    tab.originalContent = diskContent;
+                    tab.diskChanged = false;
+                } else if (tab.content !== diskContent) {
+                    tab.diskChanged = true;
+                }
             }
         } catch (e) {
             console.error(`Failed to handle external change ${filePath}:`, e);
@@ -170,6 +198,7 @@
         const tab = findTab(activeTabId);
         if (!tab) return;
 
+        if (!tab.filePath && tab.type === "env-settings") return; // env not created yet, nothing to save
         if (!tab.filePath) {
             // Untitled tab - Save As
             await handleSaveAs(tab);
@@ -818,21 +847,32 @@
     );
     // Env lookup dir: a `.beep` file tab looks up from the folder that owns `.beep`.
     let envDir = $derived(basePath?.replace(/[/\\]\.beep$/, "") ?? project.path);
-    let hasActiveFileTab = $derived(activeTab?.type === "file");
+    // env-settings counts as a file tab for Save / Close in the File menu
+    let hasActiveFileTab = $derived(activeTab?.type === "file" || activeTab?.type === "env-settings");
 
     $effect(() => {
         const tab = activeTab;
         if (tab?.filePath) {
             activeFilePath = tab.filePath;
+            const dirs: string[] = [];
             let parent = tab.filePath.replace(/[/\\][^/\\]*$/, "");
             while (parent && parent !== project.path) {
                 expandedProject.add(parent);
+                dirs.unshift(parent);
                 const next = parent.replace(/[/\\][^/\\]*$/, "");
                 if (next === parent) break;
                 parent = next;
             }
+            // Lazy tree: load folders top-down so the file shows (e.g. `.beep` opened from the env picker).
+            untrack(() => void revealDirs(dirs));
         }
     });
+
+    async function revealDirs(dirs: string[]) {
+        for (const d of dirs) {
+            if (!project.isLoaded(d)) await project.expand(d).catch(() => {});
+        }
+    }
 
     // -- Global hotkeys
     registerHotkeys({
@@ -872,6 +912,9 @@
         onSaveAll={handleSaveAll}
         onToggleProjectFocus={toggleProjectFocus}
         onToggleHistoryFocus={toggleHistoryFocus}
+        {envDir}
+        onOpenEnvFile={openEnvFile}
+        onManageEnvs={openEnvSettings}
     />
 
     <div class="flex flex-1 overflow-hidden">
@@ -977,6 +1020,10 @@
                         onContentChange={handleContentChange}
                     />
                 </div>
+            {:else if activeTab?.type === "env-settings"}
+                <div class="flex-1 min-h-0">
+                    <EnvSettingsView tab={activeTab} onOpenFile={openEnvFile} />
+                </div>
             {:else if !project.path}
                 <!-- No project + no tab - welcome state -->
                 <WelcomeScreen
@@ -996,10 +1043,6 @@
         response={activeTab?.lastResult?.response ?? request.response}
         loading={sending}
         error={reqError}
-        showEnv={project.path !== null}
-        envDir={envDir}
-        onOpenEnvFile={(path) =>
-            handleFileDblClick({ name: path.split(/[/\\]/).pop() ?? path, path, is_dir: false })}
         language={activeTab?.type === "file"
             ? (activeTab.language ?? "text")
             : activeTab?.type === "http-file" && activeTab.viewMode === "code"

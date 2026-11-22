@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { CheckIcon } from "@lucide/svelte";
     import FileEditor from "$lib/components/FileEditor.svelte";
     import VarsFileTable from "$lib/components/VarsFileTable.svelte";
     import type { EditorLanguage } from "$lib/types";
@@ -63,16 +64,17 @@
 
 <div class="flex flex-col h-full">
     {#if kind}
-        <!-- fixed h-8: the Active badge and the "Use this environment" button differ in height -->
+        <!-- fixed h-8: the Active badge and the "Activate Environment" button differ in height -->
         <div class="flex items-center gap-2 px-2 h-8 shrink-0 border-b border-base-content/10 text-xs">
             {#if kind === "env"}
-                <span class="opacity-70">Environment: <b>{envName ?? "Default"}</b></span>
+                <span class="opacity-70">Environment: {envName ?? "Default"}</span>
                 {#if envActive}
-                    <span class="badge badge-xs badge-primary">Active</span>
+                    <span class="badge badge-xs badge-primary gap-0.5"><CheckIcon class="h-2.5 w-2.5" />Active</span>
                 {:else}
-                    <button class="btn btn-xs btn-ghost"
+                    <button class="btn btn-ghost btn-xs gap-1 font-normal"
                         onclick={() => environment.select(envName).catch((e) => console.error("select env", e))}>
-                        Use this environment
+                        <CheckIcon class="h-3.5 w-3.5" />
+                        Activate Environment
                     </button>
                 {/if}
             {:else}

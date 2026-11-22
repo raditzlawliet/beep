@@ -5,6 +5,7 @@
   import Unmaximize from "$lib/components/icons/Unmaximize.svelte";
   import AboutDialog from "$lib/components/modals/AboutDialog.svelte";
   import NewRequestPopup from "$lib/components/NewRequestPopup.svelte";
+  import EnvPicker from "$lib/components/EnvPicker.svelte";
   import { setNewPopupHandler } from "$lib/hotkeys.svelte";
   import { app } from "$lib/app-state.svelte";
 
@@ -26,6 +27,10 @@
     // View menu
     onToggleProjectFocus: () => void;
     onToggleHistoryFocus: () => void;
+    // Environment picker (shown after the project name)
+    envDir?: string | null;
+    onOpenEnvFile?: (path: string) => void;
+    onManageEnvs?: () => void;
   }
 
   let {
@@ -45,6 +50,9 @@
     onSaveAll,
     onToggleProjectFocus,
     onToggleHistoryFocus,
+    envDir = null,
+    onOpenEnvFile,
+    onManageEnvs,
   }: Props = $props();
 
   let aboutDialog = $state<HTMLDialogElement | null>(null);
@@ -211,7 +219,7 @@
           tabindex="-1"
         >
           <li><button onclick={handleAbout}>About Beep</button></li>
-          <li></li>
+          <li class="-mx-1! my-1! h-px p-0" role="separator"></li>
           <li><button onclick={quit}>
             <span>Quit</span>
             <span class="text-xs opacity-50 ml-auto">{app.modKey}+Q</span>
@@ -245,14 +253,14 @@
               <span class="text-xs opacity-50 ml-auto">{app.modKey}+Shift+N</span>
             </button>
           </li>
-          <li></li>
+          <li class="-mx-1! my-1! h-px p-0" role="separator"></li>
           <li>
             <button onclick={handleOpenProject}>
                 <span>Open Project...</span>
                 <span class="text-xs opacity-50 ml-auto">{app.modKey}+O</span>
             </button>
           </li>
-          <li></li>
+          <li class="-mx-1! my-1! h-px p-0" role="separator"></li>
           <li>
             <button onclick={handleSave} disabled={!hasActiveTab}>
               <span>Save</span>
@@ -268,7 +276,7 @@
                 </span>
             </button>
           </li>
-          <li></li>
+          <li class="-mx-1! my-1! h-px p-0" role="separator"></li>
           <li>
             <button onclick={handleCloseTab} disabled={!hasActiveTab}>
               <span>Close Tab</span>
@@ -339,6 +347,7 @@
       </button>
       {#if projectName}
         <span class="text-xs ms-1">{projectName}</span>
+        <EnvPicker {envDir} {onOpenEnvFile} {onManageEnvs} />
       {:else}
         <button
             class="btn btn-ghost btn-xs rounded-none h-full text-xs font-normal"

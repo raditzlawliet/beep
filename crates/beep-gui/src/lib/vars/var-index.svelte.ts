@@ -3,9 +3,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { DynamicVarInfo, ParsedFileVariable, ParsedRequest, VarSource } from "$lib/types";
 
-/** One-char scope icon. S = req.vars (script), C = client.vars, R = request @var,
+/** One-char scope icon. P = `// @prompt` (at send), C = client.vars (runtime), R = request @var,
  *  F = file @var, E = environment, D = folder .beep json, $ = dynamic. */
-export type VarIcon = "S" | "C" | "R" | "F" | "E" | "D" | "$";
+export type VarIcon = "P" | "C" | "R" | "F" | "E" | "D" | "$";
 
 export interface VarEntry {
   key: string;
@@ -29,8 +29,8 @@ export interface VarActions {
 }
 
 export const SCOPE_LABEL: Record<VarIcon, string> = {
-  S: "req.vars (script)",
-  C: "client.vars (session)",
+  P: "prompt",
+  C: "client.vars (runtime)",
   R: "request @var",
   F: "file @var",
   E: "environment",
@@ -48,7 +48,7 @@ export interface VarContext {
   postScript: string | null;
   /** Every inline script in the file (client.vars may be set by any request). */
   fileScripts: string[];
-  /** Active request `// @prompt` names (seed req.vars at send). */
+  /** Active request `// @prompt` names (top layer at send). */
   prompts: string[];
 }
 
@@ -80,11 +80,9 @@ export function requestTemplates(r: ParsedRequest | undefined): string {
   return parts.join("\n");
 }
 
-/** Keys set by `<obj>.vars.set("key", ...)` in a script. */
-function scriptKeys(code: string | null, obj: "req" | "client"): string[] {
-  if (!code) return [];
-  const re = new RegExp(`${obj}\\.vars\\.set\\(\\s*["'\`]([^"'\`]+)["'\`]`, "g");
-  return [...code.matchAll(re)].map((m) => m[1].trim());
+/** Keys set by `client.vars.set("key", ...)` in a script. */
+function scriptKeys(code: string): string[] {
+  return [...code.matchAll(/client\.vars\.set\(\s*["'`]([^"'`]+)["'`]/g)].map((m) => m[1].trim());
 }
 
 function buildIndex(): Map<string, VarEntry[]> {
@@ -95,18 +93,15 @@ function buildIndex(): Map<string, VarEntry[]> {
     else map.set(e.key, [e]);
   };
 
-  // Highest precedence first: req.vars (script, then @prompt) > client.vars > request > file > folder.
-  for (const key of new Set(scriptKeys(_ctx?.preScript ?? null, "req"))) {
-    push({ key, icon: "S", value: null, note: "set by pre-script at send" });
-  }
+  // Highest precedence first: @prompt > client.vars > request > file > env > folder.
   for (const key of new Set(_ctx?.prompts ?? [])) {
-    push({ key, icon: "S", value: null, note: "prompted at send" });
+    push({ key, icon: "P", value: null, note: "prompted at send" });
   }
   const clientSources = _sources.filter((s) => s.scope === "client");
   for (const s of clientSources) push({ key: s.key, icon: "C", value: s.value, note: null });
   const clientKnown = new Set(clientSources.map((s) => s.key));
   const scripts = _ctx?.fileScripts ?? [];
-  for (const key of new Set(scripts.flatMap((c) => scriptKeys(c, "client")))) {
+  for (const key of new Set(scripts.flatMap(scriptKeys))) {
     if (!clientKnown.has(key)) push({ key, icon: "C", value: null, note: "set by a script, not run yet" });
   }
   for (const s of _sources) {
@@ -240,10 +235,11 @@ export const varIndex = {
     return _dynamic.find((d) => d.name === name);
   },
 
-  /** Known variable, or a valid dynamic name. */
+  /** Known variable, a valid dynamic name, or `process.env.KEY`. */
   isKnown(expr: string): boolean {
     const key = expr.trim();
     if (key.startsWith("$")) return !!this.dynamicInfo(key);
+    if (isProcessEnv(key)) return true;
     return _index.has(key);
   },
 
@@ -333,6 +329,11 @@ export const varIndex = {
     return () => _listeners.delete(fn);
   },
 };
+
+/** `process.env.KEY` (SPEC 8.7.1). */
+export function isProcessEnv(key: string): boolean {
+  return /^process\.env\.\w+$/.test(key);
+}
 
 /** `{{ ... }}` placeholder; group 1 = inner text. */
 export const VAR_RE = /\{\{([^{}]*?)\}\}/g;

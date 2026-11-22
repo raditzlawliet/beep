@@ -17,7 +17,7 @@ import {
   type CompletionContext,
   type CompletionResult,
 } from "@codemirror/autocomplete";
-import { SCOPE_LABEL, VAR_RE, varIndex, type VarEntry, type VarIcon } from "./var-index.svelte";
+import { SCOPE_LABEL, VAR_RE, isProcessEnv, varIndex, type VarEntry, type VarIcon } from "./var-index.svelte";
 
 const refreshEffect = StateEffect.define<null>();
 
@@ -30,6 +30,7 @@ function varState(inner: string): VarState {
     if (!info) return "unknown";
     return info.name === "$processEnv" ? "env" : "dynamic";
   }
+  if (isProcessEnv(key)) return "env";
   return varIndex.isKnown(key) ? "known" : "unknown";
 }
 
@@ -40,8 +41,8 @@ const MARKS: Record<VarState, Decoration> = {
   env: Decoration.mark({ class: "cm-var-env" }),
 };
 
-// Script key: req.vars.get("key") / client.vars.set('key', ..) -> only the key is marked.
-const SCRIPT_KEY_RE = /\b(?:req|client)\.vars\.(?:get|set|reset)\(\s*(["'`])([\w.-]+)\1/g;
+// Script key: client.vars.get("key") / client.vars.set('key', ..) -> only the key is marked.
+const SCRIPT_KEY_RE = /\bclient\.vars\.(?:get|set|reset)\(\s*(["'`])([\w.-]+)\1/g;
 
 interface VarHit {
   start: number;
@@ -110,7 +111,7 @@ const highlightPlugin = (js: boolean) => ViewPlugin.fromClass(
 // --- Autocomplete ---
 
 const ICON_TYPE: Record<VarIcon, string> = {
-  S: "var-s",
+  P: "var-p",
   C: "var-c",
   R: "var-r",
   F: "var-f",
@@ -142,9 +143,15 @@ function varCompletions(js: boolean) {
         detail: d.description,
         apply: d.usage + close,
       }));
-      return { from, options: [...keyOptions(close), ...dynamic], validFor: /^\$?[\w.-]*$/ };
+      // shortcut: no `.env` key list, user types the name after `process.env.`
+      const processEnv: Completion = {
+        label: "process.env.",
+        type: ICON_TYPE.$,
+        detail: ".env file, then OS (asks permission)",
+      };
+      return { from, options: [...keyOptions(close), processEnv, ...dynamic], validFor: /^\$?[\w.-]*$/ };
     }
-    // req.vars.get("key") / client.vars.set("key", ...)  (scripts)
+    // client.vars.get("key") / client.vars.set("key", ...)  (scripts)
     if (js) {
       const s = ctx.matchBefore(/vars\.(get|set|reset)\(\s*["'`][\w.-]*$/);
       if (s) {
@@ -280,6 +287,23 @@ function hoverView(inner: string, placeholder: string): TooltipView {
     return view;
   }
 
+  if (isProcessEnv(key)) {
+    const chip = el("span", "cm-var-chip");
+    chip.append(el("span", "cm-var-icon", "$"), el("span", "cm-var-scope", "process.env"));
+    head.append(chip);
+    const field = valueField("", "", null);
+    dom.append(field.dom, el("div", "cm-var-desc", "From the project .env file, else the OS environment."));
+    const input = field.dom.querySelector("input");
+    varIndex
+      .preview(placeholder)
+      .then((v) => {
+        if (input) input.value = v;
+      })
+      .catch(() => {});
+    dom.append(el("div", "cm-var-hover-warn", "An OS value (not in .env) asks before sending."));
+    return view;
+  }
+
   const entries = varIndex.lookup(key);
   if (entries.length === 0) return unknown("Unknown variable. Not defined in any scope, sent as text.");
 
@@ -333,7 +357,7 @@ const varHover = (js: boolean) =>
 // --- Theme ---
 
 const ICON_CSS: Record<string, string> = {
-  "var-s": "S",
+  "var-p": "P",
   "var-c": "C",
   "var-r": "R",
   "var-f": "F",

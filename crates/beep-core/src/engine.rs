@@ -45,8 +45,7 @@ pub async fn execute(
         ExecuteInput::Parsed(p) => p,
     };
 
-    // Step 2: Clear request vars, load request @var, run pre-request script
-    ctx.clear_request_vars();
+    // Step 2: Load request @var, run pre-request script
     ctx.env_writes.clear();
     ctx.request_static_vars = VarStore::from_file_vars(&parsed.variables);
 
@@ -60,7 +59,7 @@ pub async fn execute(
         let (out, overrides) = run_pre_script_with(
             pre_code,
             &mut ctx.client_vars,
-            &mut ctx.request_vars,
+            &ctx.prompt_vars,
             &static_scopes,
             &parsed.url,
             &parsed.method,
@@ -141,7 +140,7 @@ pub async fn execute(
         let out = run_post_script_with(
             post_code,
             &mut ctx.client_vars,
-            &mut ctx.request_vars,
+            &ctx.prompt_vars,
             &static_scopes,
             &parsed.url,
             &parsed.method,
@@ -172,7 +171,7 @@ pub async fn execute(
     let denied = ctx.env.denied();
     if !denied.is_empty() {
         result.warnings.push(format!(
-            "$processEnv not allowed, sent empty: {}",
+            "process.env not allowed, sent empty: {}",
             denied.join(", ")
         ));
     }

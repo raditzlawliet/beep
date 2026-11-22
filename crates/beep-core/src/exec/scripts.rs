@@ -67,7 +67,8 @@ pub struct ScriptExtras {
 
 struct ScriptContext {
     client_vars: Rc<RefCell<VarStore>>,
-    request_vars: Rc<RefCell<VarStore>>,
+    /// `// @prompt` values for this send (top layer, read-only for scripts).
+    prompt_vars: VarStore,
     request_overrides: Rc<RefCell<RequestOverrides>>,
     /// Static scopes below client vars: request @var > file @var > env > folder vars.
     static_scopes: Vec<VarStore>,
@@ -89,13 +90,13 @@ struct ScriptContext {
 }
 
 impl ScriptContext {
-    /// Resolve `{{vars}}` over the live script scopes (req.vars > client.vars > static).
+    /// Resolve `{{vars}}` over the live script scopes (prompt > client.vars > static).
     fn interpolate(&self, input: &str) -> String {
         let client = self.client_vars.borrow();
-        let request = self.request_vars.borrow();
+        let request = &self.prompt_vars;
         let env = self.env_vars.borrow();
         let env_changed = !self.env_writes.borrow().is_empty();
-        let mut scopes: Vec<&VarStore> = vec![&request, &client];
+        let mut scopes: Vec<&VarStore> = vec![request, &client];
         for (i, s) in self.static_scopes.iter().enumerate() {
             // after env.vars.set the live env replaces the env snapshot
             let live = env_changed && i == ExecutionContext::ENV_SCOPE_SLOT;
@@ -139,11 +140,11 @@ impl ScriptContext {
 /// Run a pre-request script.
 ///
 /// Returns the console output and any request overrides the script requested.
-/// Mutations to `client_vars` and `request_vars` are applied in-place.
+/// Mutations to `client_vars` are applied in-place. `prompt_vars` = `// @prompt` values (top layer).
 pub fn run_pre_script(
     code: &str,
     client_vars: &mut VarStore,
-    request_vars: &mut VarStore,
+    prompt_vars: &VarStore,
     static_scopes: &[VarStore],
     request_url: &str,
     request_method: &str,
@@ -153,7 +154,7 @@ pub fn run_pre_script(
     run_pre_script_with(
         code,
         client_vars,
-        request_vars,
+        prompt_vars,
         static_scopes,
         request_url,
         request_method,
@@ -168,7 +169,7 @@ pub fn run_pre_script(
 pub fn run_pre_script_with(
     code: &str,
     client_vars: &mut VarStore,
-    request_vars: &mut VarStore,
+    prompt_vars: &VarStore,
     static_scopes: &[VarStore],
     request_url: &str,
     request_method: &str,
@@ -177,12 +178,11 @@ pub fn run_pre_script_with(
     extras: ScriptExtras,
 ) -> (ScriptOutput, RequestOverrides) {
     let cv = Rc::new(RefCell::new(client_vars.clone()));
-    let rv = Rc::new(RefCell::new(request_vars.clone()));
     let ro = Rc::new(RefCell::new(RequestOverrides::default()));
 
     let sc = Rc::new(ScriptContext {
         client_vars: cv.clone(),
-        request_vars: rv.clone(),
+        prompt_vars: prompt_vars.clone(),
         request_overrides: ro.clone(),
         static_scopes: static_scopes.to_vec(),
         request_url: request_url.to_string(),
@@ -204,7 +204,6 @@ pub fn run_pre_script_with(
 
     // Always propagate mutations via independently cloned handles
     *client_vars = cv.borrow().clone();
-    *request_vars = rv.borrow().clone();
     (result, ro.borrow().clone())
 }
 
@@ -212,7 +211,7 @@ pub fn run_pre_script_with(
 pub fn run_post_script(
     code: &str,
     client_vars: &mut VarStore,
-    request_vars: &mut VarStore,
+    prompt_vars: &VarStore,
     static_scopes: &[VarStore],
     request_url: &str,
     request_method: &str,
@@ -228,7 +227,7 @@ pub fn run_post_script(
     run_post_script_with(
         code,
         client_vars,
-        request_vars,
+        prompt_vars,
         static_scopes,
         request_url,
         request_method,
@@ -249,7 +248,7 @@ pub fn run_post_script(
 pub fn run_post_script_with(
     code: &str,
     client_vars: &mut VarStore,
-    request_vars: &mut VarStore,
+    prompt_vars: &VarStore,
     static_scopes: &[VarStore],
     request_url: &str,
     request_method: &str,
@@ -264,11 +263,10 @@ pub fn run_post_script_with(
     extras: ScriptExtras,
 ) -> ScriptOutput {
     let cv = Rc::new(RefCell::new(client_vars.clone()));
-    let rv = Rc::new(RefCell::new(request_vars.clone()));
 
     let sc = Rc::new(ScriptContext {
         client_vars: cv.clone(),
-        request_vars: rv.clone(),
+        prompt_vars: prompt_vars.clone(),
         request_overrides: Rc::new(RefCell::new(RequestOverrides::default())),
         static_scopes: static_scopes.to_vec(),
         request_url: request_url.to_string(),
@@ -289,7 +287,6 @@ pub fn run_post_script_with(
     let result = run_script(sc, code);
 
     *client_vars = cv.borrow().clone();
-    *request_vars = rv.borrow().clone();
 
     result
 }
@@ -441,27 +438,6 @@ fn run_script(sc: Rc<ScriptContext>, code: &str) -> ScriptOutput {
         {
             let req = rquickjs::Object::new(c.clone())?;
 
-            // -- req.vars (get/set) --
-            let vars_obj = rquickjs::Object::new(c.clone())?;
-
-            let sc_rvg = sc.clone();
-            vars_obj.set(
-                "get",
-                rquickjs::Function::new(c.clone(), move |key: String| -> Option<String> {
-                    let vars = sc_rvg.request_vars.borrow();
-                    vars.get(&key).map(|s| s.to_string())
-                })?,
-            )?;
-
-            let sc_rvs = sc.clone();
-            vars_obj.set(
-                "set",
-                rquickjs::Function::new(c.clone(), move |key: String, value: rquickjs::Value| {
-                    sc_rvs.request_vars.borrow_mut().set(key, js_value_to_string(value));
-                })?,
-            )?;
-
-            req.set("vars", vars_obj)?;
 
             let is_pre_script = sc.response_status.is_none();
 
@@ -599,7 +575,7 @@ fn run_script(sc: Rc<ScriptContext>, code: &str) -> ScriptOutput {
             )?;
 
             // -- req.getUrl/getHeader/getBody() --
-            // Pre-script: resolved now over the live scopes (incl. req.vars set so far).
+            // Pre-script: resolved now over the live scopes (incl. client.vars set so far).
             // Post-script: the values really sent. Unknown vars stay as `{{name}}`.
             let sc_tu = sc.clone();
             req.set(
@@ -717,6 +693,11 @@ fn run_script(sc: Rc<ScriptContext>, code: &str) -> ScriptOutput {
             c.globals().set("beep", beep)?;
         }
 
+        // req.vars was merged into client.vars (runtime); fail loudly on old scripts
+        c.eval::<(), _>(
+            r#"Object.defineProperty(req, "vars", { get() { throw new Error("req.vars was removed, use client.vars"); } });"#,
+        )?;
+
         // --- Execute the script ---
         match c.eval::<rquickjs::Value, _>(code).catch(&c) {
             Ok(_) => {}
@@ -814,11 +795,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_pre_script_sets_request_vars() {
+    fn test_pre_script_sets_client_vars() {
         let mut client = VarStore::new();
         let mut request = VarStore::new();
         let code = r#"
-            req.vars.set("timestamp", "2024-01-01");
+            client.vars.set("timestamp", "2024-01-01");
             console.log("pre-script ran");
         "#;
         let (out, _ov) = run_pre_script(
@@ -831,8 +812,33 @@ mod tests {
             &HashMap::new(),
             None,
         );
-        assert_eq!(request.get("timestamp"), Some("2024-01-01"));
+        assert_eq!(client.get("timestamp"), Some("2024-01-01"));
         assert!(out.console.iter().any(|l| l.contains("pre-script ran")));
+    }
+
+    #[test]
+    fn test_req_vars_removed_and_prompt_wins() {
+        let mut client = VarStore::new();
+        let mut prompt = VarStore::new();
+        prompt.set("user".into(), "typed".into());
+        let (out, _) = run_pre_script(
+            r#"
+                client.vars.set("user", "script");
+                console.log(beep.interpolate("{{user}}"));
+                req.vars.set("x", "1");
+            "#,
+            &mut client,
+            &mut prompt,
+            &[],
+            "https://example.com",
+            "GET",
+            &HashMap::new(),
+            None,
+        );
+        assert_eq!(out.console.first().map(String::as_str), Some("typed"));
+        assert!(out.error.unwrap_or_default().contains("req.vars was removed, use client.vars"));
+        // prompt values stay out of the runtime store
+        assert_eq!(client.get("user"), Some("script"));
     }
 
     #[test]
@@ -1320,7 +1326,7 @@ mod tests {
             r#"
                 var url = beep.interpolate("https://{{env}}.example.com/api");
                 console.log(url);
-                req.vars.set("base", beep.interpolate("/v1/{{env}}/{{region}}"));
+                client.vars.set("base", beep.interpolate("/v1/{{env}}/{{region}}"));
             "#,
             &mut client,
             &mut request,
@@ -1337,7 +1343,7 @@ mod tests {
                 .any(|l| l == "https://staging.example.com/api")
         );
         assert_eq!(
-            request.get("base"),
+            client.get("base"),
             Some("/v1/staging/us-east".to_string()).as_deref()
         );
     }
@@ -1353,7 +1359,7 @@ mod tests {
 
         let (out, _) = run_pre_script(
             r#"
-                req.vars.set("token", "t1");
+                client.vars.set("token", "t1");
                 console.log(req.getRawUrl());
                 console.log(req.getUrl());
                 console.log(req.getHeader("Authorization"));
@@ -1473,7 +1479,7 @@ mod tests {
                 client.vars.set("ok", res.body.ok);
                 client.vars.set("user", res.body.user);
                 client.vars.set("none", null);
-                req.vars.set("n", 1.5);
+                client.vars.set("n", 1.5);
             "#,
             &mut client,
             &mut request,
@@ -1494,7 +1500,7 @@ mod tests {
         assert_eq!(client.get("ok"), Some("true"));
         assert_eq!(client.get("user"), Some(r#"{"id":42}"#));
         assert_eq!(client.get("none"), Some(""));
-        assert_eq!(request.get("n"), Some("1.5"));
+        assert_eq!(client.get("n"), Some("1.5"));
     }
 
     #[test]
